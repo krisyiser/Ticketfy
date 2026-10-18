@@ -3,8 +3,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Ticketfy.Services;
 using Ticketfy.Services.Interfaces;
-using Ticketfy.Services.Implementations;
 using Serilog;
+using Ticketfy.Services.Security;
 using System;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
@@ -17,6 +17,7 @@ namespace Ticketfy.ViewModels.Settings;
 /// </summary>
 public partial class EmpresaSettingsViewModel : ObservableObject
 {
+    private readonly SecureCredentialStore _credentialStore = new();
     private readonly ISettingsService? _settingsService;
 
     // ── Generales ──────────────────────────────────────────────────────────
@@ -126,11 +127,11 @@ public partial class EmpresaSettingsViewModel : ObservableObject
     [RelayCommand]
     private void SelectSubTab(string tab)
     {
-        IsSubGenerales  = tab == "generales";
-        IsSubIdentidad  = tab == "identidad";
-        IsSubFiscal     = tab == "fiscal";
-        IsSubSucursal   = tab == "sucursal";
-        IsSubRedes      = tab == "redes";
+        IsSubGenerales = tab == "generales";
+        IsSubIdentidad = tab == "identidad";
+        IsSubFiscal = tab == "fiscal";
+        IsSubSucursal = tab == "sucursal";
+        IsSubRedes = tab == "redes";
     }
 
     public async Task LoadAsync()
@@ -182,8 +183,18 @@ public partial class EmpresaSettingsViewModel : ObservableObject
             if (d.TryGetValue("EmpresaInstagram", out var ig)) EmpresaInstagram = ig;
             if (d.TryGetValue("EmpresaMensajeBienvenidaTicket", out var mb)) EmpresaMensajeBienvenidaTicket = mb;
             if (d.TryGetValue("EmpresaQrRedesUrl", out var qr)) EmpresaQrRedesUrl = qr;
-            if (d.TryGetValue("FacturamaApiUser", out var fu)) FacturamaApiUser = fu;
-            if (d.TryGetValue("FacturamaApiPassword", out var fp)) FacturamaApiPassword = fp;
+            FacturamaApiUser = _credentialStore.Read("FacturamaApiUser") ?? string.Empty;
+            FacturamaApiPassword = _credentialStore.Read("FacturamaApiPassword") ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(FacturamaApiUser) && d.TryGetValue("FacturamaApiUser", out var fu) && !string.IsNullOrWhiteSpace(fu))
+            {
+                _credentialStore.Write("FacturamaApiUser", fu); FacturamaApiUser = fu;
+                await _settingsService.SetAsync("FacturamaApiUser", string.Empty);
+            }
+            if (string.IsNullOrWhiteSpace(FacturamaApiPassword) && d.TryGetValue("FacturamaApiPassword", out var fp) && !string.IsNullOrWhiteSpace(fp))
+            {
+                _credentialStore.Write("FacturamaApiPassword", fp); FacturamaApiPassword = fp;
+                await _settingsService.SetAsync("FacturamaApiPassword", string.Empty);
+            }
             if (d.TryGetValue("FacturamaAmbiente", out var fa)) FacturamaAmbiente = fa;
         }
         catch (Exception ex) { Log.Error(ex, "EmpresaSettingsViewModel: error loading"); }
@@ -223,17 +234,12 @@ public partial class EmpresaSettingsViewModel : ObservableObject
             await _settingsService.SetAsync("EmpresaInstagram", EmpresaInstagram);
             await _settingsService.SetAsync("EmpresaMensajeBienvenidaTicket", EmpresaMensajeBienvenidaTicket);
             await _settingsService.SetAsync("EmpresaQrRedesUrl", EmpresaQrRedesUrl);
-            await _settingsService.SetAsync("FacturamaApiUser", FacturamaApiUser);
-            await _settingsService.SetAsync("FacturamaApiPassword", FacturamaApiPassword);
+            if (!string.IsNullOrWhiteSpace(FacturamaApiUser)) _credentialStore.Write("FacturamaApiUser", FacturamaApiUser);
+            if (!string.IsNullOrWhiteSpace(FacturamaApiPassword)) _credentialStore.Write("FacturamaApiPassword", FacturamaApiPassword);
+            await _settingsService.SetAsync("FacturamaApiUser", string.Empty);
+            await _settingsService.SetAsync("FacturamaApiPassword", string.Empty);
             await _settingsService.SetAsync("FacturamaAmbiente", FacturamaAmbiente);
 
-            // Ping hub
-            var deviceReg = new DeviceRegistrationService(_settingsService);
-            _ = deviceReg.PingServerAsync(new BusinessProfile
-            {
-                BusinessName = EmpresaNombreComercial,
-                Email = string.IsNullOrWhiteSpace(EmpresaEmailContacto) ? "contacto@empresa.com" : EmpresaEmailContacto
-            });
             FeedbackMessage = "¡Datos de empresa guardados correctamente!";
         }
         catch (Exception ex) { Log.Error(ex, "EmpresaSettingsViewModel: error saving"); }

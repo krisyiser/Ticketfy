@@ -9,6 +9,7 @@ using Ticketfy.Data.Entities;
 using Ticketfy.Core.Enums;
 using Ticketfy.Services.Interfaces;
 using Serilog;
+using Ticketfy.Core.Security;
 
 namespace Ticketfy.Core.Services;
 
@@ -67,7 +68,7 @@ public class UserRolePermissionEngine : IUserRolePermissionEngine
             Username = entity.Username,
             Role = systemRole,
             RoleString = roleStr,
-            Pin4Digits = string.IsNullOrEmpty(entity.PinCode) ? "1234" : entity.PinCode,
+            Pin4Digits = string.Empty,
             IsActive = entity.IsActive
         };
     }
@@ -84,17 +85,15 @@ public class UserRolePermissionEngine : IUserRolePermissionEngine
             Username = dto.Username,
             Role = systemRole,
             RoleString = roleStr,
-            Pin4Digits = string.IsNullOrEmpty(pinCode) ? "1234" : pinCode,
+            Pin4Digits = string.Empty,
             IsActive = dto.IsActive
         };
     }
 
     public async Task<bool> HasPermissionAsync(string roleName, string permissionKey)
     {
+        if (!PermissionCatalog.IsKnown(permissionKey)) return false;
         string normRole = NormalizeRoleName(roleName);
-
-        // Administrator always has full permission
-        if (normRole is "ADMINISTRADOR") return true;
 
         var perms = await GetRolePermissionsAsync(normRole);
         if (perms.TryGetValue(permissionKey, out bool isGranted))
@@ -102,13 +101,7 @@ public class UserRolePermissionEngine : IUserRolePermissionEngine
             return isGranted;
         }
 
-        // Default fallbacks if no custom permissions configured
-        return normRole switch
-        {
-            "GERENTE" => true,
-            "SUPERVISOR" => permissionKey.StartsWith("pos.") || permissionKey.StartsWith("cash."),
-            _ => permissionKey is "pos.checkout" or "pos.apply_points" or "inventory.view" or "customers.view"
-        };
+        return PermissionCatalog.IsGrantedByDefault(normRole, permissionKey);
     }
 
     public async Task<Dictionary<string, bool>> GetRolePermissionsAsync(string roleName)

@@ -104,8 +104,8 @@ public partial class SettingsViewModel
     {
         IsSubEmpresaGenerales = tab == "generales";
         IsSubEmpresaIdentidad = tab == "identidad";
-        IsSubEmpresaFiscal    = tab == "fiscal";
-        IsSubEmpresaSucursal  = tab == "sucursal";
-        IsSubEmpresaRedes     = tab == "redes";
+        IsSubEmpresaFiscal = tab == "fiscal";
+        IsSubEmpresaSucursal = tab == "sucursal";
+        IsSubEmpresaRedes = tab == "redes";
     }
 }

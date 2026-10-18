@@ -2,7 +2,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Ticketfy.Core.Models.Settings;
 using Ticketfy.Services.Interfaces;
-using Ticketfy.Services.Hardware;
 using Serilog;
 using System;
 using System.IO;
@@ -18,14 +17,16 @@ namespace Ticketfy.ViewModels.Settings;
 public partial class SeguridadSettingsViewModel : ObservableObject
 {
     private readonly ISettingsService? _settingsService;
+    private readonly IBackupService _backupService;
 
     [ObservableProperty] private AppSettings _state = new();
     [ObservableProperty] private string _feedbackMessage = string.Empty;
     [ObservableProperty] private bool _isExecutingBackup = false;
 
-    public SeguridadSettingsViewModel(ISettingsService? settingsService = null)
+    public SeguridadSettingsViewModel(ISettingsService? settingsService = null, IBackupService? backupService = null)
     {
         _settingsService = settingsService;
+        _backupService = backupService ?? new Ticketfy.Services.Implementations.BackupService();
         if (_settingsService != null) _ = LoadAsync();
     }
 
@@ -64,7 +65,7 @@ public partial class SeguridadSettingsViewModel : ObservableObject
         FeedbackMessage = "Generando copia de seguridad de la base de datos...";
         try
         {
-            string? path = await BackupService.CreateBackupAsync();
+            string path = await _backupService.CreateBackupAsync();
             if (!string.IsNullOrEmpty(path))
             {
                 FeedbackMessage = $"¡Copia de seguridad respaldada con éxito en:\n{path}";

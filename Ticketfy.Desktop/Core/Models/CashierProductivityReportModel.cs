@@ -9,9 +9,9 @@ public class CashierProductivityReportModel
     public string Role { get; set; } = string.Empty;
     public double TotalHoursWorked { get; set; }
     public int TotalTicketsProcessed { get; set; }
-    public double GrossSales { get; set; }
-    public double AverageTicketValue { get; set; }
-    public double TrueSalesPerHour { get; set; }
+    public decimal GrossSales { get; set; }
+    public decimal AverageTicketValue { get; set; }
+    public decimal TrueSalesPerHour { get; set; }
     public double TicketsPerHour { get; set; }
-    public double EstimatedCommission { get; set; }
+    public decimal EstimatedCommission { get; set; }
 }

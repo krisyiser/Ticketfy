@@ -4,7 +4,6 @@ using System;
 using System.Threading.Tasks;
 using Ticketfy.Services.Interfaces;
 using Ticketfy.ViewModels.Base;
-using Ticketfy.Services.Implementations;
 
 namespace Ticketfy.ViewModels;
 
@@ -18,7 +17,7 @@ public partial class SetupBusinessDataViewModel : ValidatableViewModelBase
     [ObservableProperty] private string _email = string.Empty;
     [ObservableProperty] private string _phone = string.Empty;
     [ObservableProperty] private string _address = string.Empty;
-    
+
     [ObservableProperty] private string _errorMessage = string.Empty;
 
     public SetupBusinessDataViewModel(ISettingsService settingsService, Action navigateToNextStep, Action? navigateToPreviousStep = null)
@@ -75,7 +74,7 @@ public partial class SetupBusinessDataViewModel : ValidatableViewModelBase
     private async Task SaveAndContinueAsync()
     {
         ErrorMessage = string.Empty;
-        
+
         if (string.IsNullOrWhiteSpace(BusinessName) || string.IsNullOrWhiteSpace(Phone))
         {
             ErrorMessage = "El Nombre del Negocio y el Teléfono son obligatorios.";
@@ -111,14 +110,6 @@ public partial class SetupBusinessDataViewModel : ValidatableViewModelBase
             appSettings.Company.Email = Email ?? string.Empty;
             appSettings.Company.Address = Address ?? string.Empty;
             await _settingsService.SaveAppSettingsAsync(appSettings);
-
-            // Enviar telemetría con datos reales
-            var registrationService = new Ticketfy.Services.Implementations.DeviceRegistrationService(_settingsService, new Ticketfy.Core.Services.SessionManager());
-            await registrationService.PingServerAsync(new Ticketfy.Services.Implementations.BusinessProfile 
-            { 
-                BusinessName = BusinessName,
-                Email = Email ?? string.Empty
-            });
 
             _navigateToNextStep();
         }

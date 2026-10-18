@@ -5,5 +5,5 @@ namespace Ticketfy.Services.Interfaces;
 
 public interface IPrintDispatcherService
 {
-    Task DispatchSaleDocumentsAsync(SaleDto sale);
+    Task DispatchSaleDocumentsAsync(SaleDto sale, bool printReceipt = true);
 }

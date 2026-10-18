@@ -5,6 +5,7 @@ using Serilog;
 using System;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
+using Ticketfy.Core.Hardware;
 
 namespace Ticketfy.ViewModels.Settings;
 
@@ -17,6 +18,7 @@ public partial class HardwareSettingsViewModel : ObservableObject
     private readonly ISettingsService? _settingsService;
 
     [ObservableProperty] private AppSettings _state = new();
+    [ObservableProperty] private string _validationMessage = string.Empty;
 
     public ObservableCollection<string> PaperWidthOptions { get; } = [
         "80mm (Estándar POS)", "58mm (Térmica Mini)", "Carta / A4 (PDF Fiscal)"
@@ -46,7 +48,18 @@ public partial class HardwareSettingsViewModel : ObservableObject
         if (_settingsService == null) return;
         try
         {
+            if (!HardwareCompatibility.TryValidatePrinterTarget(State.Hardware.PrinterPort, out string error))
+            {
+                ValidationMessage = error;
+                return;
+            }
+            if (State.Hardware.CashDrawerPin is not (0 or 1))
+            {
+                ValidationMessage = "El pin del cajón debe ser 0 (pin 2) o 1 (pin 5).";
+                return;
+            }
             await _settingsService.SaveAppSettingsAsync(State);
+            ValidationMessage = string.Empty;
         }
         catch (Exception ex)
         {

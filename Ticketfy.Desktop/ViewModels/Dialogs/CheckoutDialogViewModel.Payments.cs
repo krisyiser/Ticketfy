@@ -18,7 +18,7 @@ public partial class CheckoutDialogViewModel
     [RelayCommand]
     private void AddTender(string method)
     {
-        double amountToAdd = RemainingBalance > 0 ? RemainingBalance : ReceivedAmount;
+        decimal amountToAdd = RemainingBalance > 0 ? RemainingBalance : ReceivedAmount;
         if (amountToAdd <= 0) return;
 
         AppliedTenders.Add(new TenderEntryModel
@@ -43,7 +43,7 @@ public partial class CheckoutDialogViewModel
     private void RedeemLoyaltyPoints()
     {
         if (SelectedCustomer == null || CustomerPointsBalance <= 0) return;
-        double amountToCover = Math.Min(RemainingBalance, CustomerPointsBalance);
+        decimal amountToCover = Math.Min(RemainingBalance, (decimal)CustomerPointsBalance);
         if (amountToCover <= 0) return;
 
         AppliedTenders.Add(new TenderEntryModel
@@ -53,7 +53,7 @@ public partial class CheckoutDialogViewModel
             ReferenceOrFolio = $"Canje: {amountToCover:N0} pts"
         });
 
-        CustomerPointsBalance -= amountToCover;
+        CustomerPointsBalance -= (double)amountToCover;
         NotifyTenderChanges();
     }
 
@@ -92,8 +92,8 @@ public partial class CheckoutDialogViewModel
             return;
         }
 
-        double available = (double)balance;
-        double applied = Math.Min(TotalToPay, available);
+        decimal available = balance;
+        decimal applied = Math.Min(TotalToPay, available);
         ReceivedAmount = applied;
         ErrorMessage = $"Monedero validado. Saldo disponible: ${available:F2} (Aplicado: ${applied:F2})";
     }
@@ -101,6 +101,8 @@ public partial class CheckoutDialogViewModel
     [RelayCommand(CanExecute = nameof(CanConfirmPayment))]
     private async Task ConfirmPaymentAsync()
     {
+        bool checkoutStarted = false;
+        bool paymentAuthorized = false;
         try
         {
             IsProcessing = true;
@@ -117,11 +119,11 @@ public partial class CheckoutDialogViewModel
                 return;
             }
 
-            double finalPaid = PaymentMethod == "Mixto" ? (double)(CashAmount + CardAmount + WalletAmount) : PaidAmount;
+            decimal finalPaid = PaymentMethod == "Mixto" ? CashAmount + CardAmount + WalletAmount : PaidAmount;
 
             if (PaymentMethod == "Mixto")
             {
-                if (finalPaid < (double)TotalBill)
+                if (finalPaid < TotalBill)
                 {
                     ErrorMessage = "El monto pagado es insuficiente.";
                     return;
@@ -133,49 +135,30 @@ public partial class CheckoutDialogViewModel
                 return;
             }
 
-            if (PaymentMethod == "Monedero / Tarjeta de Regalo" && _giftcardService != null)
+            if (PaymentMethod == "Monedero / Tarjeta de Regalo")
             {
-                if (string.IsNullOrWhiteSpace(GiftcardNumber))
+                if (_giftcardService == null || string.IsNullOrWhiteSpace(GiftcardNumber))
                 {
                     ErrorMessage = "Ingrese el número de folio de la Tarjeta de Regalo.";
                     return;
                 }
 
-                try
+                var validation = await _giftcardService.ValidateCardAsync(GiftcardNumber.Trim());
+                if (!validation.IsValid || validation.Balance < TotalToPay)
                 {
-                    await _giftcardService.RedeemBalanceAsync(GiftcardNumber.Trim(), (decimal)Math.Min(TotalToPay, PaidAmount));
-                }
-                catch (Exception ex)
-                {
-                    ErrorMessage = ex.Message;
+                    ErrorMessage = validation.IsValid
+                        ? $"Saldo insuficiente en el monedero. Disponible: ${validation.Balance:N2}."
+                        : validation.Error;
                     return;
                 }
-            }
-
-            if (PaymentMethod == "Tarjeta Débito/Crédito" || PaymentMethod == "Tarjeta")
-            {
-                IsWaitingForTerminal = true;
-                TerminalStatusMessage = "Por favor, pase la tarjeta por la terminal...";
-                _paymentCts = new CancellationTokenSource();
-
-                string referenceId = Guid.NewGuid().ToString("N");
-
-                var terminalResult = await _terminalService.ProcessPaymentAsync((decimal)TotalToPay, referenceId, _paymentCts.Token);
-                
-                IsWaitingForTerminal = false;
-
-                if (!terminalResult.IsSuccess)
-                {
-                    ErrorMessage = terminalResult.ErrorMessage ?? "Cobro rechazado o cancelado en la terminal.";
-                    return;
-                }
+                finalPaid = TotalToPay;
             }
 
             var snapshots = _cartItems.Select(i => new SaleItemSnapshotDto(
                 ProductId: i.Id,
                 Name: i.Name,
                 UnitPrice: i.UnitPrice,
-                Cost: i.UnitPrice * 0.6,
+                Cost: i.UnitPrice * 0.6m,
                 Quantity: i.Quantity,
                 Unit: i.Unit,
                 Category: i.Category ?? "General",
@@ -189,25 +172,27 @@ public partial class CheckoutDialogViewModel
                 PointsRewarded: i.PointsRewarded
             )).ToList();
 
-            var totalCost = snapshots.Sum(s => s.Cost * s.Quantity);
+            var totalCost = snapshots.Sum(s => s.Cost * (decimal)s.Quantity);
             var profit = TotalToPay - totalCost;
 
-            double cashPortion = 0.0;
-            double cardPortion = 0.0;
+            decimal cashPortion = 0m;
+            decimal cardPortion = 0m;
 
             if (PaymentMethod == "Mixto")
             {
-                cashPortion = (double)CashAmount;
-                cardPortion = (double)CardAmount;
+                // CashAmount is persisted as the portion retained by the drawer,
+                // not the tendered amount. Any change is paid from this portion.
+                cashPortion = Math.Max(0m, CashAmount - ChangeAmount);
+                cardPortion = CardAmount;
             }
             else if (PaymentMethod == "Efectivo" || PaymentMethod == "Cash")
             {
                 cashPortion = TotalToPay;
-                cardPortion = 0.0;
+                cardPortion = 0m;
             }
             else if (PaymentMethod == "Tarjeta Débito/Crédito" || PaymentMethod == "Tarjeta" || PaymentMethod == "Card")
             {
-                cashPortion = 0.0;
+                cashPortion = 0m;
                 cardPortion = TotalToPay;
             }
 
@@ -219,7 +204,7 @@ public partial class CheckoutDialogViewModel
                 TotalCost: totalCost,
                 Profit: profit,
                 PaidAmount: finalPaid,
-                ChangeAmount: (double)ChangeAmount,
+                ChangeAmount: ChangeAmount,
                 PaymentMethod: PaymentMethod,
                 CustomerId: SelectedCustomer?.Id,
                 IsCredit: isCredit,
@@ -227,42 +212,57 @@ public partial class CheckoutDialogViewModel
                 CancelledAt: null,
                 EstadoFiscal: RequiresInvoice ? "TIMBRADO CFDI 4.0" : "PENDIENTE",
                 CashAmount: cashPortion,
-                CardAmount: cardPortion
+                CardAmount: cardPortion,
+                OperationId: _checkoutOperationId,
+                GiftcardNumber: PaymentMethod == "Monedero / Tarjeta de Regalo" ? GiftcardNumber.Trim() : null,
+                GiftcardAmount: PaymentMethod == "Monedero / Tarjeta de Regalo" ? TotalToPay : 0m
             );
 
+            FiscalOutboxRequest? fiscalOutbox = null;
             if (RequiresInvoice)
             {
-                IFacturamaService facturamaService;
-                try
+                var (request, validationError) = Checkout.CheckoutInvoiceHandler.BuildInvoiceRequest(
+                    FiscalRfc, FiscalRazonSocial, FiscalUsoCfdi, FiscalRegime, FiscalZipCode, snapshots);
+                if (request is null)
                 {
-                    facturamaService = (App.Current?.Services?.GetService(typeof(IFacturamaService)) as IFacturamaService)
-                                       ?? new Ticketfy.Services.Implementations.FacturamaService(new System.Net.Http.HttpClient());
-                }
-                catch
-                {
-                    facturamaService = new Ticketfy.Services.Implementations.FacturamaService(new System.Net.Http.HttpClient());
-                }
-                var (success, invId, invStatus, estFiscal, errMsg) = await Checkout.CheckoutInvoiceHandler.ProcessInvoiceAsync(
-                    facturamaService, FiscalRfc, FiscalRazonSocial, FiscalUsoCfdi, FiscalRegime, FiscalZipCode, snapshots);
-
-                if (!success && errMsg != null && !errMsg.StartsWith("No se pudo timbrar"))
-                {
-                    ErrorMessage = errMsg;
+                    ErrorMessage = validationError ?? "Datos fiscales inválidos.";
                     IsProcessing = false;
                     return;
                 }
-
-                if (errMsg != null) ErrorMessage = errMsg;
-                saleDto = saleDto with { InvoiceId = invId, InvoiceStatus = invStatus, EstadoFiscal = estFiscal ?? "PENDIENTE" };
+                fiscalOutbox = new FiscalOutboxRequest(request, $"cfdi-issue-{_checkoutOperationId}");
+                saleDto = saleDto with { EstadoFiscal = "EN COLA" };
             }
 
-            var savedSale = await _saleService.SaveAsync(saleDto);
+            await _saleService.BeginCheckoutAsync(saleDto);
+            checkoutStarted = true;
+
+            if (PaymentMethod == "Tarjeta Débito/Crédito" || PaymentMethod == "Tarjeta")
+            {
+                IsWaitingForTerminal = true;
+                TerminalStatusMessage = "Por favor, pase la tarjeta por la terminal...";
+                _paymentCts = new CancellationTokenSource();
+
+                var terminalResult = await _terminalService.ProcessPaymentAsync(TotalToPay, _checkoutOperationId, _paymentCts.Token);
+                IsWaitingForTerminal = false;
+
+                if (!terminalResult.IsSuccess || terminalResult.Data == null)
+                {
+                    ErrorMessage = terminalResult.ErrorMessage ?? "Cobro rechazado o cancelado en la terminal.";
+                    bool requiresReconciliation = await _terminalService.RequiresReconciliationAsync(_checkoutOperationId);
+                    await _saleService.MarkCheckoutFailedAsync(_checkoutOperationId, ErrorMessage, requiresReconciliation);
+                    if (!requiresReconciliation)
+                        _checkoutOperationId = Guid.NewGuid().ToString("N");
+                    return;
+                }
+
+                paymentAuthorized = true;
+                await _saleService.MarkPaymentAuthorizedAsync(_checkoutOperationId, terminalResult.Data.TransactionId);
+            }
+
+            var savedSale = await _saleService.SaveAsync(saleDto, fiscalOutbox);
             Log.Information("Sale saved successfully with ID: {SaleId}", savedSale.Id);
 
-            if (ShouldPrintReceipt)
-            {
-                _ = _printDispatcher.DispatchSaleDocumentsAsync(savedSale);
-            }
+            await _printDispatcher.DispatchSaleDocumentsAsync(savedSale, ShouldPrintReceipt);
 
             if (_onSuccessCallback != null)
             {
@@ -275,6 +275,17 @@ public partial class CheckoutDialogViewModel
         {
             Log.Error(ex, "Error processing payment in CheckoutDialogViewModel");
             ErrorMessage = ex.Message;
+            if (checkoutStarted)
+            {
+                try
+                {
+                    await _saleService.MarkCheckoutFailedAsync(_checkoutOperationId, ex.GetBaseException().Message, paymentAuthorized);
+                }
+                catch (Exception journalError)
+                {
+                    Log.Error(journalError, "Could not update checkout recovery journal for operation {OperationId}", _checkoutOperationId);
+                }
+            }
         }
         finally
         {
@@ -314,9 +325,9 @@ public partial class CheckoutDialogViewModel
             }
         }
 
-        double subtotalBase = TotalToPay;
-        double discountAmount = Math.Round(subtotalBase * (requestedDiscountPercentage / 100.0), 2);
-        TotalToPay = Math.Max(0.0, subtotalBase - discountAmount);
+        decimal subtotalBase = TotalToPay;
+        decimal discountAmount = Math.Round(subtotalBase * ((decimal)requestedDiscountPercentage / 100m), 2);
+        TotalToPay = Math.Max(0m, subtotalBase - discountAmount);
 
         if (auditService != null)
         {

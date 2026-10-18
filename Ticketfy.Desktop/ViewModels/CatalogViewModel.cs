@@ -188,11 +188,11 @@ public partial class CatalogViewModel : ObservableObject
         {
             FeedbackMessage = $"Buscando '{barcode}' en OpenFoodFacts...";
             var externalProduct = await _externalCatalogService.FetchProductByBarcodeAsync(barcode);
-            
+
             if (externalProduct != null)
             {
-                OpenProductDialogWithParamsRequested?.Invoke(new Ticketfy.ViewModels.Dialogs.ProductDialogParameters 
-                { 
+                OpenProductDialogWithParamsRequested?.Invoke(new Ticketfy.ViewModels.Dialogs.ProductDialogParameters
+                {
                     IsEditMode = false,
                     PreFilledData = externalProduct,
                     ShowAutoFillBanner = true
@@ -200,8 +200,8 @@ public partial class CatalogViewModel : ObservableObject
             }
             else
             {
-                OpenProductDialogWithParamsRequested?.Invoke(new Ticketfy.ViewModels.Dialogs.ProductDialogParameters 
-                { 
+                OpenProductDialogWithParamsRequested?.Invoke(new Ticketfy.ViewModels.Dialogs.ProductDialogParameters
+                {
                     IsEditMode = false,
                     PreFilledBarcode = barcode
                 });

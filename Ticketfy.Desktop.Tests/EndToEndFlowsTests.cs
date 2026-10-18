@@ -117,8 +117,8 @@ public sealed class EndToEndFlowsTests : IDisposable
         var fetchedProduct = await ProductService.GetByBarcodeAsync("7501234567890");
         Assert.NotNull(fetchedProduct);
         Assert.Equal("Refresco de Cola 600ml", fetchedProduct.Name);
-        Assert.Equal(12.50, fetchedProduct.Cost);
-        Assert.Equal(20.00, fetchedProduct.Price);
+        Assert.Equal(12.50m, fetchedProduct.Cost);
+        Assert.Equal(20.00m, fetchedProduct.Price);
         Assert.Equal(50.0, fetchedProduct.Stock);
         Assert.Equal("SUPP-02", fetchedProduct.DefaultSupplierId);
         Assert.True(fetchedProduct.IsAvailable);
@@ -169,9 +169,9 @@ public sealed class EndToEndFlowsTests : IDisposable
 
         // 4. Verification
         Assert.NotNull(savedSale);
-        Assert.Equal(30.00, savedSale.Total);
-        Assert.Equal(14.00, savedSale.Profit);
-        Assert.Equal(20.00, savedSale.ChangeAmount);
+        Assert.Equal(30.00m, savedSale.Total);
+        Assert.Equal(14.00m, savedSale.Profit);
+        Assert.Equal(20.00m, savedSale.ChangeAmount);
 
         // Verify stock deducted (30 - 2 = 28)
         var updatedProd = await ProductService.GetByIdAsync("PROD-SIMPLE-01");
@@ -227,8 +227,8 @@ public sealed class EndToEndFlowsTests : IDisposable
         // 4. Verify Payment Split persistence
         Assert.NotNull(savedSale);
         Assert.Equal("Mixto", savedSale.PaymentMethod);
-        Assert.Equal(100.00, savedSale.CashAmount);
-        Assert.Equal(200.00, savedSale.CardAmount);
+        Assert.Equal(100.00m, savedSale.CashAmount);
+        Assert.Equal(200.00m, savedSale.CardAmount);
 
         // Stock deduction check (15 - 2 = 13)
         var updatedProd = await ProductService.GetByIdAsync("PROD-MIXED-01");
@@ -277,27 +277,27 @@ public sealed class EndToEndFlowsTests : IDisposable
         // 3. Verify Customer Debt = $700, Available Credit = $1,300
         var custAfterSale = await CustomerService.GetByIdAsync("CUST-CREDIT-01");
         Assert.NotNull(custAfterSale);
-        Assert.Equal(700.00, custAfterSale.Debt);
-        Assert.Equal(1300.00, custAfterSale.AvailableCredit);
+        Assert.Equal(700.00m, custAfterSale.Debt);
+        Assert.Equal(1300.00m, custAfterSale.AvailableCredit);
 
         // 4. Process Customer Payment (Abono de $400)
-        var paymentResult = await CustomerService.RegisterCustomerPaymentAsync("CUST-CREDIT-01", 400.00, "Efectivo", "Abono a cuenta folio SALE-CREDIT-DONJOSE");
+        var paymentResult = await CustomerService.RegisterCustomerPaymentAsync("CUST-CREDIT-01", 400.00m, "Efectivo", "Abono a cuenta folio SALE-CREDIT-DONJOSE");
         Assert.True(paymentResult);
 
         // 5. Verify Debt reduced to $300, Available Credit restored to $1,700
         var custAfterPayment = await CustomerService.GetByIdAsync("CUST-CREDIT-01");
         Assert.NotNull(custAfterPayment);
-        Assert.Equal(300.00, custAfterPayment.Debt);
-        Assert.Equal(1700.00, custAfterPayment.AvailableCredit);
+        Assert.Equal(300.00m, custAfterPayment.Debt);
+        Assert.Equal(1700.00m, custAfterPayment.AvailableCredit);
     }
 
     [Fact]
     public async Task Flow6_FullShiftLifecycle_OpenRegisterSalesAndFinalZCutClosure()
     {
         // 1. Open shift with $500.00 initial float
-        var activeShift = await ShiftService.OpenAsync(500.00);
+        var activeShift = await ShiftService.OpenAsync(500.00m);
         Assert.NotNull(activeShift);
-        Assert.Equal(500.00, activeShift.OpeningBalance);
+        Assert.Equal(500.00m, activeShift.OpeningBalance);
         Assert.Equal(1, activeShift.IsOpen);
 
         // 2. Perform Cash Sale of $250.00
@@ -326,12 +326,12 @@ public sealed class EndToEndFlowsTests : IDisposable
 
         // 3. Expected Cash in Drawer = $500 (Float) + $250 (Cash Sales) = $750.00
         // Execute Final Shift Closure (Z-Cut) with exact $750.00 count
-        var closedShift = await ShiftService.CloseAsync(activeShift.Id, 750.00);
+        var closedShift = await ShiftService.CloseAsync(activeShift.Id, 750.00m);
 
         Assert.Equal(0, closedShift.IsOpen);
-        Assert.Equal(750.00, closedShift.ExpectedBalance);
-        Assert.Equal(750.00, closedShift.ActualBalance);
-        Assert.Equal(0.0, closedShift.Diff);
+        Assert.Equal(750.00m, closedShift.ExpectedBalance);
+        Assert.Equal(750.00m, closedShift.ActualBalance);
+        Assert.Equal(0m, closedShift.Diff);
 
         // Verify active shift query returns null now that shift is closed
         var activeNow = await ShiftService.GetActiveAsync();

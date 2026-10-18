@@ -30,7 +30,7 @@ public sealed class CustomerService : ICustomerService
             .ToListAsync();
 
         return list.Select(c => new CustomerDto(
-            c.Id, c.Name, c.Phone ?? "", c.Email ?? "", c.Rfc ?? "", c.CreditLimit, c.Debt, c.PuntosSaldo, 0.0, c.CustomerCode ?? ""
+            c.Id, c.Name, c.Phone ?? "", c.Email ?? "", c.Rfc ?? "", c.CreditLimit, c.Debt, c.PuntosSaldo, 0m, c.CustomerCode ?? ""
         )).ToList();
     }
 
@@ -38,7 +38,7 @@ public sealed class CustomerService : ICustomerService
     {
         var c = await _ctx.Customers.FindAsync(id);
         return c is null ? null : new CustomerDto(
-            c.Id, c.Name, c.Phone ?? "", c.Email ?? "", c.Rfc ?? "", c.CreditLimit, c.Debt, c.PuntosSaldo, 0.0, c.CustomerCode ?? ""
+            c.Id, c.Name, c.Phone ?? "", c.Email ?? "", c.Rfc ?? "", c.CreditLimit, c.Debt, c.PuntosSaldo, 0m, c.CustomerCode ?? ""
         );
     }
 
@@ -76,37 +76,59 @@ public sealed class CustomerService : ICustomerService
         }
     }
 
-    public async Task UpdateDebtAsync(string customerId, double newDebt)
+    public async Task UpdateDebtAsync(string customerId, decimal newDebt)
     {
         var c = await _ctx.Customers.FindAsync(customerId);
         if (c is not null)
         {
-            c.Debt = Math.Max(0.0, Math.Round(newDebt, 2));
+            c.Debt = Math.Max(0m, Math.Round(newDebt, 2));
             await _ctx.SaveChangesAsync();
         }
     }
 
     public async Task AddPaymentAsync(CustomerPaymentDto payment)
     {
-        await RegisterCustomerPaymentAsync(payment.CustomerId, payment.Amount, payment.Method ?? "Efectivo", payment.Notes ?? "");
+        await RegisterCustomerPaymentAsync(payment.CustomerId, payment.Amount, payment.Method ?? "Efectivo", payment.Notes ?? "", payment.Id);
     }
 
-    public async Task<bool> RegisterCustomerPaymentAsync(string customerId, double amount, string method, string notes)
+    public async Task<bool> RegisterCustomerPaymentAsync(string customerId, decimal amount, string method, string notes, string? operationId = null)
     {
         if (amount <= 0)
             throw new InvalidOperationException("El abono debe ser mayor a $0.00.");
 
+        operationId = string.IsNullOrWhiteSpace(operationId) ? Guid.NewGuid().ToString("N") : operationId.Trim();
         await using var transaction = await _ctx.Database.BeginTransactionAsync();
         try
         {
-            var customer = await _ctx.Customers.FindAsync(customerId)
+            if (await _ctx.CustomerPayments.AsNoTracking().AnyAsync(p => p.OperationId == operationId))
+            {
+                await transaction.RollbackAsync();
+                return true;
+            }
+
+            // This service can be long-lived in the UI. Detach an older cached
+            // customer so a raw atomic balance update cannot later be overwritten
+            // by stale change-tracker state.
+            var trackedCustomer = _ctx.Customers.Local.FirstOrDefault(c => c.Id == customerId);
+            if (trackedCustomer is not null)
+                _ctx.Entry(trackedCustomer).State = EntityState.Detached;
+
+            var customer = await _ctx.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId)
                 ?? throw new InvalidOperationException("Cliente no encontrado.");
 
             var roundedAmount = Math.Round(amount, 2);
+            long amountCents = Convert.ToInt64(roundedAmount * 100m);
 
-            // 1. DEDUCT CUSTOMER DEBT
-            customer.Debt = Math.Max(0.0, Math.Round(customer.Debt - roundedAmount, 2));
-            _ctx.Customers.Update(customer);
+            // 1. DEDUCT CUSTOMER DEBT ATOMICALLY. The database stores monetary
+            // values as integer cents, so distinct concurrent payments cannot
+            // overwrite each other's balance update.
+            int debtRows = await _ctx.Database.ExecuteSqlInterpolatedAsync($@"
+                UPDATE customers
+                SET debt = debt - {amountCents}
+                WHERE id = {customerId}
+                  AND debt >= {amountCents};");
+            if (debtRows != 1)
+                throw new InvalidOperationException("El abono excede la deuda actual o la deuda cambió por otra operación.");
 
             // 2. IDENTIFY ACTIVE CASHIER SHIFT
             var activeShift = await _ctx.Shifts.FirstOrDefaultAsync(s => s.IsOpen == 1);
@@ -115,12 +137,14 @@ public sealed class CustomerService : ICustomerService
             var paymentRecord = new CustomerPaymentEntity
             {
                 Id = IdGenerator.NewPaymentId(),
+                OperationId = operationId,
                 CustomerId = customerId,
                 ShiftId = activeShift?.Id,
                 Date = DateTimeOffset.Now.ToString("o"),
                 Amount = roundedAmount,
                 Method = method,
-                Notes = notes
+                Notes = notes,
+                Status = Ticketfy.Core.Enums.PaymentStatus.Completed
             };
             _ctx.CustomerPayments.Add(paymentRecord);
 
@@ -129,16 +153,29 @@ public sealed class CustomerService : ICustomerService
 
             if (activeShift != null && isCash)
             {
+                activeShift.ExpectedBalance = Math.Round(activeShift.ExpectedBalance + roundedAmount, 2);
                 var cashMovement = new ShiftMovementEntity
                 {
                     ShiftId = activeShift.Id,
                     MovementType = Ticketfy.Core.Enums.MovementType.AbonoCliente,
                     Amount = roundedAmount,
+                    ReferenceId = paymentRecord.Id,
                     Description = $"Abono a deuda - Cliente: {customer.Name}",
                     Timestamp = DateTimeOffset.Now.ToString("o")
                 };
                 _ctx.ShiftMovements.Add(cashMovement);
             }
+
+            _ctx.TransactionJournal.Add(new TransactionJournalEntryEntity
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                OperationId = operationId,
+                EventType = "CUSTOMER_PAYMENT_COMPLETED",
+                EntityId = paymentRecord.Id,
+                Amount = roundedAmount,
+                Details = $"Cliente={customerId}; Metodo={method}",
+                CreatedAtUtc = DateTimeOffset.UtcNow.ToString("O")
+            });
 
             await _ctx.SaveChangesAsync();
             await transaction.CommitAsync();

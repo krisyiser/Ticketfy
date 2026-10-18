@@ -82,11 +82,11 @@ public partial class PersonalizacionSettingsViewModel : ObservableObject
     [RelayCommand]
     public void SelectSubTab(string subTab)
     {
-        IsSubTemaTab        = subTab == "tema";
-        IsSubColoresTab     = subTab == "colores";
-        IsSubTipografiaTab  = subTab == "tipografia";
+        IsSubTemaTab = subTab == "tema";
+        IsSubColoresTab = subTab == "colores";
+        IsSubTipografiaTab = subTab == "tipografia";
         IsSubDisposicionTab = subTab == "disposicion";
-        IsSubBotonesTab     = subTab == "botones";
+        IsSubBotonesTab = subTab == "botones";
         IsSubAnimacionesTab = subTab == "animaciones";
     }
 

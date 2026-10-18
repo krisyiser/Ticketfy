@@ -60,8 +60,8 @@ public partial class CustomersViewModel : ObservableObject
 
         foreach (var c in _allCustomers)
         {
-            if (string.IsNullOrWhiteSpace(q) || 
-                c.Name.ToLowerInvariant().Contains(q) || 
+            if (string.IsNullOrWhiteSpace(q) ||
+                c.Name.ToLowerInvariant().Contains(q) ||
                 (!string.IsNullOrEmpty(c.Phone) && c.Phone.Contains(q)) ||
                 (!string.IsNullOrEmpty(c.Rfc) && c.Rfc.ToLowerInvariant().Contains(q)) ||
                 (!string.IsNullOrEmpty(c.Email) && c.Email.ToLowerInvariant().Contains(q)) ||

@@ -17,7 +17,7 @@
                     </Border>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="12,0,0,0">
                         <TextBlock Text="Acerca de TICKETFY! Enterprise &amp; Sistema de Actualizaciones" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
-                        <TextBlock Text="Información del sistema, licencia local y estado del motor de actualizaciones automáticas (OTA)" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
+                        <TextBlock Text="Información del sistema, licencia local y modo de desarrollo en este equipo" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
                     </StackPanel>
                 </Grid>
             </Border>
@@ -48,15 +48,15 @@
             <!-- 2. MOTOR DE ACTUALIZACIONES AUTOMÁTICAS (OTA) -->
             <Border Padding="16" Background="{DynamicResource BgSecondaryBrush}" CornerRadius="{DynamicResource AppCornerRadius}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                 <StackPanel Spacing="14">
-                    <TextBlock Text="2. Actualizaciones de Software en Tiempo Real" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
-                    <TextBlock Text="Verifique si hay nuevas versiones del software en el servidor oficial (valcore.cloud) e instálelas sin perder datos locales." FontSize="11" Foreground="{DynamicResource TextMutedBrush}" TextWrapping="Wrap" />
+                    <TextBlock Text="2. Actualizaciones remotas en mantenimiento" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <TextBlock Text="Las consultas y descargas remotas están deshabilitadas. Las compilaciones y pruebas permanecen en este equipo." FontSize="11" Foreground="{DynamicResource TextMutedBrush}" TextWrapping="Wrap" />
 
                     <!-- Search Button -->
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Button Command="{Binding CheckForUpdatesCommand}" IsEnabled="{Binding !IsChecking}" Classes="primary-action" Padding="16,10" CornerRadius="{DynamicResource AppCornerRadius}" Cursor="Hand">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <mi:MaterialIcon Kind="Update" Width="18" Height="18" />
-                                <TextBlock Text="BUSCAR ACTUALIZACIONES AHORA" FontWeight="Bold" FontSize="12" VerticalAlignment="Center" />
+                                <TextBlock Text="COMPROBAR ESTADO LOCAL" FontWeight="Bold" FontSize="12" VerticalAlignment="Center" />
                             </StackPanel>
                         </Button>
 

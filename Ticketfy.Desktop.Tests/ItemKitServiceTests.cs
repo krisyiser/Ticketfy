@@ -49,7 +49,7 @@ public sealed class ItemKitServiceTests : IDisposable
             Guid.NewGuid().ToString(),
             "4536434354",
             "paquetecagues",
-            40.0,
+            40m,
             "Incluye café y dona",
             items
         );
@@ -59,7 +59,7 @@ public sealed class ItemKitServiceTests : IDisposable
         var savedProductEntity = await _context.Products.FirstOrDefaultAsync(p => p.Barcode == "4536434354");
         Assert.NotNull(savedProductEntity);
         Assert.Equal("paquetecagues", savedProductEntity.Name);
-        Assert.Equal(40.0, savedProductEntity.Price);
+        Assert.Equal(40m, savedProductEntity.Price);
         Assert.Equal("Promociones", savedProductEntity.Category);
         Assert.True(savedProductEntity.IsKit);
     }

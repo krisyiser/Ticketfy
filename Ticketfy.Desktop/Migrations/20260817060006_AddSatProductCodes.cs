@@ -11,6 +11,15 @@ namespace Ticketfy.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // Consolidates columns historically created by startup SQL patches.
+            migrationBuilder.AddColumn<string>(name: "role_string", table: "usuarios", type: "TEXT", nullable: false, defaultValue: "");
+            migrationBuilder.AddColumn<double>(name: "cardAmount", table: "sales", type: "REAL", nullable: false, defaultValue: 0d);
+            migrationBuilder.AddColumn<double>(name: "cashAmount", table: "sales", type: "REAL", nullable: false, defaultValue: 0d);
+            migrationBuilder.AddColumn<bool>(name: "is_bulk", table: "products", type: "INTEGER", nullable: false, defaultValue: false);
+            migrationBuilder.AddColumn<string>(name: "type", table: "cashups", type: "TEXT", nullable: false, defaultValue: "Final");
+            migrationBuilder.AddColumn<string>(name: "cashier_name", table: "cashups", type: "TEXT", nullable: false, defaultValue: "Cajero en turno");
+            migrationBuilder.AddColumn<string>(name: "cashier_role", table: "cashups", type: "TEXT", nullable: false, defaultValue: "CAJERO");
+
             migrationBuilder.DropTable(
                 name: "audit_logs");
 
@@ -152,6 +161,14 @@ namespace Ticketfy.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropColumn(name: "role_string", table: "usuarios");
+            migrationBuilder.DropColumn(name: "cardAmount", table: "sales");
+            migrationBuilder.DropColumn(name: "cashAmount", table: "sales");
+            migrationBuilder.DropColumn(name: "is_bulk", table: "products");
+            migrationBuilder.DropColumn(name: "type", table: "cashups");
+            migrationBuilder.DropColumn(name: "cashier_name", table: "cashups");
+            migrationBuilder.DropColumn(name: "cashier_role", table: "cashups");
+
             migrationBuilder.DropTable(
                 name: "categories");
 

@@ -22,7 +22,7 @@ public partial class PosViewModel : ObservableObject, IDisposable
     public CatalogViewModel Catalog { get; }
     public CartViewModel Cart { get; }
     public PosHeaderViewModel Header { get; }
-    
+
     private readonly CartStateStore _cartStateStore;
     private readonly IPredictiveIntelligenceService? _predictiveService;
 
@@ -63,7 +63,7 @@ public partial class PosViewModel : ObservableObject, IDisposable
     {
         _predictiveService = predictiveService;
         _cartStateStore = new CartStateStore();
-        
+
         Catalog = new CatalogViewModel(productService, externalCatalogService!, kitService, _cartStateStore);
         Cart = new CartViewModel(_cartStateStore, null!, customerService!); // Ideally SaleService injected
         Header = new PosHeaderViewModel(sessionManager, shiftNoteService, _cartStateStore);
@@ -127,7 +127,7 @@ public partial class PosViewModel : ObservableObject, IDisposable
         if (_predictiveService == null) return;
 
         var cartIds = _cartStateStore.Items.Select(i => i.ProductId).ToList();
-        
+
         // Consulta no bloqueante
         var suggestion = await _predictiveService.GetTopCorrelatedProductAsync(scannedProductId, cartIds);
 
@@ -136,7 +136,7 @@ public partial class PosViewModel : ObservableObject, IDisposable
             _suggestedProduct = suggestion;
             SmartSuggestionText = $"Sugerencia: Ofrece {suggestion.Name} (${suggestion.Price}). ¡Se venden juntos a menudo!";
             IsSuggestionVisible = true;
-            
+
             // Auto-ocultar la sugerencia después de 10 segundos
             await Task.Delay(10000);
             if (_suggestedProduct?.Id == suggestion.Id) // only hide if it hasn't changed

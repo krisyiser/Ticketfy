@@ -25,13 +25,14 @@ public sealed class ShiftService : IShiftService
         return entity is null ? null : MapToDto(entity);
     }
 
-    public async Task<ShiftDto> OpenAsync(double openingBalance)
+    public async Task<ShiftDto> OpenAsync(decimal openingBalance)
     {
         var entity = new ShiftEntity
         {
             Id = IdGenerator.NewShiftId(),
             StartTime = DateTimeOffset.Now.ToString("o"),
             OpeningBalance = openingBalance,
+            ExpectedBalance = openingBalance,
             IsOpen = 1
         };
 
@@ -40,17 +41,17 @@ public sealed class ShiftService : IShiftService
         return MapToDto(entity);
     }
 
-    public async Task<ShiftDto> CloseAsync(string shiftId, double actualBalance)
+    public async Task<ShiftDto> CloseAsync(string shiftId, decimal actualBalance)
     {
         var entity = await _ctx.Shifts.FindAsync(shiftId)
             ?? throw new InvalidOperationException($"Shift {shiftId} not found");
 
         DateTime? shiftStart = DateTime.TryParse(entity.StartTime, out var parsedStart) ? parsedStart : null;
 
-        var allSales = await _ctx.Sales
-            .AsNoTracking()
-            .Where(s => s.IsCancelled == 0)
-            .ToListAsync();
+        // Cash flow keeps the original inflow and its refund as two auditable
+        // movements. Including cancelled/refunded tickets here prevents the
+        // refund from being subtracted a second time at close.
+        var allSales = await _ctx.Sales.AsNoTracking().ToListAsync();
 
         var validSales = allSales
             .Where(s => s.Date.IsInDateRange(shiftStart, null))
@@ -58,9 +59,10 @@ public sealed class ShiftService : IShiftService
 
         var cashSales = validSales
             .Sum(s => s.CashAmount > 0 ? s.CashAmount :
-                (s.PaymentMethod != null && (s.PaymentMethod.Equals("Cash", StringComparison.OrdinalIgnoreCase) || s.PaymentMethod.Equals("Efectivo", StringComparison.OrdinalIgnoreCase)) ? s.Total : 0.0));
+                (s.PaymentMethod != null && (s.PaymentMethod.Equals("Cash", StringComparison.OrdinalIgnoreCase) || s.PaymentMethod.Equals("Efectivo", StringComparison.OrdinalIgnoreCase)) ? s.Total : 0m));
 
         var creditSales = validSales
+            .Where(s => s.IsCancelled == 0)
             .Where(s => s.IsCredit == 1 || (s.PaymentMethod != null && (s.PaymentMethod.Equals("Credit", StringComparison.OrdinalIgnoreCase) || s.PaymentMethod.Equals("Credito", StringComparison.OrdinalIgnoreCase) || s.PaymentMethod.Equals("Crédito", StringComparison.OrdinalIgnoreCase))))
             .Sum(s => s.Total);
 
@@ -94,11 +96,11 @@ public sealed class ShiftService : IShiftService
         entity.TotalCreditSales = creditSales;
         entity.ExpectedBalance = entity.OpeningBalance + cashSales + customerAbonosCash - cashExpenses - cashPurchases - cashReturns - cashWithdrawals;
         entity.ActualBalance = actualBalance;
-        double diff = actualBalance - entity.ExpectedBalance;
+        decimal diff = actualBalance - entity.ExpectedBalance;
         entity.Diff = diff;
         entity.IsOpen = 0;
 
-        if (Math.Abs(diff) > 0.01)
+        if (Math.Abs(diff) > 0.01m)
         {
             _ctx.ShiftMovements.Add(new ShiftMovementEntity
             {

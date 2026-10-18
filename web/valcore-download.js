@@ -17,7 +17,7 @@
       console.warn('Valcore Release Sync: Fallback to direct raw endpoint query', e);
     }
     return {
-      version: '3.1.50',
+      version: '3.1.56',
       downloads: {
         x64: 'https://raw.githubusercontent.com/krisyiser/NextVent/main/releases.json',
         x86: 'https://raw.githubusercontent.com/krisyiser/NextVent/main/releases.json',
@@ -54,7 +54,7 @@
   async function syncValcoreWebsite() {
     const release = await fetchLatestReleaseInfo();
     const arch = await detectWindowsArchitecture();
-    const versionStr = release.version || '3.1.50';
+    const versionStr = release.version || '3.1.56';
 
     const filename = release.downloads && release.downloads[arch] ? release.downloads[arch] : `https://git.valcore/yersi/ticketfy-releases/raw/branch/main/Ticketfy-Setup-v${versionStr}-${arch}.exe`;
     const downloadUrl = filename.startsWith('http') ? filename : `https://git.valcore/yersi/ticketfy-releases/raw/branch/main/${filename}`;

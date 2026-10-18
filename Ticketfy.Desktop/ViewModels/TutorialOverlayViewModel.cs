@@ -117,39 +117,39 @@ public partial class TutorialOverlayViewModel : ObservableObject
         switch (side)
         {
             case TutorialAnchorSide.Right:
-                tLeft  = left + width + TooltipMargin;
-                tTop   = cy - TooltipHeight / 2.0;
+                tLeft = left + width + TooltipMargin;
+                tTop = cy - TooltipHeight / 2.0;
                 arLeft = left + width;
-                arTop  = cy - 8;
-                arRot  = 0;
+                arTop = cy - 8;
+                arRot = 0;
                 break;
             case TutorialAnchorSide.Left:
-                tLeft  = left - TooltipWidth - TooltipMargin;
-                tTop   = cy - TooltipHeight / 2.0;
+                tLeft = left - TooltipWidth - TooltipMargin;
+                tTop = cy - TooltipHeight / 2.0;
                 arLeft = left - TooltipMargin;
-                arTop  = cy - 8;
-                arRot  = 180;
+                arTop = cy - 8;
+                arRot = 180;
                 break;
             case TutorialAnchorSide.Bottom:
-                tLeft  = cx - TooltipWidth / 2.0;
-                tTop   = top + height + TooltipMargin;
+                tLeft = cx - TooltipWidth / 2.0;
+                tTop = top + height + TooltipMargin;
                 arLeft = cx - 7;
-                arTop  = top + height;
-                arRot  = 90;
+                arTop = top + height;
+                arRot = 90;
                 break;
             default: // Top
-                tLeft  = cx - TooltipWidth / 2.0;
-                tTop   = top - TooltipHeight - TooltipMargin;
+                tLeft = cx - TooltipWidth / 2.0;
+                tTop = top - TooltipHeight - TooltipMargin;
                 arLeft = cx - 7;
-                arTop  = top - TooltipMargin;
-                arRot  = 270;
+                arTop = top - TooltipMargin;
+                arRot = 270;
                 break;
         }
 
         TooltipLeft = Math.Clamp(tLeft, 8, Math.Max(8, _panelWidth - TooltipWidth - 8));
-        TooltipTop  = Math.Clamp(tTop,  8, Math.Max(8, _panelHeight - TooltipHeight - 8));
-        ArrowLeft   = arLeft;
-        ArrowTop    = arTop;
+        TooltipTop = Math.Clamp(tTop, 8, Math.Max(8, _panelHeight - TooltipHeight - 8));
+        ArrowLeft = arLeft;
+        ArrowTop = arTop;
         ArrowRotation = arRot;
     }
 

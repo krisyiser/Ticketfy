@@ -1,5 +1,7 @@
 # Ticketfy Desktop POS
 
+Current automated-quality status: [Stage 4 — Automated quality](docs/STAGE_4_AUTOMATED_QUALITY.md).
+
 Ticketfy is a high-performance, industrial-grade Point of Sale (POS) and ERP system built on **Protocol Valcore v4.0**.
 
 ![Valcore Badge](https://img.shields.io/badge/Architecture-Valcore_v4.0-blue?style=flat-square)
@@ -13,6 +15,12 @@ Ticketfy is designed to provide zero-network local resilience, utilizing an offl
 Please refer to the `docs/` folder for comprehensive architectural guidelines:
 - [Architecture & Structure](docs/ARCHITECTURE.md)
 - [Development Guide & Mandates](docs/DEVELOPMENT_GUIDE.md)
+- [Security & Release Operations](docs/SECURITY_AND_RELEASES.md)
+- [Local Development Mode](docs/LOCAL_DEVELOPMENT_MODE.md)
+- [Stage 1: Transactional Core](docs/STAGE_1_TRANSACTIONAL_CORE.md)
+- [Stage 2: Security and Compliance](docs/STAGE_2_SECURITY_COMPLIANCE.md)
+- [Stage 3: Commercial Integrations](docs/STAGE_3_COMMERCIAL_INTEGRATIONS.md)
+- [Stage 4: Automated Quality](docs/STAGE_4_AUTOMATED_QUALITY.md)
 
 ## Requirements
 - .NET 9.0 SDK
@@ -24,24 +32,27 @@ For development:
 dotnet build Ticketfy.Desktop
 ```
 
-For production (Release):
-Use the automated PowerShell script to produce an optimized, single-file native executable.
+For a local release candidate:
+Use the PowerShell script to produce local x64 and x86 artifacts. It does not publish to the server, download site or Forgejo while those systems are in maintenance.
 ```powershell
 ./Ticketfy.Desktop/build_release.ps1
 ```
 
-## Installation & Windows Compatibility Troubleshooting
+For the complete local quality gate (locked restore, format, build, tests,
+critical coverage, dependency audit and deterministic package):
+```powershell
+./eng/invoke-quality-gate.ps1 -LockedRestore -VerifyReproducible
+```
 
-If you encounter the Windows error:
-> **"No se puede ejecutar esta aplicación en el equipo"** / *"This app can't run on your PC"*
+## Current integration status
 
-Follow these steps:
-1. **Automatic Detection via valcore.cloud**:
-   - The official download portal at [valcore.cloud](file:///C:/Users/YERSI/.gemini/antigravity-ide/scratch/NextVent/web/download.html) uses `web/valcore-download.js` to automatically detect if your PC runs 64-bit or 32-bit Windows and serves the matching installer (`Ticketfy-Setup-v3.0.18-x64.exe` vs `Ticketfy-Setup-v3.0.18-x86.exe`).
-2. **Unblock Downloaded File (Mark of the Web)**:
-   - Right-click the downloaded `.exe` installer > select **Properties**.
-   - At the bottom of the *General* tab, check the **Unblock** (*Desbloquear*) checkbox.
-   - Click **Apply** > **OK** and launch the installer again.
+Facturama, device registration, remote license synchronization, automatic updates, the download site and Forgejo publishing are intentionally disabled. The POS core, local database, backups, build and tests remain active on this workstation.
 
 ## Licensing & Security
-This software utilizes `Ticketfy.Keygen` for ECDSA-based cryptographic offline license verification. Hardcoded secrets are explicitly prohibited.
+This software uses RSA-signed JWTs for offline license verification. Hardcoded secrets are explicitly prohibited.
+The private signing key must remain outside this repository. `Ticketfy.Keygen` accepts its path at runtime and emits licenses with validated issuer, audience and expiration claims.
+
+## Release artifacts
+
+Installers, portable ZIPs and NuGet/Velopack packages are generated under
+`Ticketfy.Desktop/Output/Releases`. They stay local and are not committed to this source repository.

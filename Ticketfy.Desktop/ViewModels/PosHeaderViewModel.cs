@@ -65,7 +65,7 @@ public partial class PosHeaderViewModel : ObservableObject
                 OnCashierChanged(_sessionManager.CurrentCashier);
             }
         }
-        
+
         _ = LoadActiveShiftNotesAsync();
     }
 

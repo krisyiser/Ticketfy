@@ -115,9 +115,9 @@ public partial class SettingsViewModel
     [RelayCommand]
     private void SelectInterfazSubTab(string tab)
     {
-        IsSubTema        = tab == "tema";
-        IsSubColores     = tab == "colores";
-        IsSubFuentes     = tab == "fuentes";
+        IsSubTema = tab == "tema";
+        IsSubColores = tab == "colores";
+        IsSubFuentes = tab == "fuentes";
         IsSubDisposicion = tab == "disposicion";
         IsSubComponentes = tab == "componentes";
         IsSubAnimaciones = tab == "animaciones";

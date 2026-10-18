@@ -46,6 +46,8 @@ internal sealed class SpyAuditService : IAuditService
 
     public Task<List<AuditLogEntity>> GetRecentLogsAsync(int limit = 100) =>
         Task.FromResult(CapturedLogs.Take(limit).ToList());
+
+    public Task<bool> VerifyIntegrityAsync() => Task.FromResult(true);
 }
 
 // ── SaleService Tests ────────────────────────────────────────────────────────
@@ -155,7 +157,7 @@ public sealed class SaleServiceTests : IDisposable
         // Verify Customer Debt increased to 50.0
         var updatedCustomer = await CustomerService.GetByIdAsync("CUST-101");
         Assert.NotNull(updatedCustomer);
-        Assert.Equal(50.0, updatedCustomer.Debt);
+        Assert.Equal(50m, updatedCustomer.Debt);
     }
 
     [Fact]
@@ -202,7 +204,7 @@ public sealed class SaleServiceTests : IDisposable
         var custAfterCancel = await CustomerService.GetByIdAsync("CUST-102");
 
         Assert.Equal(10.0, prodAfterCancel!.Stock);
-        Assert.Equal(0.0, custAfterCancel!.Debt);
+        Assert.Equal(0m, custAfterCancel!.Debt);
     }
 
     [Fact]
@@ -211,10 +213,10 @@ public sealed class SaleServiceTests : IDisposable
         // 1. Setup kit product and ingredients
         using (var ctx = CreateContext())
         {
-            var ing1 = new ProductEntity { Id = "ING-01", Barcode = "111", Name = "Ingredient 1", Cost = 2.0, Price = 4.0, Stock = 10.0, Category = "Ing", Unit = "Pza" };
-            var ing2 = new ProductEntity { Id = "ING-02", Barcode = "222", Name = "Ingredient 2", Cost = 3.0, Price = 6.0, Stock = 10.0, Category = "Ing", Unit = "Pza" };
-            var kitProduct = new ProductEntity { Id = "KIT-01", Barcode = "333", Name = "Combo Desayuno", Cost = 5.0, Price = 15.0, Stock = 0.0, Category = "Combo", Unit = "Pza", IsKit = true };
-            
+            var ing1 = new ProductEntity { Id = "ING-01", Barcode = "111", Name = "Ingredient 1", Cost = 2m, Price = 4m, Stock = 10.0, Category = "Ing", Unit = "Pza" };
+            var ing2 = new ProductEntity { Id = "ING-02", Barcode = "222", Name = "Ingredient 2", Cost = 3m, Price = 6m, Stock = 10.0, Category = "Ing", Unit = "Pza" };
+            var kitProduct = new ProductEntity { Id = "KIT-01", Barcode = "333", Name = "Combo Desayuno", Cost = 5m, Price = 15m, Stock = 0.0, Category = "Combo", Unit = "Pza", IsKit = true };
+
             ctx.Products.AddRange(ing1, ing2, kitProduct);
 
             var itemKitEntity = new ItemKitEntity
@@ -223,11 +225,11 @@ public sealed class SaleServiceTests : IDisposable
                 ParentProductId = "KIT-01",
                 KitBarcode = "333",
                 Name = "Combo Desayuno",
-                Price = 15.0
+                Price = 15m
             };
             itemKitEntity.Components.Add(new ItemKitItemEntity { Id = "COMP-1", ItemKitId = "KIT-01-DEF", ProductId = "ING-01", Quantity = 2.0 });
             itemKitEntity.Components.Add(new ItemKitItemEntity { Id = "COMP-2", ItemKitId = "KIT-01-DEF", ProductId = "ING-02", Quantity = 1.0 });
-            
+
             ctx.ItemKits.Add(itemKitEntity);
             await ctx.SaveChangesAsync();
         }
@@ -313,13 +315,13 @@ public sealed class SaleServiceTests : IDisposable
         var savedA = savedItems.First(i => i.ProductId == "PROD-A");
         var savedB = savedItems.First(i => i.ProductId == "PROD-B");
 
-        Assert.Equal(20.0, savedA.ProratedGlobalDiscountAmount);
-        Assert.Equal(11.03, savedA.TaxAmount);
-        Assert.Equal(80.0, savedA.TotalPrice);
+        Assert.Equal(20m, savedA.ProratedGlobalDiscountAmount);
+        Assert.Equal(11.03m, savedA.TaxAmount);
+        Assert.Equal(80m, savedA.TotalPrice);
 
-        Assert.Equal(10.0, savedB.ProratedGlobalDiscountAmount);
-        Assert.Equal(5.52, savedB.TaxAmount);
-        Assert.Equal(40.0, savedB.TotalPrice);
+        Assert.Equal(10m, savedB.ProratedGlobalDiscountAmount);
+        Assert.Equal(5.52m, savedB.TaxAmount);
+        Assert.Equal(40m, savedB.TotalPrice);
     }
 
     [Fact]
@@ -375,7 +377,7 @@ public sealed class SaleServiceTests : IDisposable
             SupplierName: "Supplier 1",
             InvoiceNumber: "INV-123",
             Date: DateTime.Now.ToString("g"),
-            TotalCost: 0.0,
+            TotalCost: 0m,
             Notes: "Test notes",
             Items: items
         );
@@ -401,8 +403,8 @@ public sealed class SaleServiceTests : IDisposable
         {
             Id = "PROD-COST-TEST",
             Name = "Test Product",
-            Cost = 15.0,
-            Price = 25.0,
+            Cost = 15m,
+            Price = 25m,
             Stock = 10.0
         };
         context.Products.Add(prod);
@@ -421,7 +423,7 @@ public sealed class SaleServiceTests : IDisposable
             SupplierName: "Coca-Cola Mexico",
             InvoiceNumber: "INV-999",
             Date: DateTime.Now.ToString("g"),
-            TotalCost: 90.0,
+            TotalCost: 90m,
             Notes: "Test cost update",
             Items: items
         );
@@ -430,7 +432,7 @@ public sealed class SaleServiceTests : IDisposable
 
         var updatedProd = await context.Products.FindAsync("PROD-COST-TEST");
         Assert.NotNull(updatedProd);
-        Assert.Equal(18.0, updatedProd.Cost);
+        Assert.Equal(18m, updatedProd.Cost);
         Assert.Equal(15.0, updatedProd.Stock);
         Assert.Equal("SUPP-COCA-COLA", updatedProd.DefaultSupplierId);
     }
@@ -464,8 +466,8 @@ public sealed class SaleServiceTests : IDisposable
         var json = System.Text.Json.JsonSerializer.Serialize(item, options);
         var deserialized = System.Text.Json.JsonSerializer.Deserialize<SaleItemSnapshotDto>(json, options);
 
-        Assert.Equal(20.0, deserialized!.ProratedGlobalDiscountAmount);
-        Assert.Equal(12.8, deserialized.TaxAmount);
+        Assert.Equal(20m, deserialized!.ProratedGlobalDiscountAmount);
+        Assert.Equal(12.8m, deserialized.TaxAmount);
     }
 
     [Fact]
@@ -509,12 +511,12 @@ public sealed class SaleServiceTests : IDisposable
         var saved2 = items.First(i => i.ProductId == "P2");
         var saved3 = items.First(i => i.ProductId == "P3");
 
-        Assert.Equal(3.33, saved1.ProratedGlobalDiscountAmount);
-        Assert.Equal(3.33, saved2.ProratedGlobalDiscountAmount);
-        Assert.Equal(3.34, saved3.ProratedGlobalDiscountAmount);
+        Assert.Equal(3.33m, saved1.ProratedGlobalDiscountAmount);
+        Assert.Equal(3.33m, saved2.ProratedGlobalDiscountAmount);
+        Assert.Equal(3.34m, saved3.ProratedGlobalDiscountAmount);
 
-        double sumDiscounts = items.Sum(i => i.ProratedGlobalDiscountAmount);
-        Assert.Equal(10.00, sumDiscounts);
+        decimal sumDiscounts = items.Sum(i => i.ProratedGlobalDiscountAmount);
+        Assert.Equal(10.00m, sumDiscounts);
     }
 
     [Fact]
@@ -525,17 +527,17 @@ public sealed class SaleServiceTests : IDisposable
 
         using (var ctx = CreateContext())
         {
-            var kitAProd = new ProductEntity { Id = "KITA", Barcode = "222", Name = "Kit A", Cost = 0.0, Price = 0.0, Stock = 0, Category = "Combo", Unit = "Pza", IsKit = true };
+            var kitAProd = new ProductEntity { Id = "KITA", Barcode = "222", Name = "Kit A", Cost = 0m, Price = 0m, Stock = 0, Category = "Combo", Unit = "Pza", IsKit = true };
             ctx.Products.Add(kitAProd);
 
-            var kitA = new ItemKitEntity { Id = "KITA-DEF", ParentProductId = "KITA", KitBarcode = "222", Name = "Kit A", Price = 5.0 };
+            var kitA = new ItemKitEntity { Id = "KITA-DEF", ParentProductId = "KITA", KitBarcode = "222", Name = "Kit A", Price = 5m };
             kitA.Components.Add(new ItemKitItemEntity { Id = "COMP-A1", ItemKitId = "KITA-DEF", ProductId = "APPLE", Quantity = 1.0 });
             ctx.ItemKits.Add(kitA);
 
-            var kitBProd = new ProductEntity { Id = "KITB", Barcode = "333", Name = "Kit B", Cost = 0.0, Price = 0.0, Stock = 0, Category = "Combo", Unit = "Pza", IsKit = true };
+            var kitBProd = new ProductEntity { Id = "KITB", Barcode = "333", Name = "Kit B", Cost = 0m, Price = 0m, Stock = 0, Category = "Combo", Unit = "Pza", IsKit = true };
             ctx.Products.Add(kitBProd);
 
-            var kitB = new ItemKitEntity { Id = "KITB-DEF", ParentProductId = "KITB", KitBarcode = "333", Name = "Kit B", Price = 6.0 };
+            var kitB = new ItemKitEntity { Id = "KITB-DEF", ParentProductId = "KITB", KitBarcode = "333", Name = "Kit B", Price = 6m };
             kitB.Components.Add(new ItemKitItemEntity { Id = "COMP-B1", ItemKitId = "KITB-DEF", ProductId = "KITA", Quantity = 1.0 });
             ctx.ItemKits.Add(kitB);
 
@@ -576,10 +578,10 @@ public sealed class SaleServiceTests : IDisposable
     {
         using (var ctx = CreateContext())
         {
-            var kitAProd = new ProductEntity { Id = "KITA-CIRC", Barcode = "444", Name = "Kit A Circ", Cost = 0.0, Price = 0.0, Stock = 0, Category = "Combo", Unit = "Pza", IsKit = true };
+            var kitAProd = new ProductEntity { Id = "KITA-CIRC", Barcode = "444", Name = "Kit A Circ", Cost = 0m, Price = 0m, Stock = 0, Category = "Combo", Unit = "Pza", IsKit = true };
             ctx.Products.Add(kitAProd);
 
-            var kitA = new ItemKitEntity { Id = "KITACIRC-DEF", ParentProductId = "KITA-CIRC", KitBarcode = "444", Name = "Kit A Circ", Price = 5.0 };
+            var kitA = new ItemKitEntity { Id = "KITACIRC-DEF", ParentProductId = "KITA-CIRC", KitBarcode = "444", Name = "Kit A Circ", Price = 5m };
             kitA.Components.Add(new ItemKitItemEntity { Id = "COMP-C1", ItemKitId = "KITACIRC-DEF", ProductId = "KITA-CIRC", Quantity = 1.0 });
             ctx.ItemKits.Add(kitA);
             await ctx.SaveChangesAsync();
@@ -664,7 +666,7 @@ public sealed class SaleServiceTests : IDisposable
         var shrinkageLog = _auditSpy.CapturedLogs
             .FirstOrDefault(l => l.EntityId == "SHRINK-PROD" && l.Reason.Contains("Devolución de producto dañado/mermado"));
         Assert.NotNull(shrinkageLog);
-        Assert.Equal(4.0, shrinkageLog.FinancialImpact); // Cost = 4.0 * Qty = 1.0 => 4.0
+        Assert.Equal(4m, shrinkageLog.FinancialImpact); // Cost = 4.0 * Qty = 1.0 => 4.0
     }
 
     [Fact]
@@ -673,7 +675,7 @@ public sealed class SaleServiceTests : IDisposable
         var shiftService = new ShiftService(CreateContext());
 
         // 1. Open shift
-        var activeShift = await shiftService.OpenAsync(100.0); // opening balance = 100
+        var activeShift = await shiftService.OpenAsync(100m); // opening balance = 100
 
         // 2. Perform cash sale
         var product = new ProductDto("CASH-CUT-PROD", "888", "Ice Cream", 5.0, 10.0, 8.0, 5, 20, "Botanas", "Pza", 0, null);
@@ -702,11 +704,11 @@ public sealed class SaleServiceTests : IDisposable
 
         // Expected balance: opening (100) + sale (100) = 200
         // 3. Close shift declaring only 180 (shortage of 20)
-        var closedShift = await shiftService.CloseAsync(activeShift.Id, 180.0);
+        var closedShift = await shiftService.CloseAsync(activeShift.Id, 180m);
 
-        Assert.Equal(200.0, closedShift.ExpectedBalance);
-        Assert.Equal(180.0, closedShift.ActualBalance);
-        Assert.Equal(-20.0, closedShift.Diff);
+        Assert.Equal(200m, closedShift.ExpectedBalance);
+        Assert.Equal(180m, closedShift.ActualBalance);
+        Assert.Equal(-20m, closedShift.Diff);
 
         // 4. Verify ShiftMovement was added for the shortage
         using (var ctx = CreateContext())
@@ -714,7 +716,7 @@ public sealed class SaleServiceTests : IDisposable
             var movements = await ctx.ShiftMovements.ToListAsync();
             var shortageMovement = movements.FirstOrDefault(m => m.ShiftId == activeShift.Id && m.Description.Contains("Faltante de Caja"));
             Assert.NotNull(shortageMovement);
-            Assert.Equal(20.0, shortageMovement.Amount);
+            Assert.Equal(20m, shortageMovement.Amount);
             Assert.True(shortageMovement.IsOutflow);
         }
     }
@@ -725,7 +727,7 @@ public sealed class SaleServiceTests : IDisposable
         var giftcardService = new GiftcardService(CreateContext());
 
         // 1. Create card
-        await giftcardService.CreateCardAsync("GIFT-999", 50.0, null);
+        await giftcardService.CreateCardAsync("GIFT-999", 50m, null);
         var card = await giftcardService.GetByCardNumberAsync("GIFT-999");
         Assert.NotNull(card);
 
@@ -735,7 +737,7 @@ public sealed class SaleServiceTests : IDisposable
             var shift = new ShiftEntity
             {
                 Id = "SHIFT-TEST-01",
-                OpeningBalance = 100.0,
+                OpeningBalance = 100m,
                 IsOpen = 1,
                 StartTime = DateTimeOffset.UtcNow.ToString("o")
             };
@@ -749,7 +751,7 @@ public sealed class SaleServiceTests : IDisposable
         // 3. Verify balance (50 + 150 = 200)
         var updatedCard = await giftcardService.GetByCardNumberAsync("GIFT-999");
         Assert.NotNull(updatedCard);
-        Assert.Equal(200.0, updatedCard.Balance);
+        Assert.Equal(200m, updatedCard.Balance);
 
         // 4. Verify ShiftMovement created for the recharge inflow
         using (var ctx = CreateContext())
@@ -757,7 +759,7 @@ public sealed class SaleServiceTests : IDisposable
             var movements = await ctx.ShiftMovements.ToListAsync();
             var rechargeMovement = movements.FirstOrDefault(m => m.ShiftId == "SHIFT-TEST-01" && m.Description.Contains("Recarga Monedero"));
             Assert.NotNull(rechargeMovement);
-            Assert.Equal(150.0, rechargeMovement.Amount);
+            Assert.Equal(150m, rechargeMovement.Amount);
             Assert.False(rechargeMovement.IsOutflow);
         }
     }
@@ -789,42 +791,57 @@ public sealed class SaleServiceTests : IDisposable
     [Fact]
     public async Task BackupService_ShouldCreateBackupSuccessfully()
     {
-        // 1. Create a dummy database file in LocalAppData
-        string appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        string appFolder = Path.Combine(appDataFolder, "Ticketfy", "Database");
-        if (!Directory.Exists(appFolder))
+        string testRoot = Path.Combine(Path.GetTempPath(), $"TicketfyBackupTest_{Guid.NewGuid():N}");
+        string databaseDirectory = Path.Combine(testRoot, "Database");
+        string backupDirectory = Path.Combine(testRoot, "Backups");
+        Directory.CreateDirectory(databaseDirectory);
+        string dbPath = Path.Combine(databaseDirectory, "ticketfy.db");
+
+        try
         {
-            Directory.CreateDirectory(appFolder);
+            var connectionBuilder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+            {
+                DataSource = dbPath,
+                Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadWriteCreate,
+                Password = Ticketfy.Services.Security.SecurityManager.GetMasterKey(),
+                Pooling = false
+            };
+            await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(connectionBuilder.ConnectionString))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = "CREATE TABLE backup_probe (id INTEGER PRIMARY KEY, value TEXT NOT NULL); INSERT INTO backup_probe(value) VALUES ('ok');";
+                await command.ExecuteNonQueryAsync();
+                await connection.CloseAsync();
+            }
+
+            var backupService = new Ticketfy.Services.Implementations.BackupService(dbPath, backupDirectory);
+            var result = await backupService.CreateZCutBackupAsync("SHIFT-TEST");
+
+            Assert.True(result);
+            var files = Directory.GetFiles(backupDirectory, "backup_ZCut_SHIFT-TEST_*.db");
+            var backupFile = Assert.Single(files);
+
+            var backupBuilder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+            {
+                DataSource = backupFile,
+                Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadOnly,
+                Password = Ticketfy.Services.Security.SecurityManager.GetMasterKey(),
+                Pooling = false
+            };
+            await using (var backupConnection = new Microsoft.Data.Sqlite.SqliteConnection(backupBuilder.ConnectionString))
+            {
+                await backupConnection.OpenAsync();
+                await using var verifyCommand = backupConnection.CreateCommand();
+                verifyCommand.CommandText = "SELECT value FROM backup_probe LIMIT 1;";
+                Assert.Equal("ok", await verifyCommand.ExecuteScalarAsync());
+                await backupConnection.CloseAsync();
+            }
         }
-        var dbPath = Path.Combine(appFolder, "ticketfy.db");
-        bool createdDummy = false;
-        if (!File.Exists(dbPath))
+        finally
         {
-            await File.WriteAllTextAsync(dbPath, "SQLite format 3\0 dummy db data");
-            createdDummy = true;
-        }
-
-        var backupService = new Ticketfy.Services.Implementations.BackupService();
-        var result = await backupService.CreateZCutBackupAsync("SHIFT-TEST");
-
-        Assert.True(result);
-
-        // 2. Verify that the backup file exists in the Backups folder
-        var backupDir = Path.Combine(appDataFolder, "Ticketfy", "Backups");
-        Assert.True(Directory.Exists(backupDir));
-
-        var files = Directory.GetFiles(backupDir, "backup_ZCut_SHIFT-TEST_*.db");
-        Assert.NotEmpty(files);
-
-        // Clean up
-        foreach (var file in files)
-        {
-            File.Delete(file);
-        }
-
-        if (createdDummy && File.Exists(dbPath))
-        {
-            File.Delete(dbPath);
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(testRoot)) Directory.Delete(testRoot, recursive: true);
         }
     }
 
@@ -832,7 +849,7 @@ public sealed class SaleServiceTests : IDisposable
     public async Task EscPosPrinterService_ShouldSupportGracefulDisposeAsync()
     {
         var printerService = new Ticketfy.Services.Implementations.EscPosPrinterService();
-        
+
         // Simply dispose and check no exceptions are thrown
         await printerService.DisposeAsync();
     }
@@ -926,7 +943,7 @@ public sealed class SaleServiceTests : IDisposable
         var startFilter = new DateTime(2026, 8, 10, 0, 0, 0, DateTimeKind.Utc);
         var endFilter = new DateTime(2026, 8, 20, 23, 59, 59, DateTimeKind.Utc);
 
-        var report = await _saleService.GetCashierPerformanceReportAsync(startFilter, endFilter, defaultCommissionPct: 5.0);
+        var report = await _saleService.GetCashierPerformanceReportAsync(startFilter, endFilter, defaultCommissionPct: 5.0m);
 
         Assert.NotNull(report);
         Assert.Single(report);
@@ -934,9 +951,9 @@ public sealed class SaleServiceTests : IDisposable
         var cashierMetrics = report[0];
         Assert.Equal("Carlos Cajero", cashierMetrics.CashierName);
         Assert.Equal(1, cashierMetrics.TicketCount);
-        Assert.Equal(20.0, cashierMetrics.TotalRevenue);
-        Assert.Equal(20.0, cashierMetrics.AverageTicketValue);
-        Assert.Equal(1.0, cashierMetrics.EarnedCommissionAmount); // 5% of $20 = $1.00
+        Assert.Equal(20m, cashierMetrics.TotalRevenue);
+        Assert.Equal(20m, cashierMetrics.AverageTicketValue);
+        Assert.Equal(1m, cashierMetrics.EarnedCommissionAmount); // 5% of $20 = $1.00
     }
 
     public void Dispose()

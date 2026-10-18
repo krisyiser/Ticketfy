@@ -9,6 +9,7 @@ obj/
 .vs/
 *.DotSettings.user
 TestResults/
+artifacts/
 BenchmarkDotNet.Artifacts/
 
 ## SQLite ##
@@ -28,6 +29,8 @@ Thumbs.db
 publish/
 TicketfyReleasesRepo/
 Output/
+Releases/
+releases_v*.json
 
 ## Scratch & Temporary ##
 .agents/

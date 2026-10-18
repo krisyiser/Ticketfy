@@ -13,9 +13,9 @@ public interface ICustomerService
     Task<CustomerDto?> GetByIdAsync(string id);
     Task AddAsync(CustomerDto customer);
     Task UpdateAsync(CustomerDto customer);
-    Task UpdateDebtAsync(string customerId, double newDebt);
+    Task UpdateDebtAsync(string customerId, decimal newDebt);
     Task AddPaymentAsync(CustomerPaymentDto payment);
-    Task<bool> RegisterCustomerPaymentAsync(string customerId, double amount, string method, string notes);
+    Task<bool> RegisterCustomerPaymentAsync(string customerId, decimal amount, string method, string notes, string? operationId = null);
     Task<List<CustomerPaymentDto>> GetPaymentsAsync(string customerId);
     Task DeleteAsync(string id);
     Task UpdatePointsAsync(string customerId, double points);

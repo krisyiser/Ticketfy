@@ -1,16 +1,12 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
-using Ticketfy.Data;
-using Ticketfy.Data.Seed;
 using Ticketfy.Views;
 using Ticketfy.ViewModels;
-using Microsoft.EntityFrameworkCore;
 using Serilog;
 using System;
-using Microsoft.Extensions.DependencyInjection;
-using Ticketfy.Services.Interfaces;
-using Ticketfy.Services.Implementations;
+using Ticketfy.Core.Configuration;
+using Ticketfy.Logging;
 
 namespace Ticketfy;
 
@@ -45,8 +41,7 @@ public partial class App : Application
 
         try
         {
-            string appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            string logDirectory = System.IO.Path.Combine(appDataFolder, "ticketfy", "Logs");
+            string logDirectory = AppDataPaths.LogDirectory;
 
             if (!System.IO.Directory.Exists(logDirectory))
             {
@@ -55,9 +50,9 @@ public partial class App : Application
 
             string logFilePath = System.IO.Path.Combine(logDirectory, "crash_log.txt");
             string errorBlock = $"--- CRASH REPORT: {DateTime.Now:yyyy-MM-dd HH:mm:ss} ---\n" +
-                                $"Source: {source}\n" +
-                                $"Message: {ex.Message}\n" +
-                                $"StackTrace: {ex.StackTrace}\n\n";
+                                $"Source: {LogSanitizer.Sanitize(source)}\n" +
+                                $"Message: {LogSanitizer.Sanitize(ex.Message)}\n" +
+                                $"StackTrace: {LogSanitizer.Sanitize(ex.StackTrace)}\n\n";
 
             System.IO.File.AppendAllText(logFilePath, errorBlock);
 
@@ -83,8 +78,6 @@ public partial class App : Application
             try
             {
                 this.Services = await Ticketfy.Core.Startup.AppBootstrapper.BootstrapServicesAsync();
-                var (businessName, contactEmail) = await Ticketfy.Core.Startup.AppBootstrapper.GetBusinessProfileAsync();
-
                 var licenseService = new Ticketfy.Services.Security.LicenseEnforcementService();
                 if (licenseService.IsSystemLocked())
                 {
@@ -103,9 +96,6 @@ public partial class App : Application
                 else
                 {
                     Log.Information("License validated successfully. Starting normal operation...");
-                    var deviceReg = new Ticketfy.Services.Implementations.DeviceRegistrationService();
-                    _ = deviceReg.PingServerAsync(new Ticketfy.Services.Implementations.BusinessProfile { BusinessName = businessName, Email = contactEmail });
-
                     var mainWin = new MainWindow
                     {
                         DataContext = new MainWindowViewModel()

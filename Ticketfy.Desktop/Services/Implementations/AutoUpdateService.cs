@@ -6,7 +6,8 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Avalonia.Threading;
-using Ticketfy.Core.Constants;
+using Ticketfy.Core.Configuration;
+using Ticketfy.Core.Helpers;
 
 namespace Ticketfy.Services.Implementations;
 
@@ -36,6 +37,14 @@ public class AutoUpdateService
     /// </summary>
     public async Task CheckAndDownloadUpdatesAsync()
     {
+        if (!LocalDevelopmentMode.RemoteInfrastructureEnabled)
+        {
+            Log.Information("Auto-update check skipped: local development mode is active");
+            Dispatcher.UIThread.Post(() =>
+                UpdateFailedEvent?.Invoke(LocalDevelopmentMode.RemoteInfrastructureUnavailableMessage));
+            return;
+        }
+
         try
         {
             Log.Information("AutoUpdateService: Checking for updates at {Url}", ApiUrl);
@@ -122,7 +131,7 @@ public class AutoUpdateService
 
             string latestVersionStr = root.GetProperty("version").GetString() ?? string.Empty;
             Log.Information("AutoUpdateService: Server latest version is '{ServerVersion}', current local is '{CurrentVersion}'",
-                latestVersionStr, AppConstants.AppVersion);
+                latestVersionStr, AppVersionHelper.DisplayVersion);
 
             if (string.IsNullOrWhiteSpace(latestVersionStr))
             {
@@ -131,7 +140,7 @@ public class AutoUpdateService
             }
 
             var serverVersionClean = latestVersionStr.Trim().TrimStart('v', 'V');
-            var localVersionClean = AppConstants.AppVersion.Trim().TrimStart('v', 'V');
+            var localVersionClean = AppVersionHelper.DisplayVersion.Trim().TrimStart('v', 'V');
 
             if (Version.TryParse(serverVersionClean, out var sVer) && Version.TryParse(localVersionClean, out var lVer))
             {
@@ -253,6 +262,12 @@ public class AutoUpdateService
 
     public void StartPeriodicChecks(TimeSpan interval)
     {
+        if (!LocalDevelopmentMode.RemoteInfrastructureEnabled)
+        {
+            Log.Debug("Periodic update checks not started: local development mode is active");
+            return;
+        }
+
         _ = Task.Run(async () =>
         {
             while (true)

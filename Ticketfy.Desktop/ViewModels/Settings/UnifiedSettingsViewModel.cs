@@ -96,20 +96,20 @@ public partial class UnifiedSettingsViewModel : ObservableObject
     [RelayCommand]
     private void SelectAxisTab(string axis)
     {
-        IsUiTab        = axis == "ui";
-        IsCompanyTab   = axis == "company";
-        IsHardwareTab  = axis == "hardware";
-        IsSystemTab    = axis == "system";
+        IsUiTab = axis == "ui";
+        IsCompanyTab = axis == "company";
+        IsHardwareTab = axis == "hardware";
+        IsSystemTab = axis == "system";
     }
 
     [RelayCommand]
     public void SelectSubTab(string subTab)
     {
-        IsSubTemaTab        = subTab == "tema";
-        IsSubColoresTab     = subTab == "colores";
-        IsSubTipografiaTab  = subTab == "tipografia";
+        IsSubTemaTab = subTab == "tema";
+        IsSubColoresTab = subTab == "colores";
+        IsSubTipografiaTab = subTab == "tipografia";
         IsSubDisposicionTab = subTab == "disposicion";
-        IsSubBotonesTab     = subTab == "botones";
+        IsSubBotonesTab = subTab == "botones";
         IsSubAnimacionesTab = subTab == "animaciones";
     }
 

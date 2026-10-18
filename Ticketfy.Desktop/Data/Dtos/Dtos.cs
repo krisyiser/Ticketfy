@@ -8,13 +8,14 @@ using System.Text.Json.Serialization;
 
 namespace Ticketfy.Data.Dtos;
 
+[method: Dapper.ExplicitConstructor]
 public record ProductDto(
     string Id,
     string? Barcode,
     string Name,
-    double Cost,
-    double Price,
-    double WholesalePrice = 0.0,
+    decimal Cost,
+    decimal Price,
+    decimal WholesalePrice = 0m,
     int WholesaleThreshold = 0,
     double Stock = 0.0,
     string Category = "General",
@@ -32,8 +33,21 @@ public record ProductDto(
     bool IsKit = false
 )
 {
-    public double CostPrice => Cost;
-    public double SalePrice => Price;
+    public ProductDto(string Id, string? Barcode, string Name, double Cost, double Price,
+        double WholesalePrice = 0d, int WholesaleThreshold = 0, double Stock = 0d,
+        string Category = "General", string Unit = "Pza", int ExpiresSoon = 0,
+        string? CreatedAt = null, double PointsRewarded = 0d, double ReorderQuantity = 10d,
+        string LocationRack = "Pasillo 1 - Anaquel A", string SatProductCode = "01010101",
+        string SatUnitCode = "H87", double MinStock = 5d, string? DefaultSupplierId = null,
+        bool IsBulk = false, bool IsKit = false)
+        : this(Id, Barcode, Name, Convert.ToDecimal(Cost), Convert.ToDecimal(Price),
+            Convert.ToDecimal(WholesalePrice), WholesaleThreshold, Stock, Category, Unit,
+            ExpiresSoon, CreatedAt, PointsRewarded, ReorderQuantity, LocationRack,
+            SatProductCode, SatUnitCode, MinStock, DefaultSupplierId, IsBulk, IsKit)
+    { }
+
+    public decimal CostPrice => Cost;
+    public decimal SalePrice => Price;
     public bool IsOutOfStock => Stock <= 0.0;
     public bool IsAvailable => Stock > 0.0;
 }
@@ -44,19 +58,26 @@ public record CustomerDto(
     string Telefono,
     string Email,
     string Rfc,
-    double LimiteCredito,
-    double Deuda = 0.0,
+    decimal LimiteCredito,
+    decimal Deuda = 0m,
     double PuntosSaldo = 0.0,
-    double CurrentBalance = 0.0,
+    decimal CurrentBalance = 0m,
     string CustomerCode = ""
 )
 {
+    public CustomerDto(string Id, string Nombre, string Telefono, string Email, string Rfc,
+        double LimiteCredito, double Deuda = 0d, double PuntosSaldo = 0d,
+        double CurrentBalance = 0d, string CustomerCode = "")
+        : this(Id, Nombre, Telefono, Email, Rfc, Convert.ToDecimal(LimiteCredito),
+            Convert.ToDecimal(Deuda), PuntosSaldo, Convert.ToDecimal(CurrentBalance), CustomerCode)
+    { }
+
     public string Name => Nombre;
     public string Phone => Telefono;
-    public double CreditLimit => LimiteCredito;
-    public double Debt => Deuda;
+    public decimal CreditLimit => LimiteCredito;
+    public decimal Debt => Deuda;
     /// <summary>Remaining credit headroom = LimiteCredito - Deuda. Always >= 0.</summary>
-    public double AvailableCredit => Math.Max(0.0, LimiteCredito - Deuda);
+    public decimal AvailableCredit => Math.Max(0m, LimiteCredito - Deuda);
     public bool IsWholesale => Name.Contains("Mayorista", StringComparison.OrdinalIgnoreCase);
 }
 
@@ -64,11 +85,15 @@ public record CustomerPaymentDto(
     string Id,
     string CustomerId,
     string Date,
-    double Amount,
+    decimal Amount,
     string? PaymentMethod = "Efectivo",
     string? Reference = null
 )
 {
+    public CustomerPaymentDto(string Id, string CustomerId, string Date, double Amount,
+        string? PaymentMethod = "Efectivo", string? Reference = null)
+        : this(Id, CustomerId, Date, Convert.ToDecimal(Amount), PaymentMethod, Reference) { }
+
     public string Method => PaymentMethod ?? "Efectivo";
     public string Notes => Reference ?? "";
 };
@@ -86,7 +111,7 @@ public record FiscalClientDto(
 public record PromotionDto(
     string Id,
     string Name,
-    double DiscountValue,
+    decimal DiscountValue,
     bool IsActive,
     Ticketfy.Core.Enums.PromotionType StrategyType = Ticketfy.Core.Enums.PromotionType.PercentageDiscount,
     string? TargetProductId = null,
@@ -106,25 +131,25 @@ public record ShiftDto(
     string Id,
     string StartTime,
     string? EndTime,
-    double OpeningBalance,
-    double TotalCashSales,
-    double TotalCreditSales,
-    double ExpectedBalance,
-    double? ActualBalance,
-    double? Diff,
+    decimal OpeningBalance,
+    decimal TotalCashSales,
+    decimal TotalCreditSales,
+    decimal ExpectedBalance,
+    decimal? ActualBalance,
+    decimal? Diff,
     int IsOpen
 );
 
-public record ParkedOrderDto(string Id, DateTime CreatedAt, string CustomerName, string CartJson, double Total);
+public record ParkedOrderDto(string Id, DateTime CreatedAt, string CustomerName, string CartJson, decimal Total);
 
 public partial class CartItemDto : ObservableObject
 {
     public string Id { get; set; } = string.Empty;
     public string ProductId => Id;
     public string Name { get; set; } = string.Empty;
-    public double UnitPrice { get; set; }
-    public double OriginalUnitPrice { get; set; }
-    public double Cost { get; set; }
+    public decimal UnitPrice { get; set; }
+    public decimal OriginalUnitPrice { get; set; }
+    public decimal Cost { get; set; }
     public string Unit { get; set; } = "Pza";
     public string Category { get; set; } = "General";
     public string SatProductCode { get; set; } = "01010101";
@@ -180,7 +205,7 @@ public partial class CartItemDto : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(TotalPrice))]
     [NotifyPropertyChangedFor(nameof(FinalUnitPrice))]
-    private double _appliedDiscountAmount = 0.0;
+    private decimal _appliedDiscountAmount;
 
     [ObservableProperty]
     private string? _appliedPromotionId;
@@ -188,18 +213,18 @@ public partial class CartItemDto : ObservableObject
     [ObservableProperty]
     private string _promotionDescription = string.Empty;
 
-    public double FinalUnitPrice => Math.Max(0.0, OriginalUnitPrice - (AppliedDiscountAmount / Math.Max(1.0, Quantity)));
+    public decimal FinalUnitPrice => Math.Max(0m, OriginalUnitPrice - (AppliedDiscountAmount / Convert.ToDecimal(Math.Max(1.0, Quantity))));
 
-    public double TotalPrice => GetLineTotal();
+    public decimal TotalPrice => GetLineTotal();
 
-    public double GetLineTotal() 
+    public decimal GetLineTotal()
     {
-        return Math.Max(0.0, (OriginalUnitPrice * Quantity) - AppliedDiscountAmount);
+        return Math.Max(0m, (OriginalUnitPrice * Convert.ToDecimal(Quantity)) - AppliedDiscountAmount);
     }
 
     public CartItemDto() { }
 
-    public CartItemDto(string id, string name, double unitPrice, double quantity = 1.0, string unit = "Pza", double pointsRewarded = 0.0)
+    public CartItemDto(string id, string name, decimal unitPrice, double quantity = 1.0, string unit = "Pza", double pointsRewarded = 0.0)
     {
         Id = id;
         Name = name;
@@ -211,42 +236,58 @@ public partial class CartItemDto : ObservableObject
     }
 }
 
-public record TicketItemDto(string ProductId, string Name, double UnitPrice, double Cost, double Quantity, string Unit, string Category, double Discount, double TotalPrice);
+public record TicketItemDto(string ProductId, string Name, decimal UnitPrice, decimal Cost, double Quantity, string Unit, string Category, decimal Discount, decimal TotalPrice);
 
+[method: JsonConstructor]
 public record SaleItemSnapshotDto(
     string ProductId,
     string Name,
-    double UnitPrice,
-    double Cost,
+    decimal UnitPrice,
+    decimal Cost,
     double Quantity,
     string Unit,
     string Category,
-    double Discount,
-    double TotalPrice,
-    double OriginalUnitPrice = 0.0,
-    double AppliedDiscountAmount = 0.0,
+    decimal Discount,
+    decimal TotalPrice,
+    decimal OriginalUnitPrice = 0m,
+    decimal AppliedDiscountAmount = 0m,
     string? AppliedPromotionId = null,
     string SatProductCode = "01010101",
     string SatUnitCode = "H87",
-    [property: JsonPropertyName("proratedGlobalDiscountAmount")] double ProratedGlobalDiscountAmount = 0.0,
-    [property: JsonPropertyName("taxAmount")] double TaxAmount = 0.0,
+    [property: JsonPropertyName("proratedGlobalDiscountAmount")] decimal ProratedGlobalDiscountAmount = 0m,
+    [property: JsonPropertyName("taxAmount")] decimal TaxAmount = 0m,
     [property: JsonPropertyName("returnedQuantity")] double ReturnedQuantity = 0.0,
     [property: JsonPropertyName("pointsRewarded")] double PointsRewarded = 0.0
 )
 {
+    public SaleItemSnapshotDto(string ProductId, string Name, double UnitPrice, double Cost,
+        double Quantity, string Unit, string Category, double Discount, double TotalPrice,
+        double OriginalUnitPrice = 0d, double AppliedDiscountAmount = 0d,
+        string? AppliedPromotionId = null, string SatProductCode = "01010101",
+        string SatUnitCode = "H87", double ProratedGlobalDiscountAmount = 0d,
+        double TaxAmount = 0d, double ReturnedQuantity = 0d, double PointsRewarded = 0d)
+        : this(ProductId, Name, Convert.ToDecimal(UnitPrice), Convert.ToDecimal(Cost),
+            Quantity, Unit, Category, Convert.ToDecimal(Discount), Convert.ToDecimal(TotalPrice),
+            Convert.ToDecimal(OriginalUnitPrice), Convert.ToDecimal(AppliedDiscountAmount),
+            AppliedPromotionId, SatProductCode, SatUnitCode,
+            Convert.ToDecimal(ProratedGlobalDiscountAmount), Convert.ToDecimal(TaxAmount),
+            ReturnedQuantity, PointsRewarded)
+    { }
+
     public string Id => ProductId;
     public double AvailableForReturn => Math.Max(0.0, Quantity - ReturnedQuantity);
 }
 
+[method: JsonConstructor]
 public record SaleDto(
     string Id,
     string Date,
     List<SaleItemSnapshotDto> Items,
-    double Total,
-    double TotalCost,
-    double Profit,
-    double PaidAmount,
-    double ChangeAmount,
+    decimal Total,
+    decimal TotalCost,
+    decimal Profit,
+    decimal PaidAmount,
+    decimal ChangeAmount,
     string PaymentMethod,
     string? CustomerId,
     bool IsCredit,
@@ -260,10 +301,29 @@ public record SaleDto(
     string? InvoiceStatus = null,
     string? CashierUserId = null,
     string? CashierName = null,
-    double CashAmount = 0.0,
-    double CardAmount = 0.0
+    decimal CashAmount = 0m,
+    decimal CardAmount = 0m,
+    string? OperationId = null,
+    string? GiftcardNumber = null,
+    decimal GiftcardAmount = 0m
 )
 {
+    public SaleDto(string Id, string Date, List<SaleItemSnapshotDto> Items,
+        double Total, double TotalCost, double Profit, double PaidAmount, double ChangeAmount,
+        string PaymentMethod, string? CustomerId, bool IsCredit, bool IsCancelled,
+        string? CancelledAt, string EstadoFiscal = "PENDIENTE", string? UuidSat = null,
+        string? SerieFolio = null, SaleStatus Status = SaleStatus.Completed,
+        string? InvoiceId = null, string? InvoiceStatus = null, string? CashierUserId = null,
+        string? CashierName = null, double CashAmount = 0d, double CardAmount = 0d,
+        string? OperationId = null, string? GiftcardNumber = null, double GiftcardAmount = 0d)
+        : this(Id, Date, Items, Convert.ToDecimal(Total), Convert.ToDecimal(TotalCost),
+            Convert.ToDecimal(Profit), Convert.ToDecimal(PaidAmount), Convert.ToDecimal(ChangeAmount),
+            PaymentMethod, CustomerId, IsCredit, IsCancelled, CancelledAt, EstadoFiscal, UuidSat,
+            SerieFolio, Status, InvoiceId, InvoiceStatus, CashierUserId, CashierName,
+            Convert.ToDecimal(CashAmount), Convert.ToDecimal(CardAmount), OperationId,
+            GiftcardNumber, Convert.ToDecimal(GiftcardAmount))
+    { }
+
     public string LocalDateDisplay => DateTimeExtensions.ToLocalDisplayString(Date);
 
     public string PaymentStatusDisplay
@@ -307,10 +367,17 @@ public record PurchaseItemDto(
     string PurchaseId,
     string ProductId,
     string ProductName,
-    double UnitPrice,
+    decimal UnitPrice,
     double Quantity,
-    double TotalPrice
-);
+    decimal TotalPrice
+)
+{
+    public PurchaseItemDto(string Id, string PurchaseId, string ProductId, string ProductName,
+        double UnitPrice, double Quantity, double TotalPrice)
+        : this(Id, PurchaseId, ProductId, ProductName, Convert.ToDecimal(UnitPrice), Quantity,
+            Convert.ToDecimal(TotalPrice))
+    { }
+}
 
 public record PurchaseDto(
     string Id,
@@ -318,7 +385,7 @@ public record PurchaseDto(
     string SupplierName,
     string InvoiceNumber,
     string Date,
-    double TotalCost,
+    decimal TotalCost,
     string Notes,
     List<PurchaseItemDto> Items
 );
@@ -326,22 +393,27 @@ public record PurchaseDto(
 public record ExpenseDto(
     string Id,
     string Category,
-    double Amount,
+    decimal Amount,
     string Date,
     string Description,
     string PaymentMethod,
     string RegisteredByUser
-);
+)
+{
+    public ExpenseDto(string Id, string Category, double Amount, string Date,
+        string Description, string PaymentMethod, string RegisteredByUser)
+        : this(Id, Category, Convert.ToDecimal(Amount), Date, Description, PaymentMethod, RegisteredByUser) { }
+}
 
 public record FinancialSummaryDto(
-    double TotalRevenue,
-    double TotalCostOfGoodsSold,
-    double GrossProfit,
-    double TotalExpenses,
-    double NetProfit,
-    double CashRevenue = 0,
-    double CashExpenses = 0,
-    double CardRevenue = 0
+    decimal TotalRevenue,
+    decimal TotalCostOfGoodsSold,
+    decimal GrossProfit,
+    decimal TotalExpenses,
+    decimal NetProfit,
+    decimal CashRevenue = 0m,
+    decimal CashExpenses = 0m,
+    decimal CardRevenue = 0m
 );
 
 public record ItemKitItemDto(
@@ -356,7 +428,7 @@ public record ItemKitDto(
     string Id,
     string KitBarcode,
     string Name,
-    double Price,
+    decimal Price,
     string Description,
     List<ItemKitItemDto> Items
 );
@@ -373,8 +445,8 @@ public record ShiftNoteDto(
 public record CashierPerformanceDto(
     string CashierName,
     int TicketCount,
-    double TotalRevenue,
-    double AverageTicketValue,
-    double CommissionRatePct,
-    double EarnedCommissionAmount
+    decimal TotalRevenue,
+    decimal AverageTicketValue,
+    decimal CommissionRatePct,
+    decimal EarnedCommissionAmount
 );

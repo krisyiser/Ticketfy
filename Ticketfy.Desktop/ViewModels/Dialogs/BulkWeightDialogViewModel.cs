@@ -12,7 +12,7 @@ public partial class BulkWeightDialogViewModel : ObservableObject
 
     public ProductDto Product => _product;
     public string ProductName => _product.Name;
-    public double UnitPrice => _product.Price;
+    public decimal UnitPrice => _product.Price;
     public string UnitLabel => string.IsNullOrWhiteSpace(_product.Unit) ? "Kg" : _product.Unit;
     public double SubUnitFactor => UnitLabel.ToUpperInvariant() switch
     {
@@ -130,7 +130,7 @@ public partial class BulkWeightDialogViewModel : ObservableObject
     private double _quantityInKilos = 1.0;
 
     [ObservableProperty]
-    private double _moneyAmount;
+    private decimal _moneyAmount;
 
     [ObservableProperty]
     private string _errorMessage = string.Empty;
@@ -155,7 +155,7 @@ public partial class BulkWeightDialogViewModel : ObservableObject
         try
         {
             QuantityInKilos = Math.Round(value / SubUnitFactor, 4);
-            MoneyAmount = Math.Round(QuantityInKilos * UnitPrice, 2);
+            MoneyAmount = Math.Round((decimal)QuantityInKilos * UnitPrice, 2);
             OnPropertyChanged(nameof(DispatchQuantityDisplay));
         }
         finally
@@ -171,7 +171,7 @@ public partial class BulkWeightDialogViewModel : ObservableObject
         try
         {
             QuantityInGrams = Math.Round(value * SubUnitFactor, 1);
-            MoneyAmount = Math.Round(value * UnitPrice, 2);
+            MoneyAmount = Math.Round((decimal)value * UnitPrice, 2);
             OnPropertyChanged(nameof(DispatchQuantityDisplay));
         }
         finally
@@ -180,13 +180,13 @@ public partial class BulkWeightDialogViewModel : ObservableObject
         }
     }
 
-    partial void OnMoneyAmountChanged(double value)
+    partial void OnMoneyAmountChanged(decimal value)
     {
         if (_isUpdatingInternally || UnitPrice <= 0) return;
         _isUpdatingInternally = true;
         try
         {
-            double kilos = Math.Round(value / UnitPrice, 4);
+            double kilos = (double)Math.Round(value / UnitPrice, 4);
             QuantityInKilos = kilos;
             QuantityInGrams = Math.Round(kilos * SubUnitFactor, 1);
             OnPropertyChanged(nameof(DispatchQuantityDisplay));
@@ -215,11 +215,11 @@ public partial class BulkWeightDialogViewModel : ObservableObject
     private void SetPresetMoney(object? param)
     {
         if (param == null) return;
-        if (param is double d)
+        if (param is decimal d)
         {
             MoneyAmount = d;
         }
-        else if (double.TryParse(param.ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double parsed))
+        else if (decimal.TryParse(param.ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out decimal parsed))
         {
             MoneyAmount = parsed;
         }

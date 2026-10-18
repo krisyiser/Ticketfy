@@ -62,11 +62,6 @@
                             <TextBox Text="{Binding NewPassword, Mode=TwoWay}" PasswordChar="*" Watermark="••••••••" Padding="8,6" />
                         </StackPanel>
 
-                        <StackPanel Grid.Row="1" Grid.Column="1" Margin="8,0,0,10" Spacing="4">
-                            <TextBlock Text="Pista de Contraseña (ej. Mascota de la infancia)" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                            <TextBox Text="{Binding NewPasswordHint, Mode=TwoWay}" Watermark="Pista de recuperación" Padding="8,6" />
-                        </StackPanel>
-
                         <!-- Row 2: System Role & Custom Role Creator + PIN -->
                         <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,0,8,0" Spacing="4">
                             <TextBlock Text="Rol de Sistema" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />

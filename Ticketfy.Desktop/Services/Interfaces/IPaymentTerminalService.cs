@@ -14,9 +14,11 @@ public class PaymentResponse
 
 public interface IPaymentTerminalService
 {
-    // Inicia la intención de cobro en la terminal física
+    // Crea o recupera una order idempotente en la terminal física.
     Task<Result<PaymentResponse>> ProcessPaymentAsync(decimal amount, string referenceId, CancellationToken cancellationToken);
-    
-    // Permite cancelar el cobro desde la PC si el cliente se arrepiente
+
+    // Solicita cancelación usando el ID de order del proveedor.
     Task<Result> CancelPaymentIntentAsync(string referenceId);
+
+    Task<bool> RequiresReconciliationAsync(string referenceId, CancellationToken cancellationToken = default);
 }

@@ -37,12 +37,12 @@ namespace Ticketfy.Desktop.Core.Helpers
         public static bool SendBytesToPrinter(string szPrinterName, byte[] data)
         {
             if (data == null || data.Length == 0) return false;
-            
+
             IntPtr pUnmanagedBytes = Marshal.AllocCoTaskMem(data.Length);
             Marshal.Copy(data, 0, pUnmanagedBytes, data.Length);
-            
+
             bool success = SendBytesToPrinterNative(szPrinterName, pUnmanagedBytes, data.Length);
-            
+
             Marshal.FreeCoTaskMem(pUnmanagedBytes);
             return success;
         }

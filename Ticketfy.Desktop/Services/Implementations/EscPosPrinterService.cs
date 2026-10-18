@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.IO.Ports;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Channels;
@@ -30,7 +31,7 @@ public partial class EscPosPrinterService : IEscPosPrinterService, IDisposable, 
     private static readonly byte[] DrawerPin2Command = [0x1B, 0x70, 0x00, 0x19, 0xFA];
     private static readonly byte[] DrawerPin5Command = [0x1B, 0x70, 0x01, 0x19, 0xFA];
 
-    private record PrintJob(string PortOrName, byte[] Payload);
+    private record PrintJob(string PortOrName, byte[] Payload, TaskCompletionSource<bool> Completion);
 
     private readonly Channel<PrintJob> _printerQueue;
     private readonly CancellationTokenSource _cts;
@@ -53,8 +54,7 @@ public partial class EscPosPrinterService : IEscPosPrinterService, IDisposable, 
             ms.Write(EscInit, 0, EscInit.Length);
             ms.Write(command, 0, command.Length);
 
-            _printerQueue.Writer.TryWrite(new PrintJob(printerPortOrName, ms.ToArray()));
-            return Task.FromResult(true);
+            return EnqueuePrintJobAsync(printerPortOrName, ms.ToArray());
         }
         catch (Exception ex)
         {
@@ -65,7 +65,15 @@ public partial class EscPosPrinterService : IEscPosPrinterService, IDisposable, 
 
     public Task<bool> IsPrinterOnlineAsync()
     {
-        return Task.FromResult(true);
+        return EnqueuePrintJobAsync("ImpresoraTickets", EscInit);
+    }
+
+    private Task<bool> EnqueuePrintJobAsync(string portOrName, byte[] payload)
+    {
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_printerQueue.Writer.TryWrite(new PrintJob(portOrName, payload, completion)))
+            completion.TrySetResult(false);
+        return completion.Task;
     }
 
     private async Task ProcessPrintQueueAsync(CancellationToken cancellationToken)
@@ -79,29 +87,44 @@ public partial class EscPosPrinterService : IEscPosPrinterService, IDisposable, 
                     using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                     timeoutCts.CancelAfter(TimeSpan.FromSeconds(3));
 
-                    await SendRawBytesToHardwareAsync(job.PortOrName, job.Payload, timeoutCts.Token);
+                    bool success = await SendRawBytesToHardwareAsync(job.PortOrName, job.Payload, timeoutCts.Token);
+                    job.Completion.TrySetResult(success);
                 }
                 catch (OperationCanceledException)
                 {
                     Log.Warning("Hardware Timeout: La impresora no respondió en 3 segundos.");
+                    job.Completion.TrySetResult(false);
                 }
                 catch (Exception ex)
                 {
                     Log.Error(ex, "Error writing raw bytes to hardware printer.");
+                    job.Completion.TrySetResult(false);
                 }
             }
         }
         catch (OperationCanceledException)
         {
-            // Consumer task cancelled cleanly
+            while (_printerQueue.Reader.TryRead(out var pending))
+                pending.Completion.TrySetResult(false);
         }
     }
 
-    private async Task SendRawBytesToHardwareAsync(string portOrName, byte[] bytes, CancellationToken token)
+    private async Task<bool> SendRawBytesToHardwareAsync(string portOrName, byte[] bytes, CancellationToken token)
     {
         try
         {
-            await Task.Run(() =>
+            if (Uri.TryCreate(portOrName, UriKind.Absolute, out var endpoint) &&
+                endpoint.Scheme.Equals("tcp", StringComparison.OrdinalIgnoreCase))
+            {
+                int port = endpoint.Port > 0 ? endpoint.Port : 9100;
+                using var client = new TcpClient();
+                await client.ConnectAsync(endpoint.Host, port, token);
+                await using NetworkStream stream = client.GetStream();
+                await stream.WriteAsync(bytes, token);
+                await stream.FlushAsync(token);
+                return true;
+            }
+            return await Task.Run(() =>
             {
                 if (string.IsNullOrEmpty(portOrName)) portOrName = "ImpresoraTickets";
 
@@ -109,38 +132,37 @@ public partial class EscPosPrinterService : IEscPosPrinterService, IDisposable, 
                 {
                     try
                     {
-                        using var serial = new SerialPort(portOrName, 9600, Parity.None, 8, StopBits.One);
+                        string[] serialParts = portOrName.Split('@', 2, StringSplitOptions.TrimEntries);
+                        int baudRate = serialParts.Length == 2 && int.TryParse(serialParts[1], out int parsedBaud)
+                            ? parsedBaud
+                            : 9600;
+                        if (baudRate is < 1200 or > 115200) return false;
+                        using var serial = new SerialPort(serialParts[0], baudRate, Parity.None, 8, StopBits.One);
                         serial.Open();
                         serial.Write(bytes, 0, bytes.Length);
                         serial.Close();
+                        return true;
                     }
                     catch (Exception ex)
                     {
                         Log.Warning("COM Serial Port {Port} not reachable directly, fallback spooler simulation: {Message}", portOrName, ex.Message);
-                        RawPrinterHelper.SendBytesToPrinter("ImpresoraTickets", bytes);
+                        return RawPrinterHelper.SendBytesToPrinter("ImpresoraTickets", bytes);
                     }
                 }
-                else
-                {
-                    bool success = RawPrinterHelper.SendBytesToPrinter(portOrName, bytes);
-                    if (!success)
-                    {
-                        Log.Warning("Failed to send print job to Winspool printer {PrinterName}", portOrName);
-                        if (portOrName != "ImpresoraTickets")
-                        {
-                            RawPrinterHelper.SendBytesToPrinter("ImpresoraTickets", bytes);
-                        }
-                    }
-                }
+                bool success = RawPrinterHelper.SendBytesToPrinter(portOrName, bytes);
+                if (!success) Log.Warning("Failed to send print job to Winspool printer {PrinterName}", portOrName);
+                return success;
             }, token).WaitAsync(TimeSpan.FromSeconds(3), token);
         }
         catch (TimeoutException)
         {
             Log.Warning("Hardware Timeout: P/Invoke to winspool.drv hung for more than 3 seconds. Aborting await.");
+            return false;
         }
         catch (OperationCanceledException)
         {
             Log.Warning("Hardware Canceled: Printer task was canceled.");
+            return false;
         }
     }
 

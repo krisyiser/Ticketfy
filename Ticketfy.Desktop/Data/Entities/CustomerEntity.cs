@@ -39,10 +39,10 @@ public class CustomerEntity
     public string Address { get; set; } = string.Empty;
 
     [Column("credit_limit")]
-    public double CreditLimit { get; set; } = 5000.0;
+    public decimal CreditLimit { get; set; } = 5000.0m;
 
     [Column("debt")]
-    public double Debt { get; set; }
+    public decimal Debt { get; set; }
 
     [Column("is_credit_blocked")]
     public bool IsCreditBlocked { get; set; } = false;
@@ -53,19 +53,19 @@ public class CustomerEntity
     [NotMapped]
     public decimal CurrentDebt
     {
-        get => (decimal)Debt;
-        set => Debt = (double)value;
+        get => Debt;
+        set => Debt = value;
     }
 
     [NotMapped]
     public decimal CreditLimitDecimal
     {
-        get => (decimal)CreditLimit;
-        set => CreditLimit = (double)value;
+        get => CreditLimit;
+        set => CreditLimit = value;
     }
 
     [NotMapped]
-    public decimal AvailableCredit => Math.Max(0m, (decimal)CreditLimit - (decimal)Debt);
+    public decimal AvailableCredit => Math.Max(0m, CreditLimit - Debt);
 
     /// <summary>Navigation: payments made by this customer.</summary>
     public ICollection<CustomerPaymentEntity> Payments { get; set; } = [];

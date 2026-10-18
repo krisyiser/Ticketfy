@@ -29,16 +29,16 @@ public class ClientDisplayService
                     // For resilience, check if there's actually a secondary screen
                     var desktopLifetime = Avalonia.Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime;
                     var screensCount = desktopLifetime?.MainWindow?.Screens.ScreenCount ?? 1;
-                        
+
                     if (screensCount <= 1)
                     {
                         return; // No secondary display attached
                     }
 
                     _clientWindow = new ClientDisplayWindow();
-                    
-                    var secondScreen = desktopLifetime?.MainWindow?.Screens.All.Count > 1 
-                                       ? desktopLifetime?.MainWindow?.Screens.All[1] 
+
+                    var secondScreen = desktopLifetime?.MainWindow?.Screens.All.Count > 1
+                                       ? desktopLifetime?.MainWindow?.Screens.All[1]
                                        : desktopLifetime?.MainWindow?.Screens.Primary;
 
                     if (secondScreen != null)

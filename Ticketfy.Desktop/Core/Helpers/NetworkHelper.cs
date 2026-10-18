@@ -18,7 +18,7 @@ public static class NetworkHelper
                 }
             }
         }
-        catch 
+        catch
         {
             // Ignore errors
         }

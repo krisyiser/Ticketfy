@@ -25,7 +25,6 @@
                     <TextBox Text="{Binding FullName, Mode=TwoWay}" Watermark="Nombre Completo *" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
                     <TextBox Text="{Binding Username, Mode=TwoWay}" Watermark="Nombre de Usuario *" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
                     <TextBox Text="{Binding Password, Mode=TwoWay}" PasswordChar="•" Watermark="Contraseña *" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
-                    <TextBox Text="{Binding PasswordHint, Mode=TwoWay}" Watermark="Pista de Contraseña" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
                     <StackPanel Spacing="4">
                         <TextBlock Text="PIN rápido de 4 Dígitos *" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
                         <controls:PinInputControl Pin1="{Binding Pin1, Mode=TwoWay}" Pin2="{Binding Pin2, Mode=TwoWay}" Pin3="{Binding Pin3, Mode=TwoWay}" Pin4="{Binding Pin4, Mode=TwoWay}" HorizontalAlignment="Left" />

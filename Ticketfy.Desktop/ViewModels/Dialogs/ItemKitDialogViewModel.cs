@@ -18,7 +18,7 @@ public partial class ItemKitDialogViewModel : ObservableObject
 
     [ObservableProperty] private string _kitBarcode = string.Empty;
     [ObservableProperty] private string _kitName = string.Empty;
-    [ObservableProperty] private double _kitPrice = 0.0;
+    [ObservableProperty] private decimal _kitPrice;
     [ObservableProperty] private string _kitDescription = string.Empty;
     [ObservableProperty] private string _feedbackMessage = string.Empty;
 

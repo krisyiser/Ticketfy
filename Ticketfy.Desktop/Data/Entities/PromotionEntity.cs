@@ -42,7 +42,7 @@ public class PromotionEntity
     public string? DiscountType { get; set; }
 
     [Column("discountValue")]
-    public double DiscountValue { get; set; }
+    public decimal DiscountValue { get; set; }
 
     [Column("min_quantity")]
     public double MinQuantity { get; set; } = 1.0;

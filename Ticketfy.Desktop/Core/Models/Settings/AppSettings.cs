@@ -102,10 +102,11 @@ public sealed class TicketLayoutConfig
 
 public sealed class HardwareConfig
 {
-    public string PrinterPort { get; set; } = "LPT1 / Direct Raw";
+    public string PrinterPort { get; set; } = "ImpresoraTickets";
     public string ScannerPort { get; set; } = "HID Barcode Scanner";
-    public string ScalePort { get; set; } = "COM1 (RS-232)";
+    public string ScalePort { get; set; } = "COM1";
     public bool EnableCashDrawerTrigger { get; set; } = true;
+    public int CashDrawerPin { get; set; }
 }
 
 public sealed class SystemSecurityConfig

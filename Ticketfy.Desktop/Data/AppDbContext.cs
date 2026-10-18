@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Ticketfy.Data.Entities;
 using System;
+using Ticketfy.Core.Configuration;
 
 namespace Ticketfy.Data;
 
@@ -44,6 +45,11 @@ public class AppDbContext : DbContext
     public DbSet<CoOccurrenceEntity> CoOccurrences => Set<CoOccurrenceEntity>();
     public DbSet<InventorySnapshotEntity> InventorySnapshots => Set<InventorySnapshotEntity>();
     public DbSet<InventorySnapshotItemEntity> InventorySnapshotItems => Set<InventorySnapshotItemEntity>();
+    public DbSet<CheckoutOperationEntity> CheckoutOperations => Set<CheckoutOperationEntity>();
+    public DbSet<TransactionJournalEntryEntity> TransactionJournal => Set<TransactionJournalEntryEntity>();
+    public DbSet<FiscalOperationEntity> FiscalOperations => Set<FiscalOperationEntity>();
+    public DbSet<PaymentTerminalOperationEntity> PaymentTerminalOperations => Set<PaymentTerminalOperationEntity>();
+    public DbSet<IntegrationWebhookEventEntity> IntegrationWebhookEvents => Set<IntegrationWebhookEventEntity>();
 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
@@ -74,6 +80,44 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<AttendanceEntity>().HasKey(a => a.Id);
         modelBuilder.Entity<FolioSequenceEntity>().HasKey(f => f.DatePrefix);
         modelBuilder.Entity<CoOccurrenceEntity>().HasKey(c => new { c.ProductoA, c.ProductoB });
+        modelBuilder.Entity<CheckoutOperationEntity>().HasKey(c => c.OperationId);
+        modelBuilder.Entity<TransactionJournalEntryEntity>().HasKey(e => e.Id);
+        modelBuilder.Entity<FiscalOperationEntity>().HasKey(e => e.Id);
+        modelBuilder.Entity<PaymentTerminalOperationEntity>().HasKey(e => e.Id);
+        modelBuilder.Entity<IntegrationWebhookEventEntity>().HasKey(e => e.Id);
+
+        modelBuilder.Entity<SaleEntity>()
+            .HasIndex(s => s.OperationId)
+            .IsUnique();
+        modelBuilder.Entity<CustomerPaymentEntity>()
+            .HasIndex(p => p.OperationId)
+            .IsUnique();
+        modelBuilder.Entity<ReturnEntity>()
+            .HasIndex(r => r.OperationId)
+            .IsUnique();
+        modelBuilder.Entity<ProductEntity>()
+            .Property(p => p.StockVersion)
+            .IsConcurrencyToken();
+        modelBuilder.Entity<TransactionJournalEntryEntity>()
+            .HasIndex(e => new { e.OperationId, e.EventType })
+            .IsUnique();
+        modelBuilder.Entity<FiscalOperationEntity>()
+            .HasIndex(e => e.IdempotencyKey)
+            .IsUnique();
+        modelBuilder.Entity<FiscalOperationEntity>()
+            .HasIndex(e => new { e.Status, e.NextAttemptAtUtc });
+        modelBuilder.Entity<PaymentTerminalOperationEntity>()
+            .HasIndex(e => e.ExternalReference)
+            .IsUnique();
+        modelBuilder.Entity<PaymentTerminalOperationEntity>()
+            .HasIndex(e => e.IdempotencyKey)
+            .IsUnique();
+        modelBuilder.Entity<PaymentTerminalOperationEntity>()
+            .HasIndex(e => e.ProviderOrderId)
+            .IsUnique();
+        modelBuilder.Entity<IntegrationWebhookEventEntity>()
+            .HasIndex(e => new { e.Provider, e.EventId })
+            .IsUnique();
     }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
@@ -89,20 +133,11 @@ public class AppDbContext : DbContext
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         base.OnConfiguring(optionsBuilder);
-        optionsBuilder.ConfigureWarnings(warnings => 
-            warnings.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
-
         if (!optionsBuilder.IsConfigured)
         {
-            string appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            string appFolder = System.IO.Path.Combine(appDataFolder, "Ticketfy", "Database");
-            if (!System.IO.Directory.Exists(appFolder))
-            {
-                System.IO.Directory.CreateDirectory(appFolder);
-            }
-            string dbPath = System.IO.Path.Combine(appFolder, "ticketfy.db");
+            AppDataPaths.EnsureRequiredDirectories();
             string securePassword = Ticketfy.Services.Security.SecurityManager.GetMasterKey();
-            optionsBuilder.UseSqlite($"Data Source={dbPath};Password={securePassword};Cache=Shared;Mode=ReadWriteCreate;");
+            optionsBuilder.UseSqlite($"Data Source={AppDataPaths.DatabaseFile};Password={securePassword};Cache=Shared;Mode=ReadWriteCreate;");
         }
     }
 }
@@ -112,15 +147,10 @@ public class AppDbContextFactory : Microsoft.EntityFrameworkCore.Design.IDesignT
     public AppDbContext CreateDbContext(string[] args)
     {
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-        string appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        string appFolder = System.IO.Path.Combine(appDataFolder, "Ticketfy", "Database");
-        if (!System.IO.Directory.Exists(appFolder))
-        {
-            System.IO.Directory.CreateDirectory(appFolder);
-        }
-        string dbPath = System.IO.Path.Combine(appFolder, "ticketfy.db");
-        string securePassword = Ticketfy.Services.Security.SecurityManager.GetMasterKey();
-        optionsBuilder.UseSqlite($"Data Source={dbPath};Password={securePassword};Cache=Shared;Mode=ReadWriteCreate;");
+        // Design-time tooling only needs the model. Keeping its scratch database beside
+        // the build output avoids touching the operator's production data directory.
+        var designDatabase = System.IO.Path.Combine(AppContext.BaseDirectory, "ticketfy.design.db");
+        optionsBuilder.UseSqlite($"Data Source={designDatabase};Mode=ReadWriteCreate;");
         return new AppDbContext(optionsBuilder.Options);
     }
 }

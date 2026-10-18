@@ -35,10 +35,10 @@ public partial class UserEntity
     public byte[]? PasswordHashBytes { get; set; }
 
     [Column("password_hint")]
-    public string PasswordHint { get; set; } = string.Empty; // Pista de contraseña
+    public string PasswordHint { get; set; } = string.Empty; // Legacy column; cleared and no longer exposed.
 
     [Column("pin_checador_hash")]
-    public string PinCode { get; set; } = string.Empty;      // 4-digit fast PIN
+    public string PinCode { get; set; } = string.Empty;      // PBKDF2 hash of the 4-digit PIN.
 
     [Column("rol")]
     public UserRole Role { get; set; } = UserRole.Cajero;

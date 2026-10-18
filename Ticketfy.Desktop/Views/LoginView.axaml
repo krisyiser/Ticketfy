@@ -21,10 +21,6 @@
                 <StackPanel Spacing="12">
                     <TextBox Text="{Binding Username, Mode=TwoWay}" Watermark="Usuario" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
                     <TextBox Text="{Binding Password, Mode=TwoWay}" PasswordChar="•" Watermark="Contraseña" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
-                    <Button Command="{Binding ShowPasswordHintCommand}" Background="Transparent" BorderThickness="0" HorizontalAlignment="Right" Padding="0">
-                        <TextBlock Text="Olvidé mi contraseña" FontSize="11" Foreground="{DynamicResource AccentPrimaryBrush}" TextDecorations="Underline" />
-                    </Button>
-                    <TextBlock Text="{Binding HintMessage}" Foreground="{DynamicResource AccentWarningBrush}" FontSize="12" HorizontalAlignment="Center" TextWrapping="Wrap" IsVisible="{Binding IsHintVisible}" />
                     <TextBlock Text="{Binding ErrorMessage}" Foreground="{DynamicResource AccentDangerBrush}" FontSize="12" HorizontalAlignment="Center" IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
 

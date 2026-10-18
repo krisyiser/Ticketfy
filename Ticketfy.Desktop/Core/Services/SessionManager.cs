@@ -25,18 +25,6 @@ public class SessionManager : ISessionManager
     public event Action<UserModel>? CashierChanged;
     public event Action<bool>? LockStateChanged;
 
-    public SessionManager()
-    {
-        CurrentCashier = new UserModel
-        {
-            FullName = "Administrador Principal",
-            Username = "admin",
-            Role = SystemRole.ADMIN,
-            RoleString = "ADMINISTRADOR",
-            Pin4Digits = "1234"
-        };
-    }
-
     public void SwitchCashier(UserModel newUser)
     {
         CurrentCashier = newUser;
@@ -50,7 +38,7 @@ public class SessionManager : ISessionManager
 
     public void ClearSession()
     {
-        SwitchCashier(null!);
+        CurrentCashier = null;
     }
 
     public void LockTerminal()

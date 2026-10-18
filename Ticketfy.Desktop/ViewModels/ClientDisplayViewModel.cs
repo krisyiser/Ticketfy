@@ -15,9 +15,9 @@ public partial class ClientDisplayViewModel : ObservableObject, System.IDisposab
 
     public System.Collections.ObjectModel.ObservableCollection<CartItemDto> CustomerCartItems => _cartState.Items;
 
-    public double GrandTotal => _cartState.Total;
+    public decimal GrandTotal => _cartState.Total;
 
-    [ObservableProperty] private double _totalSaved;
+    [ObservableProperty] private decimal _totalSaved;
     [ObservableProperty] private bool _isIdleMode = true;
     [ObservableProperty] private string _highlightBannerText = string.Empty;
     [ObservableProperty] private string _lastAddedProductName = string.Empty;

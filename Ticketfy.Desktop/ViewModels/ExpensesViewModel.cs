@@ -41,16 +41,15 @@ public partial class ExpensesViewModel : ObservableObject
     }
 
     [ObservableProperty] private string _selectedCategory = "Renta";
-    [ObservableProperty] private double _expenseAmount;
+    [ObservableProperty] private decimal _expenseAmount;
     [ObservableProperty] private string _expenseDescription = string.Empty;
     [ObservableProperty] private string _paymentMethod = "Efectivo";
 
-    // Financial Metrics (Double representation kept for compatibility)
-    [ObservableProperty] private double _totalRevenue;
-    [ObservableProperty] private double _totalCostOfGoods;
-    [ObservableProperty] private double _grossProfit;
-    [ObservableProperty] private double _totalExpenses;
-    [ObservableProperty] private double _netProfit;
+    [ObservableProperty] private decimal _totalRevenue;
+    [ObservableProperty] private decimal _totalCostOfGoods;
+    [ObservableProperty] private decimal _grossProfit;
+    [ObservableProperty] private decimal _totalExpenses;
+    [ObservableProperty] private decimal _netProfit;
 
     // Cash-Flow Metrics (Decimal representation)
     [ObservableProperty] private decimal _fondoInicial;
@@ -60,7 +59,7 @@ public partial class ExpensesViewModel : ObservableObject
     [ObservableProperty] private decimal _egresos;
     [ObservableProperty] private decimal _totalEnCaja;
     [ObservableProperty] private decimal _reinversion;
-    
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(UtilidadNetaColor))]
     private decimal _utilidadNeta;
@@ -127,7 +126,7 @@ public partial class ExpensesViewModel : ObservableObject
             }
 
             var summary = await _expenseService.GetFinancialSummaryAsync(shiftStart, shiftEnd);
-            decimal openingBalance = (SelectedPeriod == "Turno Activo" && activeShift != null) ? (decimal)activeShift.OpeningBalance : 0m;
+            decimal openingBalance = (SelectedPeriod == "Turno Activo" && activeShift != null) ? activeShift.OpeningBalance : 0m;
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
@@ -141,14 +140,14 @@ public partial class ExpensesViewModel : ObservableObject
                 NetProfit = summary.NetProfit;
 
                 FondoInicial = openingBalance;
-                Ingresos = (decimal)summary.TotalRevenue;
-                PagosConTarjeta = (decimal)summary.CardRevenue;
-                CostoDeVentas = (decimal)summary.TotalCostOfGoodsSold;
-                Egresos = (decimal)summary.TotalExpenses;
-                
+                Ingresos = summary.TotalRevenue;
+                PagosConTarjeta = summary.CardRevenue;
+                CostoDeVentas = summary.TotalCostOfGoodsSold;
+                Egresos = summary.TotalExpenses;
+
                 // Total en Caja (Fondo Inicial + Ventas en Efectivo - Gastos en Efectivo)
-                decimal cashRev = (decimal)summary.CashRevenue;
-                decimal cashExp = (decimal)summary.CashExpenses;
+                decimal cashRev = summary.CashRevenue;
+                decimal cashExp = summary.CashExpenses;
                 TotalEnCaja = FondoInicial + cashRev - cashExp;
 
                 Reinversion = CostoDeVentas;

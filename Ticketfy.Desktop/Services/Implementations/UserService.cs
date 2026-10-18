@@ -8,16 +8,21 @@ using Ticketfy.Data.Dtos;
 using Ticketfy.Data.Entities;
 using Ticketfy.Core.Enums;
 using Ticketfy.Services.Interfaces;
+using Ticketfy.Services.Security;
 
 namespace Ticketfy.Services.Implementations;
 
 public class UserService : IUserService
 {
     private readonly AppDbContext _context;
+    private readonly IAuditService? _auditService;
+    private readonly Func<string>? _auditActor;
 
-    public UserService(AppDbContext context)
+    public UserService(AppDbContext context, IAuditService? auditService = null, Func<string>? auditActor = null)
     {
         _context = context;
+        _auditService = auditService;
+        _auditActor = auditActor;
     }
 
     public async Task<int> GetCountAsync()
@@ -48,7 +53,8 @@ public class UserService : IUserService
     {
         Guid guidId = Guid.TryParse(id, out var parsed) ? parsed : Guid.NewGuid();
         var entity = await _context.Users.FindAsync(guidId);
-        
+        bool isNew = entity == null;
+
         var enumRole = ParseRole(rol);
         string normalizedRole = string.IsNullOrWhiteSpace(rol)
             ? (enumRole == UserRole.Admin ? "ADMINISTRADOR" : (enumRole == UserRole.Gerente ? "GERENTE" : "CAJERO"))
@@ -63,9 +69,9 @@ public class UserService : IUserService
                 Username = username,
                 Role = enumRole,
                 RoleString = normalizedRole,
-                PasswordHash = passwordHash ?? string.Empty,
-                PasswordHint = passwordHint ?? string.Empty,
-                PinCode = string.IsNullOrEmpty(pinHash) ? "1234" : pinHash,
+                PasswordHash = NormalizePassword(passwordHash),
+                PasswordHint = string.Empty,
+                PinCode = NormalizePin(pinHash),
                 IsActive = true
             };
             _context.Users.Add(entity);
@@ -75,9 +81,21 @@ public class UserService : IUserService
             entity.FullName = nombre;
             entity.Role = enumRole;
             entity.RoleString = normalizedRole;
-            if (!string.IsNullOrEmpty(pinHash)) entity.PinCode = pinHash;
-            if (!string.IsNullOrEmpty(passwordHash)) entity.PasswordHash = passwordHash;
-            if (passwordHint != null) entity.PasswordHint = passwordHint;
+            if (!string.IsNullOrEmpty(pinHash)) entity.PinCode = NormalizePin(pinHash);
+            if (!string.IsNullOrEmpty(passwordHash)) entity.PasswordHash = NormalizePassword(passwordHash);
+            entity.PasswordHint = string.Empty;
+        }
+        if (_auditService != null)
+        {
+            await _auditService.LogAsync(new AuditLogEntity
+            {
+                UserId = _auditActor?.Invoke() ?? "SYSTEM",
+                EntityName = "User",
+                EntityId = guidId.ToString(),
+                ActionType = isNew ? AuditActionType.UserCreated : AuditActionType.UserUpdated,
+                RiskLevel = RiskLevel.Warning,
+                Reason = "Administrative user account change"
+            });
         }
         await _context.SaveChangesAsync();
     }
@@ -99,6 +117,18 @@ public class UserService : IUserService
             var entity = await _context.Users.FindAsync(guidId);
             if (entity != null)
             {
+                if (_auditService != null)
+                {
+                    await _auditService.LogAsync(new AuditLogEntity
+                    {
+                        UserId = _auditActor?.Invoke() ?? "SYSTEM",
+                        EntityName = "User",
+                        EntityId = guidId.ToString(),
+                        ActionType = AuditActionType.UserDeleted,
+                        RiskLevel = RiskLevel.Critical,
+                        Reason = "Administrative user account deletion"
+                    });
+                }
                 _context.Users.Remove(entity);
                 await _context.SaveChangesAsync();
             }
@@ -127,9 +157,35 @@ public class UserService : IUserService
 
     public async Task<string?> GetPasswordHintAsync(string username)
     {
-        var entity = await _context.Users.FirstOrDefaultAsync(u => u.Username.ToLower() == username.ToLower());
-        return entity?.PasswordHint;
+        await Task.CompletedTask;
+        return null;
     }
+
+    public async Task UpdatePasswordHashAsync(string userId, string passwordHash)
+    {
+        if (!Guid.TryParse(userId, out var guidId)) return;
+        var entity = await _context.Users.FindAsync(guidId);
+        if (entity == null) return;
+        entity.PasswordHash = passwordHash;
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task UpdatePinHashAsync(string userId, string pinHash)
+    {
+        if (!Guid.TryParse(userId, out var guidId)) return;
+        var entity = await _context.Users.FindAsync(guidId);
+        if (entity == null) return;
+        entity.PinCode = pinHash;
+        await _context.SaveChangesAsync();
+    }
+
+    private static string NormalizePassword(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? string.Empty :
+        SecurityManager.IsPasswordHash(value) ? value : SecurityManager.HashPassword(value);
+
+    private static string NormalizePin(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? string.Empty :
+        SecurityManager.IsPasswordHash(value) ? value : SecurityManager.HashPin(value);
 
     private static UserDto MapToDto(UserEntity e)
     {

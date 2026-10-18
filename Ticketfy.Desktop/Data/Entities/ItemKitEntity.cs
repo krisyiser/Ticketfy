@@ -27,7 +27,7 @@ public class ItemKitEntity
     public string KitName => Name;
 
     [Column("price")]
-    public double Price { get; set; }
+    public decimal Price { get; set; }
 
     [Column("description")]
     public string Description { get; set; } = string.Empty;

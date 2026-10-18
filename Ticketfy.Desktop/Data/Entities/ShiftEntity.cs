@@ -23,22 +23,22 @@ public class ShiftEntity
     public string? EndTime { get; set; }
 
     [Column("openingBalance")]
-    public double OpeningBalance { get; set; }
+    public decimal OpeningBalance { get; set; }
 
     [Column("totalCashSales")]
-    public double TotalCashSales { get; set; }
+    public decimal TotalCashSales { get; set; }
 
     [Column("totalCreditSales")]
-    public double TotalCreditSales { get; set; }
+    public decimal TotalCreditSales { get; set; }
 
     [Column("expectedBalance")]
-    public double ExpectedBalance { get; set; }
+    public decimal ExpectedBalance { get; set; }
 
     [Column("actualBalance")]
-    public double? ActualBalance { get; set; }
+    public decimal? ActualBalance { get; set; }
 
     [Column("diff")]
-    public double? Diff { get; set; }
+    public decimal? Diff { get; set; }
 
     [Column("isOpen")]
     public int IsOpen { get; set; } = 1;

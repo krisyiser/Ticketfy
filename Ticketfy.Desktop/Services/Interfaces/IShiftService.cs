@@ -8,7 +8,7 @@ namespace Ticketfy.Services.Interfaces;
 public interface IShiftService
 {
     Task<ShiftDto?> GetActiveAsync();
-    Task<ShiftDto> OpenAsync(double openingBalance);
-    Task<ShiftDto> CloseAsync(string shiftId, double actualBalance);
+    Task<ShiftDto> OpenAsync(decimal openingBalance);
+    Task<ShiftDto> CloseAsync(string shiftId, decimal actualBalance);
     Task<List<ShiftDto>> GetAllAsync();
 }

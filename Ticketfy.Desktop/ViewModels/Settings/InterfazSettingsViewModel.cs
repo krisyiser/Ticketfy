@@ -149,9 +149,9 @@ public partial class InterfazSettingsViewModel : ObservableObject
     [RelayCommand]
     private void SelectSubTab(string tab)
     {
-        IsSubTema        = tab == "tema";
-        IsSubColores     = tab == "colores";
-        IsSubFuentes     = tab == "fuentes";
+        IsSubTema = tab == "tema";
+        IsSubColores = tab == "colores";
+        IsSubFuentes = tab == "fuentes";
         IsSubDisposicion = tab == "disposicion";
         IsSubComponentes = tab == "componentes";
         IsSubAnimaciones = tab == "animaciones";

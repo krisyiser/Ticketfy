@@ -43,21 +43,21 @@ public class PerformanceAnalyticsService : IPerformanceAnalyticsService
                     .Where(s => s.Date.IsInDateRange(startDate, endDate))
                     .ToList();
 
-                double totalSalesAmount = userSales.Sum(s => s.Total);
+                decimal totalSalesAmount = userSales.Sum(s => s.Total);
                 int totalTickets = userSales.Count;
 
                 // 3. APPLY TRUE TIME-WEIGHTED METRICS
-                double salesPerWorkedHour = totalHoursWorked > 0
-                    ? Math.Round(totalSalesAmount / totalHoursWorked, 2)
-                    : (totalSalesAmount > 0 ? totalSalesAmount : 0.0);
+                decimal salesPerWorkedHour = totalHoursWorked > 0
+                    ? Math.Round(totalSalesAmount / (decimal)totalHoursWorked, 2)
+                    : (totalSalesAmount > 0 ? totalSalesAmount : 0m);
 
                 double ticketsPerWorkedHour = totalHoursWorked > 0
                     ? Math.Round((double)totalTickets / totalHoursWorked, 2)
                     : 0.0;
 
-                double averageTicketValue = totalTickets > 0
+                decimal averageTicketValue = totalTickets > 0
                     ? Math.Round(totalSalesAmount / totalTickets, 2)
-                    : 0.0;
+                    : 0m;
 
                 resultList.Add(new CashierProductivityReportModel
                 {
@@ -70,7 +70,7 @@ public class PerformanceAnalyticsService : IPerformanceAnalyticsService
                     AverageTicketValue = averageTicketValue,
                     TrueSalesPerHour = salesPerWorkedHour,
                     TicketsPerHour = ticketsPerWorkedHour,
-                    EstimatedCommission = Math.Round(totalSalesAmount * 0.015, 2) // 1.5% commission
+                    EstimatedCommission = Math.Round(totalSalesAmount * 0.015m, 2) // 1.5% commission
                 });
             }
         }

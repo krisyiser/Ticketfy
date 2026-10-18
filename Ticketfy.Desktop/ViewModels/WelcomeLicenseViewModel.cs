@@ -5,6 +5,7 @@ using System.IO;
 using System.Threading.Tasks;
 using Ticketfy.Services.Security;
 using Ticketfy.ViewModels.Base;
+using Ticketfy.Core.Configuration;
 
 namespace Ticketfy.ViewModels;
 
@@ -35,8 +36,7 @@ public partial class WelcomeLicenseViewModel : ValidatableViewModelBase
     {
         try
         {
-            string localAppFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ticketfy");
-            string licensePath = Path.Combine(localAppFolder, "license.jwt");
+            string licensePath = AppDataPaths.LicenseFile;
 
             if (File.Exists(licensePath))
             {
@@ -45,7 +45,7 @@ public partial class WelcomeLicenseViewModel : ValidatableViewModelBase
                 {
                     IsLicenseActive = true;
                     LicenseStatusText = "Licencia Activa y Verificada";
-                    LicenseTokenInput = token;
+                    LicenseTokenInput = string.Empty;
                 }
             }
         }
@@ -62,13 +62,8 @@ public partial class WelcomeLicenseViewModel : ValidatableViewModelBase
         {
             try
             {
-                string localAppFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ticketfy");
-                if (!Directory.Exists(localAppFolder))
-                {
-                    Directory.CreateDirectory(localAppFolder);
-                }
-                string licensePath = Path.Combine(localAppFolder, "license.jwt");
-                await File.WriteAllTextAsync(licensePath, LicenseTokenInput.Trim());
+                AppDataPaths.EnsureRequiredDirectories();
+                _licenseService.InstallRenewal(LicenseTokenInput);
 
                 if (_licenseService.IsSystemLocked())
                 {
@@ -89,5 +84,6 @@ public partial class WelcomeLicenseViewModel : ValidatableViewModelBase
         }
 
         _navigateToNextStep();
+        await Task.CompletedTask;
     }
 }

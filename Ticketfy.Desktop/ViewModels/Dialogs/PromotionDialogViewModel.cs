@@ -55,13 +55,13 @@ public partial class PromotionDialogViewModel : ObservableObject
 
             // Sanitize discount numeric input
             string rawDiscount = new string((DiscountValueText ?? string.Empty).Where(c => char.IsDigit(c) || c == '.').ToArray());
-            
+
             if (SelectedTypeIndex == 2) // 2x1 Especial
             {
                 var dto2x1 = new PromotionDto(
                     Guid.NewGuid().ToString(),
                     Name.Trim(),
-                    0.0,
+                    0m,
                     IsActive,
                     PromotionType.BuyNGetM,
                     null,
@@ -74,7 +74,7 @@ public partial class PromotionDialogViewModel : ObservableObject
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(rawDiscount) || !double.TryParse(rawDiscount, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double parsedVal) || parsedVal <= 0)
+            if (string.IsNullOrWhiteSpace(rawDiscount) || !decimal.TryParse(rawDiscount, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out decimal parsedVal) || parsedVal <= 0)
             {
                 ErrorMessage = "El valor del descuento es obligatorio y debe ser un número válido mayor a 0.";
                 return;

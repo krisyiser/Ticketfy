@@ -45,8 +45,8 @@ public partial class InventoryViewModel : ObservableObject
     }
 
     public ObservableCollection<ProductDto> FilteredProducts => CatalogVM.FilteredProducts;
-    public double TotalStockCost => CatalogVM.TotalStockCost;
-    public double TotalStockSale => CatalogVM.TotalStockSale;
+    public decimal TotalStockCost => CatalogVM.TotalStockCost;
+    public decimal TotalStockSale => CatalogVM.TotalStockSale;
 
     public string FeedbackMessage => ActionsVM.FeedbackMessage;
     public bool IsFeedbackError => ActionsVM.IsFeedbackError;

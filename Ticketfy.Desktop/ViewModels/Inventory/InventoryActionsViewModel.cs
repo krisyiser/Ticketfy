@@ -31,7 +31,7 @@ public partial class InventoryActionsViewModel : ObservableObject
     public event Action? ProductsUpdated;
 
     public InventoryActionsViewModel(
-        IProductService productService, 
+        IProductService productService,
         IExternalCatalogService externalCatalogService,
         IInventorySnapshotService? snapshotService = null,
         IEscPosPrinterService? printerService = null)

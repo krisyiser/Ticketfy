@@ -15,7 +15,7 @@ public class GiftcardEntity
     public string CardNumber { get; set; } = string.Empty;
 
     [Column("balance")]
-    public double Balance { get; set; }
+    public decimal Balance { get; set; }
 
     [Column("customer_id")]
     public string? CustomerId { get; set; }

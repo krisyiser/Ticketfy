@@ -25,24 +25,24 @@ public partial class CashupDialogViewModel : ObservableObject
     private readonly Ticketfy.Services.Interfaces.IBackupService? _backupService;
     private readonly Ticketfy.Services.Interfaces.IAttendanceService? _attendanceService;
 
-    [ObservableProperty] private double _openCashAmount = 0.0;
-    [ObservableProperty] private double _totalIngresosShift = 0.0;
-    [ObservableProperty] private double _totalEgresosShift = 0.0;
-    [ObservableProperty] private double _theoreticalCash = 0.0;
-    [ObservableProperty] private double _totalPhysicalCash;
+    [ObservableProperty] private decimal _openCashAmount;
+    [ObservableProperty] private decimal _totalIngresosShift;
+    [ObservableProperty] private decimal _totalEgresosShift;
+    [ObservableProperty] private decimal _theoreticalCash;
+    [ObservableProperty] private decimal _totalPhysicalCash;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DifferenceAmountColor))]
     [NotifyPropertyChangedFor(nameof(DifferenceStatusLabel))]
-    private double _differenceAmount;
+    private decimal _differenceAmount;
 
-    public string DifferenceAmountColor => Math.Abs(DifferenceAmount) < 0.001 ? "#10B981" : (DifferenceAmount > 0 ? "#3B82F6" : "#EF4444");
-    public string DifferenceStatusLabel => Math.Abs(DifferenceAmount) < 0.001 ? "Cuadre Exacto" : (DifferenceAmount > 0 ? "Sobrante" : "Faltante");
+    public string DifferenceAmountColor => Math.Abs(DifferenceAmount) < 0.001m ? "#10B981" : (DifferenceAmount > 0 ? "#3B82F6" : "#EF4444");
+    public string DifferenceStatusLabel => Math.Abs(DifferenceAmount) < 0.001m ? "Cuadre Exacto" : (DifferenceAmount > 0 ? "Sobrante" : "Faltante");
 
-    [ObservableProperty] private double _grossProfit;
-    [ObservableProperty] private double _netProfit;
+    [ObservableProperty] private decimal _grossProfit;
+    [ObservableProperty] private decimal _netProfit;
     [ObservableProperty] private bool _isBlindMode = false;
-    
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SaveButtonText))]
     [NotifyPropertyChangedFor(nameof(IsPartialMode))]
@@ -54,8 +54,8 @@ public partial class CashupDialogViewModel : ObservableObject
         set => IsFinalZCut = !value;
     }
 
-    public string SaveButtonText => IsFinalZCut 
-        ? "GUARDAR CORTE FINAL Y CERRAR TURNO" 
+    public string SaveButtonText => IsFinalZCut
+        ? "GUARDAR CORTE FINAL Y CERRAR TURNO"
         : "GUARDAR CORTE PARCIAL";
 
     [ObservableProperty] private bool _isFeedbackError = false;
@@ -116,30 +116,30 @@ public partial class CashupDialogViewModel : ObservableObject
 
     private void RecalculatePhysicalTotal()
     {
-        double.TryParse(Count1000, out double c1000);
-        double.TryParse(Count500, out double c500);
-        double.TryParse(Count200, out double c200);
-        double.TryParse(Count100, out double c100);
-        double.TryParse(Count50, out double c50);
-        double.TryParse(Count20, out double c20);
-        double.TryParse(Count10, out double c10);
-        double.TryParse(Count5, out double c5);
-        double.TryParse(Count2, out double c2);
-        double.TryParse(Count1, out double c1);
-        double.TryParse(Count050, out double c050);
+        decimal.TryParse(Count1000, out decimal c1000);
+        decimal.TryParse(Count500, out decimal c500);
+        decimal.TryParse(Count200, out decimal c200);
+        decimal.TryParse(Count100, out decimal c100);
+        decimal.TryParse(Count50, out decimal c50);
+        decimal.TryParse(Count20, out decimal c20);
+        decimal.TryParse(Count10, out decimal c10);
+        decimal.TryParse(Count5, out decimal c5);
+        decimal.TryParse(Count2, out decimal c2);
+        decimal.TryParse(Count1, out decimal c1);
+        decimal.TryParse(Count050, out decimal c050);
 
         TotalPhysicalCash =
-            (c1000 * 1000.0) +
-            (c500 * 500.0) +
-            (c200 * 200.0) +
-            (c100 * 100.0) +
-            (c50 * 50.0) +
-            (c20 * 20.0) +
-            (c10 * 10.0) +
-            (c5 * 5.0) +
-            (c2 * 2.0) +
-            (c1 * 1.0) +
-            (c050 * 0.50);
+            (c1000 * 1000m) +
+            (c500 * 500m) +
+            (c200 * 200m) +
+            (c100 * 100m) +
+            (c50 * 50m) +
+            (c20 * 20m) +
+            (c10 * 10m) +
+            (c5 * 5m) +
+            (c2 * 2m) +
+            c1 +
+            (c050 * 0.50m);
 
         DifferenceAmount = TotalPhysicalCash - TheoreticalCash;
     }
@@ -194,8 +194,8 @@ public partial class CashupDialogViewModel : ObservableObject
             WeakReferenceMessenger.Default.Send(new Ticketfy.Core.Messages.CashupSavedMessage());
 
             IsFeedbackError = false;
-            FeedbackMessage = IsFinalZCut 
-                ? "¡Cierre Z de Turno guardado correctamente!" 
+            FeedbackMessage = IsFinalZCut
+                ? "¡Cierre Z de Turno guardado correctamente!"
                 : "¡Arqueo Parcial de Caja guardado correctamente!";
 
             // Print Thermal Audit Slip
@@ -323,7 +323,7 @@ public partial class CashupDialogViewModel : ObservableObject
         {
             var shift = _shiftService != null ? await _shiftService.GetActiveAsync() : null;
             DateTime? shiftStart = null;
-            double openingBalance = 0.0;
+            decimal openingBalance = 0m;
             string? shiftId = null;
 
             if (shift != null)
@@ -342,9 +342,10 @@ public partial class CashupDialogViewModel : ObservableObject
                 shiftStart = DateTime.Today;
             }
 
-            var query = _db.Sales
-                .AsNoTracking()
-                .Where(s => s.Status == Ticketfy.Core.Enums.SaleStatus.Completed && s.IsCancelled == 0);
+            // Drawer reconciliation includes the original inflow even when a sale
+            // was later cancelled/refunded; the matching cash return movement is
+            // subtracted below. Excluding that sale would count the refund twice.
+            var query = _db.Sales.AsNoTracking();
 
             if (shiftStart.HasValue)
             {
@@ -360,13 +361,13 @@ public partial class CashupDialogViewModel : ObservableObject
 
             var cashSales = shiftSales
                 .Sum(s => s.CashAmount > 0 ? s.CashAmount :
-                    (s.PaymentMethod != null && (s.PaymentMethod.Equals("Cash", StringComparison.OrdinalIgnoreCase) || s.PaymentMethod.Equals("Efectivo", StringComparison.OrdinalIgnoreCase)) ? s.Total : 0.0));
+                    (s.PaymentMethod != null && (s.PaymentMethod.Equals("Cash", StringComparison.OrdinalIgnoreCase) || s.PaymentMethod.Equals("Efectivo", StringComparison.OrdinalIgnoreCase)) ? s.Total : 0m));
 
-            double customerAbonosCash = 0.0;
-            double cashExpenses = 0.0;
-            double cashPurchases = 0.0;
-            double cashReturns = 0.0;
-            double cashWithdrawals = 0.0;
+            decimal customerAbonosCash = 0m;
+            decimal cashExpenses = 0m;
+            decimal cashPurchases = 0m;
+            decimal cashReturns = 0m;
+            decimal cashWithdrawals = 0m;
 
             if (!string.IsNullOrEmpty(shiftId))
             {
@@ -402,14 +403,14 @@ public partial class CashupDialogViewModel : ObservableObject
                 TotalIngresosShift = cashSales + customerAbonosCash;
                 TotalEgresosShift = cashExpenses + cashPurchases + cashReturns + cashWithdrawals;
                 TheoreticalCash = OpenCashAmount + TotalIngresosShift - TotalEgresosShift;
-                
-                double allSalesTotal = shiftSales.Sum(s => s.Total);
-                double allSalesCogs = shiftSales.Sum(s => s.TotalCost);
-                double allExpensesTotal = cashExpenses;
 
-                GrossProfit = Math.Max(0.0, allSalesTotal - allSalesCogs);
+                decimal allSalesTotal = shiftSales.Sum(s => s.Total);
+                decimal allSalesCogs = shiftSales.Sum(s => s.TotalCost);
+                decimal allExpensesTotal = cashExpenses;
+
+                GrossProfit = Math.Max(0m, allSalesTotal - allSalesCogs);
                 NetProfit = GrossProfit - allExpensesTotal;
-                
+
                 RecalculatePhysicalTotal();
             });
         }

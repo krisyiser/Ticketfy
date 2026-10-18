@@ -38,7 +38,7 @@ public partial class OpenShiftDialogViewModel : ValidatableViewModelBase
     [RelayCommand]
     private async Task OpenShiftAsync()
     {
-        if (double.TryParse(InitialFloatAmount, out double parsedAmount))
+        if (decimal.TryParse(InitialFloatAmount, out decimal parsedAmount))
         {
             if (parsedAmount < 0)
             {

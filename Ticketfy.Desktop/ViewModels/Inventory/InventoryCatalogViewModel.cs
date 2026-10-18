@@ -36,7 +36,8 @@ public partial class InventoryCatalogViewModel : ObservableObject
     }
 
     [RelayCommand] public void ToggleLowStockFilter() => ShowOnlyLowStock = !ShowOnlyLowStock;
-    [RelayCommand] public void ScanBarcode(string query)
+    [RelayCommand]
+    public void ScanBarcode(string query)
     {
         SearchQuery = query;
         ApplyFilter();
@@ -73,8 +74,8 @@ public partial class InventoryCatalogViewModel : ObservableObject
     }
     [ObservableProperty] private bool _isLoading = false;
 
-    public double TotalStockCost => FilteredProducts.Sum(p => p.Cost * p.Stock);
-    public double TotalStockSale => FilteredProducts.Sum(p => p.Price * p.Stock);
+    public decimal TotalStockCost => FilteredProducts.Sum(p => p.Cost * (decimal)p.Stock);
+    public decimal TotalStockSale => FilteredProducts.Sum(p => p.Price * (decimal)p.Stock);
 
     public InventoryCatalogViewModel(IProductService productService)
     {

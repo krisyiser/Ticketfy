@@ -28,8 +28,8 @@ public partial class SalesHistoryViewModel : ObservableObject
     [ObservableProperty] private DateTime? _endDate = DateTime.Today;
     [ObservableProperty] private bool _isLoading = false;
     [ObservableProperty] private string _peakHourLabel = "Ninguna";
-    [ObservableProperty] private double _peakHourRevenue = 0.0;
-    [ObservableProperty] private double _totalDayRevenue = 0.0;
+    [ObservableProperty] private decimal _peakHourRevenue;
+    [ObservableProperty] private decimal _totalDayRevenue;
     [ObservableProperty] private string _feedbackMessage = string.Empty;
 
     public event Action<SaleDto>? OpenReturnRequested;
@@ -84,13 +84,13 @@ public partial class SalesHistoryViewModel : ObservableObject
             })
             .ToDictionary(g => g.Key, g => new { Count = g.Count(), Revenue = g.Sum(x => x.Total) });
 
-        double maxRev = 0;
+        decimal maxRev = 0m;
         int peakHour = -1;
 
         for (int h = 0; h < 24; h++)
         {
             int count = hourlyGroups.ContainsKey(h) ? hourlyGroups[h].Count : 0;
-            double rev = hourlyGroups[h] != null && hourlyGroups.ContainsKey(h) ? hourlyGroups[h].Revenue : 0.0;
+            decimal rev = hourlyGroups.ContainsKey(h) ? hourlyGroups[h].Revenue : 0m;
 
             if (rev > maxRev)
             {
@@ -115,7 +115,7 @@ public partial class SalesHistoryViewModel : ObservableObject
         else
         {
             PeakHourLabel = "Ninguna";
-            PeakHourRevenue = 0.0;
+            PeakHourRevenue = 0m;
         }
 
         TotalDayRevenue = salesList.Sum(s => s.Total);

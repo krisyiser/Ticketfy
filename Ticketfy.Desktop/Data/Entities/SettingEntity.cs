@@ -11,11 +11,11 @@ namespace Ticketfy.Data.Entities;
 [Table("settings")]
 public class SettingEntity
 {
-[Key]
-[Column("key")]
-public string Key { get; set; } = string.Empty;
+    [Key]
+    [Column("key")]
+    public string Key { get; set; } = string.Empty;
 
-[Required]
-[Column("value")]
-public string Value { get; set; } = string.Empty;
+    [Required]
+    [Column("value")]
+    public string Value { get; set; } = string.Empty;
 }

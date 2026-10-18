@@ -2,6 +2,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Ticketfy.Core.Helpers;
+using Ticketfy.Core.Configuration;
 using Ticketfy.Services.Implementations;
 using Serilog;
 using System;
@@ -86,7 +87,7 @@ public partial class AcercaDeSettingsViewModel : ObservableObject
         IsUpdateFailed = false;
         ProgressPercentage = 0;
         ProgressText = string.Empty;
-        StatusMessage = "Consultando el servidor de actualizaciones (valcore.cloud)...";
+        StatusMessage = LocalDevelopmentMode.RemoteInfrastructureUnavailableMessage;
 
         try
         {

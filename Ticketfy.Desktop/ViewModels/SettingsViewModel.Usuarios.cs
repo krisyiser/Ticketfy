@@ -123,9 +123,8 @@ public partial class SettingsViewModel
         if (UserToDelete == null || _userService == null) return;
 
         string savedHash = await _userService.GetPasswordHashAsync(UserToDelete.Id) ?? string.Empty;
-        bool valid = string.IsNullOrEmpty(savedHash)
-            || Ticketfy.Core.Helpers.CryptoHelper.VerifyPassword(AdminDeletePassword, savedHash)
-            || Ticketfy.Services.Security.SecurityManager.VerifyPassword(AdminDeletePassword, savedHash);
+        bool valid = !string.IsNullOrEmpty(savedHash)
+            && Ticketfy.Services.Security.SecurityManager.VerifyPassword(AdminDeletePassword, savedHash);
 
         if (valid)
         {

@@ -40,15 +40,12 @@ public partial class SaleService
                 sale.ItemsJson,
                 Ticketfy.Desktop.Core.Helpers.TicketfyJsonContext.Default.ListSaleItemSnapshotDto) ?? [];
 
-            // Restore stock
+            // Restore stock using the same optimistic concurrency path as checkout.
             foreach (var item in items)
             {
-                var product = await _ctx.Products.FindAsync(item.Id);
-                if (product is not null)
-                {
-                    double remaining = Math.Max(0.0, item.Quantity - item.ReturnedQuantity);
-                    product.Stock = Math.Round(product.Stock + remaining, 3);
-                }
+                double remaining = Math.Max(0.0, item.Quantity - item.ReturnedQuantity);
+                if (remaining > 0)
+                    await RestockInventoryRecursiveAsync(_ctx, item.ProductId, remaining, new HashSet<string>());
             }
 
             // If was credit, reduce customer debt
@@ -57,8 +54,19 @@ public partial class SaleService
                 var customer = await _ctx.Customers.FindAsync(sale.CustomerId);
                 if (customer is not null)
                 {
-                    customer.Debt = Math.Max(0.0, Math.Round(customer.Debt - sale.Total, 2));
+                    customer.Debt = Math.Max(0m, Math.Round(customer.Debt - sale.Total, 2));
                 }
+            }
+
+            if (sale.GiftcardAmount > 0m && !string.IsNullOrWhiteSpace(sale.GiftcardNumber))
+            {
+                long giftcardAmountCents = ToStoredCents(sale.GiftcardAmount);
+                int restored = await _ctx.Database.ExecuteSqlInterpolatedAsync($@"
+                    UPDATE giftcards
+                    SET balance = balance + {giftcardAmountCents}
+                    WHERE card_number = {sale.GiftcardNumber};");
+                if (restored != 1)
+                    throw new InvalidOperationException("No se pudo restituir el saldo del monedero de la venta cancelada.");
             }
 
             sale.IsCancelled = 1;
@@ -67,21 +75,33 @@ public partial class SaleService
             sale.CancellationReason = reason;
             sale.CancellationDate = DateTimeOffset.Now.ToString("o");
 
-            // Inject Physical Cash Outflow to Active Shift Drawer if Cancelled Sale was paid in Cash
+            // Reverse the cash allocation (including the cash portion of a mixed
+            // payment) in the same commit as inventory, debt and sale status.
             var activeShift = await _ctx.Shifts.FirstOrDefaultAsync(s => s.IsOpen == 1);
-            if (activeShift != null && (sale.PaymentMethod.Equals("Efectivo", StringComparison.OrdinalIgnoreCase) || sale.PaymentMethod.Equals("Cash", StringComparison.OrdinalIgnoreCase)))
+            decimal cashRefund = Math.Max(0m, sale.CashAmount);
+            if (activeShift != null && cashRefund > 0m)
             {
+                activeShift.ExpectedBalance = Math.Round(activeShift.ExpectedBalance - cashRefund, 2);
                 _ctx.ShiftMovements.Add(new ShiftMovementEntity
                 {
                     ShiftId = activeShift.Id,
                     MovementType = Ticketfy.Core.Enums.MovementType.DevolucionCliente,
-                    Amount = sale.Total,
+                    Amount = cashRefund,
                     IsOutflow = true,
                     Description = $"Cancelación Venta Ticket #{sale.Id} - {reason}",
                     ReferenceId = sale.Id,
                     Timestamp = DateTime.Now.ToString("s")
                 });
             }
+
+            _ctx.TransactionJournal.Add(new TransactionJournalEntryEntity
+            {
+                OperationId = $"CANCEL:{sale.Id}",
+                EventType = "SALE_CANCELED",
+                EntityId = sale.Id,
+                Amount = sale.Total,
+                Details = reason
+            });
 
             await DbResilienceHelper.ExecuteWithRetryAsync(async () =>
             {
@@ -109,13 +129,20 @@ public partial class SaleService
         await DbResilienceHelper.ExecuteWithRetryAsync(async () => await _ctx.SaveChangesAsync());
     }
 
-    public async Task<bool> ProcessPartialReturnAsync(string saleId, string productId, double returnQty, string reason, string refundMethod = "Efectivo", bool isProductInGoodCondition = true)
+    public async Task<bool> ProcessPartialReturnAsync(string saleId, string productId, double returnQty, string reason, string refundMethod = "Efectivo", bool isProductInGoodCondition = true, string? operationId = null)
     {
         if (returnQty <= 0) return false;
         using var _ctx = await _contextFactory.CreateDbContextAsync();
         await using var transaction = await _ctx.Database.BeginTransactionAsync();
         try
         {
+            operationId = string.IsNullOrWhiteSpace(operationId) ? Guid.NewGuid().ToString("N") : operationId.Trim();
+            if (await _ctx.Returns.AsNoTracking().AnyAsync(r => r.OperationId == operationId))
+            {
+                await transaction.RollbackAsync();
+                return true;
+            }
+
             var sale = await _ctx.Sales.FindAsync(saleId);
             if (sale is null || sale.IsCancelled == 1) return false;
 
@@ -150,19 +177,19 @@ public partial class SaleService
                         UserId = "SYSTEM",
                         EntityName = "products",
                         EntityId = targetItem.ProductId,
-                        FinancialImpact = product.Cost * returnQty,
+                        FinancialImpact = product.Cost * Convert.ToDecimal(returnQty),
                         Reason = $"Devolución de producto dañado/mermado: {reason}"
                     });
                 }
             }
 
             // 2. Adjust item quantity and sale totals
-            double refundedAmount = Math.Round(targetItem.UnitPrice * returnQty, 2);
-            double refundedCost = Math.Round(targetItem.Cost * returnQty, 2);
+            decimal refundedAmount = Math.Round(targetItem.UnitPrice * Convert.ToDecimal(returnQty), 2);
+            decimal refundedCost = Math.Round(targetItem.Cost * Convert.ToDecimal(returnQty), 2);
 
-            sale.Total = Math.Max(0.0, Math.Round(sale.Total - refundedAmount, 2));
-            sale.TotalCost = Math.Max(0.0, Math.Round(sale.TotalCost - refundedCost, 2));
-            sale.Profit = Math.Max(0.0, Math.Round(sale.Profit - (refundedAmount - refundedCost), 2));
+            sale.Total = Math.Max(0m, Math.Round(sale.Total - refundedAmount, 2));
+            sale.TotalCost = Math.Max(0m, Math.Round(sale.TotalCost - refundedCost, 2));
+            sale.Profit = Math.Max(0m, Math.Round(sale.Profit - (refundedAmount - refundedCost), 2));
 
             var updatedItems = new List<Ticketfy.Data.Dtos.SaleItemSnapshotDto>();
             foreach (var item in items)
@@ -188,7 +215,7 @@ public partial class SaleService
             }
             else
             {
-                sale.Status = SaleStatus.Refunded;
+                sale.Status = SaleStatus.PartiallyRefunded;
             }
 
             sale.ItemsJson = JsonSerializer.Serialize(
@@ -199,6 +226,7 @@ public partial class SaleService
             var returnEntity = new ReturnEntity
             {
                 Id = await GenerateNextReturnFolioAsync(_ctx),
+                OperationId = operationId,
                 OriginalSaleId = sale.Id,
                 CashierUserId = null,
                 TotalRefunded = refundedAmount,
@@ -213,6 +241,7 @@ public partial class SaleService
             var activeShift = await _ctx.Shifts.FirstOrDefaultAsync(s => s.IsOpen == 1);
             if (activeShift != null && (refundMethod.Equals("Efectivo", StringComparison.OrdinalIgnoreCase) || refundMethod.Equals("Cash", StringComparison.OrdinalIgnoreCase)))
             {
+                activeShift.ExpectedBalance = Math.Round(activeShift.ExpectedBalance - refundedAmount, 2);
                 _ctx.ShiftMovements.Add(new ShiftMovementEntity
                 {
                     ShiftId = activeShift.Id,
@@ -224,6 +253,15 @@ public partial class SaleService
                     Timestamp = DateTime.Now.ToString("s")
                 });
             }
+
+            _ctx.TransactionJournal.Add(new TransactionJournalEntryEntity
+            {
+                OperationId = operationId,
+                EventType = "RETURN_COMPLETED",
+                EntityId = returnEntity.Id,
+                Amount = refundedAmount,
+                Details = $"{sale.Id}:{productId}:{returnQty:N3}:{refundMethod}"
+            });
 
             await DbResilienceHelper.ExecuteWithRetryAsync(async () =>
             {

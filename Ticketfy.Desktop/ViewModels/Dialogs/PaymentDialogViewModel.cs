@@ -13,13 +13,13 @@ public partial class PaymentDialogViewModel : ObservableObject
     private readonly ICustomerService _customerService;
     private readonly string _customerId;
 
-    [ObservableProperty] private double _currentBalance;
-    [ObservableProperty] private double _amount;
+    [ObservableProperty] private decimal _currentBalance;
+    [ObservableProperty] private decimal _amount;
     [ObservableProperty] private string _errorMessage = string.Empty;
 
     public event Action? RequestClose;
 
-    public PaymentDialogViewModel(ICustomerService customerService, string customerId, double balance = 0.0)
+    public PaymentDialogViewModel(ICustomerService customerService, string customerId, decimal balance = 0m)
     {
         _customerService = customerService;
         _customerId = customerId;

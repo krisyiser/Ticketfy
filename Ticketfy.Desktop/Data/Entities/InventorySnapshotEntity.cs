@@ -16,8 +16,8 @@ public class InventorySnapshotEntity
     public ICollection<InventorySnapshotItemEntity> Items { get; set; } = new List<InventorySnapshotItemEntity>();
 
     [System.ComponentModel.DataAnnotations.Schema.NotMapped]
-    public string CleanNotes => string.IsNullOrWhiteSpace(Notes) 
-        ? string.Empty 
+    public string CleanNotes => string.IsNullOrWhiteSpace(Notes)
+        ? string.Empty
         : Notes.Replace("Snapshot congelado automático - ", "")
                .Replace("Snapshot congelado automático", "")
                .Trim();

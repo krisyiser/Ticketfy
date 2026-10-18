@@ -50,11 +50,11 @@ public sealed class CustomerAndAuthServiceTests : IDisposable
         // Verify remaining debt = 300
         var updated = await _customerService.GetByIdAsync("CUST-PAY-1");
         Assert.NotNull(updated);
-        Assert.Equal(300.0, updated.Debt);
+        Assert.Equal(300m, updated.Debt);
 
         var payments = await _customerService.GetPaymentsAsync("CUST-PAY-1");
         Assert.Single(payments);
-        Assert.Equal(200.0, payments[0].Amount);
+        Assert.Equal(200m, payments[0].Amount);
     }
 
     [Fact]

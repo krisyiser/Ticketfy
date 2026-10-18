@@ -6,6 +6,8 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Velopack;
+using Ticketfy.Core.Configuration;
+using Ticketfy.Logging;
 
 namespace Ticketfy;
 
@@ -37,12 +39,8 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        // 0. Disable SSL globally for Velopack auto-updates on self-signed Forgejo
-#pragma warning disable SYSLIB0014
-        System.Net.ServicePointManager.ServerCertificateValidationCallback += (sender, cert, chain, sslPolicyErrors) => true;
-#pragma warning restore SYSLIB0014
-
-        // 1. Initialize Velopack (crucial for shortcuts, uninstalls, and OTA background updates)
+        // 1. Initialize Velopack (crucial for shortcuts, uninstalls, and OTA background updates).
+        // TLS certificate validation intentionally uses the operating-system trust store.
         VelopackApp.Build().Run();
 
         // 2. Ensure single responsive instance: kill ghost/hung processes (0 UI window) or bring active UI window to front
@@ -53,37 +51,19 @@ internal static class Program
 
         try
         {
-            var logDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "ticketfy", "Logs");
+            var logDir = AppDataPaths.LogDirectory;
             Directory.CreateDirectory(logDir);
 
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Information()
                 .WriteTo.File(
+                    new SanitizingTextFormatter(),
                     Path.Combine(logDir, "ticketfy_.log"),
                     rollingInterval: RollingInterval.Day,
-                    retainedFileCountLimit: 30,
-                    outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+                    retainedFileCountLimit: 30)
                 .CreateLogger();
 
-            var dsn = Environment.GetEnvironmentVariable("TICKETFY_SENTRY_DSN");
-            if (!string.IsNullOrWhiteSpace(dsn))
-            {
-                using (SentrySdk.Init(o =>
-                {
-                    o.Dsn = dsn;
-                    o.TracesSampleRate = 1.0;
-                    o.AutoSessionTracking = true;
-                }))
-                {
-                    RunAvaloniaApp(args);
-                }
-            }
-            else
-            {
-                RunAvaloniaApp(args);
-            }
+            RunAvaloniaApp(args);
         }
         catch (Exception ex)
         {

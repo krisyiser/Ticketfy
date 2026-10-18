@@ -7,16 +7,16 @@ public partial class CheckoutDialogViewModel
 {
     partial void OnReceivedAmountInputChanged(string value)
     {
-        if (double.TryParse(value, out var parsed))
+        if (decimal.TryParse(value, out var parsed))
         {
             ReceivedAmount = parsed;
             PaidAmount = parsed;
-            ChangeAmount = (decimal)Math.Max(0.0, parsed - TotalToPay);
+            ChangeAmount = Math.Max(0m, parsed - TotalToPay);
         }
         else
         {
-            ReceivedAmount = 0.0;
-            PaidAmount = 0.0;
+            ReceivedAmount = 0m;
+            PaidAmount = 0m;
             ChangeAmount = 0m;
         }
 
@@ -30,7 +30,7 @@ public partial class CheckoutDialogViewModel
     [RelayCommand]
     private void AddCashDenomination(string amountArg)
     {
-        if (double.TryParse(amountArg, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double addValue))
+        if (decimal.TryParse(amountArg, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out decimal addValue))
         {
             ReceivedAmount += addValue;
             PaidAmount = ReceivedAmount;
@@ -46,10 +46,10 @@ public partial class CheckoutDialogViewModel
         ReceivedAmountInput = ReceivedAmount.ToString("0.##");
     }
 
-    partial void OnReceivedAmountChanged(double value)
+    partial void OnReceivedAmountChanged(decimal value)
     {
         PaidAmount = value;
-        ChangeAmount = (decimal)Math.Max(0.0, value - TotalToPay);
+        ChangeAmount = Math.Max(0m, value - TotalToPay);
         OnPropertyChanged(nameof(IsSufficientAmount));
         OnPropertyChanged(nameof(ChangeOrShortageText));
         OnPropertyChanged(nameof(ChangeTextColor));
@@ -102,7 +102,7 @@ public partial class CheckoutDialogViewModel
             PaidAmount = TotalToPay;
             ReceivedAmountInput = TotalToPay.ToString("0.##");
         }
-        else if (value == "Efectivo" && ReceivedAmount == 0.0)
+        else if (value == "Efectivo" && ReceivedAmount == 0m)
         {
             ReceivedAmountInput = "0";
         }

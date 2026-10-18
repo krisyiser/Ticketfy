@@ -8,17 +8,15 @@ public static class AppConstants
 {
     /// <summary>App Meta</summary>
     public const string AppName = "TICKETFY!";
-    public const string AppVersion = "v3.1.56";
-
     /// <summary>Default VAT / IVA rate (16%)</summary>
     public const double DefaultIvaRate = 0.16;
 
 
     /// <summary>Default database filename.</summary>
-    public const string DatabaseFileName = "app.db";
+    public const string DatabaseFileName = "ticketfy.db";
 
     /// <summary>Audit log database filename (encrypted via SQLCipher if available).</summary>
-    public const string AuditDatabaseFileName = "system_logs.db";
+    public const string AuditDatabaseFileName = "audit_logs.db";
 
     /// <summary>
     /// Product category list matching the legacy CATEGORIES array.
@@ -34,9 +32,6 @@ public static class AppConstants
         "Farmacia",
         "Limpieza"
     ];
-
-    /// <summary>Default telemetry server URL placeholder.</summary>
-    public const string DefaultTelemetryUrl = "http://your-dedicated-server-ip:8080";
 
     /// <summary>Facturama sandbox API base URL for CFDI 4.0.</summary>
     public const string FacturamaSandboxUrl = "https://sandbox-api.facturama.mx/api/v3/cfdi";

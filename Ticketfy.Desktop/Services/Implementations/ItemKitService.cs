@@ -83,7 +83,7 @@ public class ItemKitService : IItemKitService
         }
     }
 
-    public async Task<bool> SaveAsync(string id, string barcode, string name, double price, string description, List<ItemKitItemDto> items)
+    public async Task<bool> SaveAsync(string id, string barcode, string name, decimal price, string description, List<ItemKitItemDto> items)
     {
         try
         {
@@ -104,7 +104,7 @@ public class ItemKitService : IItemKitService
                     Barcode = cleanBarcode,
                     Name = cleanName,
                     Price = price,
-                    Cost = 0.0,
+                    Cost = 0m,
                     Category = "Promociones",
                     Unit = "Pza",
                     Stock = 9999.0,

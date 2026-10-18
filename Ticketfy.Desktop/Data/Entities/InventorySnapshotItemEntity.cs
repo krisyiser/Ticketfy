@@ -9,7 +9,7 @@ public class InventorySnapshotItemEntity
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string SnapshotId { get; set; } = string.Empty;
     public InventorySnapshotEntity? Snapshot { get; set; }
-    
+
     public string ProductId { get; set; } = string.Empty;
     public string Barcode { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;

@@ -2,7 +2,7 @@ using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Diagnostics;
-using Sentry;
+using Serilog;
 
 namespace Ticketfy.Data.Interceptors;
 
@@ -12,8 +12,8 @@ public class SlowQueryInterceptor : DbCommandInterceptor
     {
         if (eventData.Duration.TotalMilliseconds > 50)
         {
-            // Reportar a la nube silenciosamente
-            SentrySdk.CaptureMessage($"Slow Query Detectada: {eventData.Duration.TotalMilliseconds}ms - {command.CommandText}", SentryLevel.Warning);
+            Log.Warning("Slow query detected ({DurationMs} ms): {CommandText}",
+                eventData.Duration.TotalMilliseconds, command.CommandText);
         }
         return base.ReaderExecutedAsync(command, eventData, result, cancellationToken);
     }
@@ -22,7 +22,8 @@ public class SlowQueryInterceptor : DbCommandInterceptor
     {
         if (eventData.Duration.TotalMilliseconds > 50)
         {
-            SentrySdk.CaptureMessage($"Slow Query Detectada (Sync): {eventData.Duration.TotalMilliseconds}ms - {command.CommandText}", SentryLevel.Warning);
+            Log.Warning("Slow query detected ({DurationMs} ms): {CommandText}",
+                eventData.Duration.TotalMilliseconds, command.CommandText);
         }
         return base.ReaderExecuted(command, eventData, result);
     }

@@ -24,20 +24,10 @@ public partial class DatosSettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task ExportCsv()
+    private void ExportCsv()
     {
-        IsExporting = true;
-        try
-        {
-            FeedbackMessage = "Exportación iniciada...";
-            await Task.Delay(500); // Placeholder — actual implementation uses BackupService
-            FeedbackMessage = "✅ Datos exportados correctamente.";
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "DatosSettingsViewModel: error exporting");
-            FeedbackMessage = "Error al exportar los datos.";
-        }
-        finally { IsExporting = false; }
+        IsExporting = false;
+        FeedbackMessage = "La exportación CSV todavía no está disponible.";
+        Log.Warning("CSV export requested, but this feature is not implemented");
     }
 }

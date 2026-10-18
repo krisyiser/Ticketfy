@@ -12,8 +12,8 @@ using System.Threading.Tasks;
 
 namespace Ticketfy.ViewModels.Dialogs;
 
-public class ProductDialogParameters 
-{ 
+public class ProductDialogParameters
+{
     public bool IsEditMode { get; set; }
     public ProductDto? PreFilledData { get; set; }
     public bool ShowAutoFillBanner { get; set; }
@@ -32,11 +32,11 @@ public partial class ProductDialogViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProfitMargin))]
-    private double? _costPrice;
+    private decimal? _costPrice;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProfitMargin))]
-    private double? _retailPrice;
+    private decimal? _retailPrice;
 
     [ObservableProperty]
     private double? _stock;
@@ -84,12 +84,12 @@ public partial class ProductDialogViewModel : ObservableObject
     {
         get
         {
-            double retail = RetailPrice ?? 0;
-            double cost = CostPrice ?? 0;
+            decimal retail = RetailPrice ?? 0m;
+            decimal cost = CostPrice ?? 0m;
             if (retail <= 0 || cost < 0) return "Margen: 0.00%";
             if (cost == 0) return "Margen: 100.00%";
-            
-            double margin = ((retail - cost) / retail) * 100.0;
+
+            decimal margin = ((retail - cost) / retail) * 100m;
             return $"Margen: {margin:F2}%";
         }
     }
@@ -249,7 +249,7 @@ public partial class ProductDialogViewModel : ObservableObject
             LocationRack = string.Empty;
             SatProductCode = string.Empty;
             SatUnitCode = string.Empty;
-            
+
             if (parameters.PreFilledData != null)
             {
                 Barcode = parameters.PreFilledData.Barcode ?? string.Empty;
@@ -333,7 +333,7 @@ public partial class ProductDialogViewModel : ObservableObject
                             EntityId = dto.Id,
                             OldValue = $"Stock: {_originalStockSnapshot:N2}",
                             NewValue = $"Stock: {Stock ?? 0:N2}",
-                            FinancialImpact = Math.Abs(difference) * (CostPrice ?? 0),
+                            FinancialImpact = (decimal)Math.Abs(difference) * (CostPrice ?? 0m),
                             Reason = $"Ajuste Manual: {Name} | {verb} de {Math.Abs(difference):N2} unidades. (Anterior: {_originalStockSnapshot:N2}, Nuevo: {Stock ?? 0:N2})"
                         };
                         await _auditService.LogAsync(auditEntry);

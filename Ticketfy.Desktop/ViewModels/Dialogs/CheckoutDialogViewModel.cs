@@ -23,8 +23,9 @@ public partial class CheckoutDialogViewModel : ObservableObject
     private readonly IPrintDispatcherService _printDispatcher;
     private readonly IPaymentTerminalService _terminalService;
     private readonly IGiftcardService? _giftcardService;
-    private readonly List<CartItemDto> _cartItems;
+    private readonly List<CartItemDto> _cartItems = [];
     private readonly Func<Task>? _onSuccessCallback;
+    private string _checkoutOperationId = Guid.NewGuid().ToString("N");
 
     [ObservableProperty] private bool _isWaitingForTerminal;
     [ObservableProperty] private string _terminalStatusMessage = string.Empty;
@@ -32,18 +33,18 @@ public partial class CheckoutDialogViewModel : ObservableObject
 
     public ObservableCollection<TenderEntryModel> AppliedTenders { get; } = new();
 
-    public double TotalApplied => AppliedTenders.Sum(t => t.AmountPaid);
-    public double RemainingBalance => Math.Max(0.0, TotalToPay - TotalApplied);
+    public decimal TotalApplied => AppliedTenders.Sum(t => t.AmountPaid);
+    public decimal RemainingBalance => Math.Max(0m, TotalToPay - TotalApplied);
     public bool IsFullyPaid => (TotalApplied >= TotalToPay || ReceivedAmount >= TotalToPay) && TotalToPay > 0;
 
-    [ObservableProperty] private double _totalToPay;
-    [ObservableProperty] private double _receivedAmount;
+    [ObservableProperty] private decimal _totalToPay;
+    [ObservableProperty] private decimal _receivedAmount;
     [ObservableProperty] private string _receivedAmountInput = "0";
 
     [ObservableProperty]
     private bool _shouldPrintReceipt = true;
 
-    [ObservableProperty] private double _paidAmount;
+    [ObservableProperty] private decimal _paidAmount;
     [ObservableProperty] private decimal _changeAmount;
     [ObservableProperty] private string _paymentMethod = "Efectivo";
 
@@ -103,11 +104,11 @@ public partial class CheckoutDialogViewModel : ObservableObject
                 }
                 return $"Cambio: ${ChangeAmount:N2}";
             }
-            if (string.IsNullOrWhiteSpace(ReceivedAmountInput) || !double.TryParse(ReceivedAmountInput, out _))
+            if (string.IsNullOrWhiteSpace(ReceivedAmountInput) || !decimal.TryParse(ReceivedAmountInput, out _))
             {
                 return "Monto Inválido";
             }
-            double effectivePaid = Math.Max(ReceivedAmount, TotalApplied);
+            decimal effectivePaid = Math.Max(ReceivedAmount, TotalApplied);
             return effectivePaid < TotalToPay
                 ? $"Faltante: ${(TotalToPay - effectivePaid):N2}"
                 : $"Cambio: ${(effectivePaid - TotalToPay):N2}";
@@ -149,14 +150,14 @@ public partial class CheckoutDialogViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CreditAvailableDisplay))]
     [NotifyPropertyChangedFor(nameof(CreditIsInsufficient))]
-    private double _customerCreditLimit = 0.0;
+    private decimal _customerCreditLimit;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CreditAvailableDisplay))]
     [NotifyPropertyChangedFor(nameof(CreditIsInsufficient))]
-    private double _customerCurrentDebt = 0.0;
+    private decimal _customerCurrentDebt;
 
-    public double AvailableCredit => Math.Max(0.0, CustomerCreditLimit - CustomerCurrentDebt);
+    public decimal AvailableCredit => Math.Max(0m, CustomerCreditLimit - CustomerCurrentDebt);
 
     public string CreditAvailableDisplay => $"Crédito disponible: ${AvailableCredit:N2}  |  Límite: ${CustomerCreditLimit:N2}  |  Deuda actual: ${CustomerCurrentDebt:N2}";
 
@@ -180,7 +181,7 @@ public partial class CheckoutDialogViewModel : ObservableObject
         IPrintDispatcherService printDispatcher,
         IPaymentTerminalService terminalService,
         List<CartItemDto> cartItems,
-        double total,
+        decimal total,
         Func<Task>? onSuccessCallback = null,
         IGiftcardService? giftcardService = null,
         CustomerDto? preselectedCustomer = null)
@@ -194,9 +195,9 @@ public partial class CheckoutDialogViewModel : ObservableObject
         _onSuccessCallback = onSuccessCallback;
 
         TotalToPay = total;
-        TotalBill = (decimal)total;
-        ReceivedAmount = 0.0;
-        PaidAmount = 0.0;
+        TotalBill = total;
+        ReceivedAmount = 0m;
+        PaidAmount = 0m;
         ReceivedAmountInput = "0";
 
         PointsEarnedThisSale = _cartItems != null ? _cartItems.Sum(i => i.PointsRewarded * i.Quantity) : 0.0;
@@ -233,16 +234,16 @@ public partial class CheckoutDialogViewModel : ObservableObject
         if (value != null)
         {
             CustomerPointsBalance = value.PuntosSaldo;
-            CustomerCreditLimit  = value.CreditLimit;
-            CustomerCurrentDebt  = value.Debt;
+            CustomerCreditLimit = value.CreditLimit;
+            CustomerCurrentDebt = value.Debt;
             FiscalRazonSocial = value.Nombre;
             if (!string.IsNullOrWhiteSpace(value.Rfc)) FiscalRfc = value.Rfc;
             if (!string.IsNullOrWhiteSpace(value.Email)) FiscalEmail = value.Email;
         }
         else
         {
-            CustomerCreditLimit = 0.0;
-            CustomerCurrentDebt = 0.0;
+            CustomerCreditLimit = 0m;
+            CustomerCurrentDebt = 0m;
         }
 
         OnPropertyChanged(nameof(AvailableCredit));

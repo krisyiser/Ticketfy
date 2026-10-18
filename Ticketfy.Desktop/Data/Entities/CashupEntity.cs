@@ -14,10 +14,10 @@ public class CashupEntity
     public string? ShiftId { get; set; }
 
     [Column("open_cash_amount")]
-    public double OpenCashAmount { get; set; }
+    public decimal OpenCashAmount { get; set; }
 
     [Column("closed_cash_amount")]
-    public double ClosedCashAmount { get; set; }
+    public decimal ClosedCashAmount { get; set; }
 
     [Column("count_1000")]
     public int Count1000 { get; set; }
@@ -53,10 +53,10 @@ public class CashupEntity
     public int Count050 { get; set; }
 
     [Column("theoretical_cash")]
-    public double TheoreticalCash { get; set; }
+    public decimal TheoreticalCash { get; set; }
 
     [Column("difference")]
-    public double Difference { get; set; }
+    public decimal Difference { get; set; }
 
     [Column("notes")]
     public string Notes { get; set; } = string.Empty;
@@ -74,8 +74,8 @@ public class CashupEntity
     public string Timestamp { get; set; } = string.Empty;
 
     [NotMapped]
-    public double TotalSales => Math.Max(0, TheoreticalCash - OpenCashAmount);
+    public decimal TotalSales => Math.Max(0m, TheoreticalCash - OpenCashAmount);
 
     [NotMapped]
-    public double TotalExpenses => Math.Max(0.0, OpenCashAmount + TotalSales - TheoreticalCash);
+    public decimal TotalExpenses => Math.Max(0m, OpenCashAmount + TotalSales - TheoreticalCash);
 }

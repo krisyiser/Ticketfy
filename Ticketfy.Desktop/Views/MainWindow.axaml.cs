@@ -95,11 +95,11 @@ public partial class MainWindow : Window
     private async void OnIdleTimeout(object? sender, EventArgs e)
     {
         _idleTimer.Stop(); // Pause timer while evaluating
-        
+
         if (DataContext is MainWindowViewModel vm)
         {
             // Only trigger lock if we are NOT on a login/setup screen and NOT already locked
-            bool isSafeToLock = vm.ActiveViewModel is not LoginViewModel 
+            bool isSafeToLock = vm.ActiveViewModel is not LoginViewModel
                              && vm.ActiveViewModel is not FirstTimeSetupViewModel
                              && vm.ActiveViewModel is not WelcomeLicenseViewModel
                              && !vm.IsLocked;
@@ -110,7 +110,7 @@ public partial class MainWindow : Window
             }
             await Task.CompletedTask;
         }
-        
+
         // Restart timer only if we didn't just lock the screen
         if (DataContext is MainWindowViewModel vmRestart && !vmRestart.IsLocked)
         {

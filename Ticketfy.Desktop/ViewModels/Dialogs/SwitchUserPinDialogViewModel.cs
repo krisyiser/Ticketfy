@@ -45,19 +45,15 @@ public partial class SwitchUserPinDialogViewModel : ObservableObject
         }
         else
         {
-            // Default active cashiers
-            AvailableUsers = new ObservableCollection<UserModel>
-            {
-                new UserModel { FullName = "Alexa S.", Role = SystemRole.CAJERO, RoleString = "CAJERO", Pin4Digits = "4321" },
-                new UserModel { FullName = "Administrador", Role = SystemRole.ADMIN, RoleString = "ADMINISTRADOR", Pin4Digits = "1234" }
-            };
+            ErrorMessage = "No se pudo acceder al directorio de usuarios.";
+            AvailableUsers = new ObservableCollection<UserModel>();
         }
 
         // Pre-select the currently active cashier session user
         if (_sessionManager?.CurrentCashier != null)
         {
             var active = _sessionManager.CurrentCashier;
-            SelectedUser = AvailableUsers.FirstOrDefault(u => 
+            SelectedUser = AvailableUsers.FirstOrDefault(u =>
                 (u.Id != Guid.Empty && u.Id == active.Id)
                 || (!string.IsNullOrWhiteSpace(u.Username) && u.Username.Equals(active.Username, StringComparison.OrdinalIgnoreCase))
                 || (!string.IsNullOrWhiteSpace(u.FullName) && u.FullName.Equals(active.FullName, StringComparison.OrdinalIgnoreCase))
@@ -115,8 +111,7 @@ public partial class SwitchUserPinDialogViewModel : ObservableObject
         }
         else
         {
-            isValid = EnteredPin == SelectedUser.Pin4Digits || EnteredPin == "1234" || EnteredPin == "4321";
-            validatedUser = SelectedUser;
+            ErrorMessage = "No se pudo validar el PIN.";
         }
 
         if (isValid && validatedUser != null)

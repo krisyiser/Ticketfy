@@ -1,0 +1,14 @@
+root = true
+
+[*.cs]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+
+# Security diagnostics are release blockers. Other analyzer categories remain
+# visible at their SDK-default severity and can be paid down incrementally.
+dotnet_analyzer_diagnostic.category-Security.severity = warning
+
+csharp_new_line_before_open_brace = all

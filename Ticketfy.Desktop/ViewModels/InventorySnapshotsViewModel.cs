@@ -94,7 +94,7 @@ public partial class InventorySnapshotsViewModel : ObservableObject
             else
                 return;
         }
-        
+
         var desktop = Avalonia.Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime;
         if (desktop?.MainWindow == null) return;
 
@@ -102,7 +102,7 @@ public partial class InventorySnapshotsViewModel : ObservableObject
 
         var vm = new Ticketfy.ViewModels.Dialogs.PrintPreviewWindowViewModel($"Reporte de Captura Física: {SelectedSnapshot.CreatedAt:g}");
         var win = new Ticketfy.Views.Dialogs.PrintPreviewWindow { DataContext = vm };
-        
+
         var confirmed = await win.ShowDialog<bool>(ownerWin);
         if (!confirmed) return;
 

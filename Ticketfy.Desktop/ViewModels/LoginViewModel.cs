@@ -68,7 +68,7 @@ public partial class LoginViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Error unhandled during login attempt for user {Username}", Username);
+            Log.Error(ex, "Error unhandled during login attempt for user {UserReference}", Ticketfy.Logging.LogSanitizer.Pseudonymize(Username));
             ErrorMessage = "Error de conexión o autenticación en la base de datos.";
         }
     }
@@ -101,7 +101,7 @@ public partial class LoginViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Error fetching password hint for user {Username}", Username);
+            Log.Error(ex, "Error fetching password hint for user {UserReference}", Ticketfy.Logging.LogSanitizer.Pseudonymize(Username));
             ErrorMessage = "Error al consultar pista de contraseña.";
         }
     }

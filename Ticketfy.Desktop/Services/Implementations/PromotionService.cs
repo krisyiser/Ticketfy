@@ -101,7 +101,7 @@ public class PromotionService : IPromotionService
             }
 
             // Reset discounts before re-evaluating
-            item.AppliedDiscountAmount = 0.0;
+            item.AppliedDiscountAmount = 0m;
             item.AppliedPromotionId = null;
             item.PromotionDescription = string.Empty;
 
@@ -119,17 +119,17 @@ public class PromotionService : IPromotionService
             switch (matchingPromo.StrategyType)
             {
                 case Ticketfy.Core.Enums.PromotionType.PercentageDiscount:
-                    item.AppliedDiscountAmount = Math.Round((item.OriginalUnitPrice * (matchingPromo.DiscountValue / 100.0)) * item.Quantity, 2);
+                    item.AppliedDiscountAmount = Math.Round(item.OriginalUnitPrice * (matchingPromo.DiscountValue / 100m) * (decimal)item.Quantity, 2);
                     break;
 
                 case Ticketfy.Core.Enums.PromotionType.FixedAmountDiscount:
-                    item.AppliedDiscountAmount = Math.Round(matchingPromo.DiscountValue * item.Quantity, 2);
+                    item.AppliedDiscountAmount = Math.Round(matchingPromo.DiscountValue * (decimal)item.Quantity, 2);
                     break;
 
                 case Ticketfy.Core.Enums.PromotionType.WholesalePrice:
                 case Ticketfy.Core.Enums.PromotionType.VolumeTier:
-                    double unitSavings = Math.Max(0.0, item.OriginalUnitPrice - matchingPromo.DiscountValue);
-                    item.AppliedDiscountAmount = Math.Round(unitSavings * item.Quantity, 2);
+                    decimal unitSavings = Math.Max(0m, item.OriginalUnitPrice - matchingPromo.DiscountValue);
+                    item.AppliedDiscountAmount = Math.Round(unitSavings * (decimal)item.Quantity, 2);
                     break;
 
                 case Ticketfy.Core.Enums.PromotionType.BuyNGetM:
@@ -137,7 +137,7 @@ public class PromotionService : IPromotionService
                     if (stepSize > 0)
                     {
                         int bundleCount = (int)item.Quantity / stepSize;
-                        double totalFreeUnits = bundleCount * matchingPromo.FreeQuantity;
+                        decimal totalFreeUnits = bundleCount * (decimal)matchingPromo.FreeQuantity;
                         item.AppliedDiscountAmount = Math.Round(totalFreeUnits * item.OriginalUnitPrice, 2);
                     }
                     break;

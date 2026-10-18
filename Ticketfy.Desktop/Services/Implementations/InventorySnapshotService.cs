@@ -7,6 +7,7 @@ using Ticketfy.Data;
 using Ticketfy.Data.Entities;
 using Ticketfy.Services.Interfaces;
 using Serilog;
+using Ticketfy.Core.Configuration;
 
 namespace Ticketfy.Services.Implementations;
 
@@ -17,20 +18,20 @@ public class InventorySnapshotService : IInventorySnapshotService
         try
         {
             var options = new DbContextOptionsBuilder<AppDbContext>()
-                .UseSqlite($"Data Source={System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ticketfy", "Database", "ticketfy.db")};Password={Ticketfy.Services.Security.SecurityManager.GetMasterKey()};")
+                .UseSqlite($"Data Source={AppDataPaths.DatabaseFile};Password={Ticketfy.Services.Security.SecurityManager.GetMasterKey()};")
                 .Options;
 
             using var context = new AppDbContext(options);
-            
+
             var products = await context.Products.AsNoTracking().ToListAsync();
-            
+
             var snapshot = new InventorySnapshotEntity
             {
                 Notes = notes,
                 TotalItems = products.Count,
                 TotalValue = products.Sum(p => (decimal)p.Cost * (decimal)p.Stock)
             };
-            
+
             foreach (var p in products)
             {
                 snapshot.Items.Add(new InventorySnapshotItemEntity
@@ -43,10 +44,10 @@ public class InventorySnapshotService : IInventorySnapshotService
                     SellingPrice = (decimal)p.Price
                 });
             }
-            
+
             context.InventorySnapshots.Add(snapshot);
             await context.SaveChangesAsync();
-            
+
             Log.Information($"Inventory snapshot created successfully: {snapshot.Id} with {snapshot.TotalItems} items.");
             return snapshot;
         }
@@ -60,7 +61,7 @@ public class InventorySnapshotService : IInventorySnapshotService
     public async Task<List<InventorySnapshotEntity>> GetSnapshotsAsync()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite($"Data Source={System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ticketfy", "Database", "ticketfy.db")};Password={Ticketfy.Services.Security.SecurityManager.GetMasterKey()};")
+            .UseSqlite($"Data Source={AppDataPaths.DatabaseFile};Password={Ticketfy.Services.Security.SecurityManager.GetMasterKey()};")
             .Options;
         using var context = new AppDbContext(options);
         return await context.InventorySnapshots
@@ -73,7 +74,7 @@ public class InventorySnapshotService : IInventorySnapshotService
     public async Task<InventorySnapshotEntity?> GetSnapshotDetailsAsync(string snapshotId)
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite($"Data Source={System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ticketfy", "Database", "ticketfy.db")};Password={Ticketfy.Services.Security.SecurityManager.GetMasterKey()};")
+            .UseSqlite($"Data Source={AppDataPaths.DatabaseFile};Password={Ticketfy.Services.Security.SecurityManager.GetMasterKey()};")
             .Options;
         using var context = new AppDbContext(options);
         return await context.InventorySnapshots

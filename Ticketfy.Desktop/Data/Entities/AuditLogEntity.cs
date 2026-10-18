@@ -40,11 +40,20 @@ public class AuditLogEntity
     public string NewValue { get; set; } = string.Empty;
 
     [Column("financial_impact")]
-    public double FinancialImpact { get; set; } = 0.0;
+    public decimal FinancialImpact { get; set; }
 
     [Column("reason")]
     public string Reason { get; set; } = string.Empty;
 
     [Column("terminal_name")]
     public string TerminalName { get; set; } = Environment.MachineName;
+
+    [Column("previous_hash")]
+    public string PreviousHash { get; set; } = string.Empty;
+
+    [Column("entry_hash")]
+    public string EntryHash { get; set; } = string.Empty;
+
+    [Column("schema_version")]
+    public int SchemaVersion { get; set; } = 1;
 }

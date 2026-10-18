@@ -10,10 +10,10 @@ public partial class CartStateStore : ObservableObject
     public ObservableCollection<CartItemDto> Items { get; } = new();
 
     [ObservableProperty]
-    private double _subtotal;
+    private decimal _subtotal;
 
     [ObservableProperty]
-    private double _total;
+    private decimal _total;
 
     public event System.Action<string>? ProductAddedToCart;
 

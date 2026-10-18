@@ -7,18 +7,27 @@ using System.Threading.Tasks;
 using System.Linq;
 using Serilog;
 using System;
+using Ticketfy.Core.Configuration;
+using Ticketfy.ViewModels.Dialogs.Checkout;
 
 namespace Ticketfy.ViewModels;
 
 public partial class FiscalViewModel : ObservableObject
 {
     private readonly ISaleService _saleService;
-    private readonly IFacturamaService _facturamaService;
+    private readonly IFiscalIntegrationQueueService? _fiscalQueue;
+
+    public bool IsFacturamaAvailable => _fiscalQueue is not null;
+    public string FacturamaStatusMessage => LocalDevelopmentMode.FacturamaUnavailableMessage;
 
     public ObservableCollection<SaleDto> Invoices { get; } = new();
 
     [ObservableProperty] private string _searchFolio = string.Empty;
     [ObservableProperty] private SaleDto? _selectedSale;
+    [ObservableProperty] private SaleDto? _selectedInvoice;
+    [ObservableProperty] private string _cancellationMotive = "02";
+    [ObservableProperty] private string _replacementUuid = string.Empty;
+    public ObservableCollection<string> CancellationMotives { get; } = ["01", "02", "03", "04"];
 
     [ObservableProperty] private string _customerRfc = string.Empty;
     [ObservableProperty] private string _customerName = string.Empty;
@@ -71,10 +80,10 @@ public partial class FiscalViewModel : ObservableObject
     [ObservableProperty]
     private bool _isLoading = false;
 
-    public FiscalViewModel(ISaleService saleService, IFacturamaService facturamaService)
+    public FiscalViewModel(ISaleService saleService, IFiscalIntegrationQueueService? fiscalQueue = null)
     {
         _saleService = saleService;
-        _facturamaService = facturamaService;
+        _fiscalQueue = fiscalQueue;
         _ = LoadInvoicesAsync();
     }
 
@@ -128,58 +137,20 @@ public partial class FiscalViewModel : ObservableObject
 
         try
         {
-            var request = new Ticketfy.Core.Models.FacturamaCfdiRequest
-            {
-                Receiver = new Ticketfy.Core.Models.CfdiReceiver
-                {
-                    Rfc = CustomerRfc.Trim().ToUpper(),
-                    Name = CustomerName.Trim(),
-                    TaxZipCode = CustomerZipCode.Trim(),
-                    CfdiUse = SelectedUsoCfdi.Substring(0, 3),
-                    FiscalRegime = SelectedRegimen.Substring(0, 3)
-                },
-                PaymentForm = SelectedFormaPago.Substring(0, 2),
-                PaymentMethod = SelectedMetodoPago.Substring(0, 3),
-                Currency = "MXN",
-                CfdiType = "I",
-                ExpeditionPlace = "00000" // To be dynamically loaded from settings normally
-            };
-
-            foreach (var item in SelectedSale.Items)
-            {
-                request.Items.Add(new Ticketfy.Core.Models.CfdiItem
-                {
-                    ProductCode = "01010101", // Default SAT code
-                    IdentificationNumber = item.ProductId,
-                    Description = item.Name,
-                    Unit = "Pieza",
-                    UnitCode = "H87", // Default SAT unit
-                    UnitPrice = (decimal)item.UnitPrice,
-                    Quantity = (decimal)item.Quantity,
-                    Subtotal = (decimal)item.TotalPrice,
-                    Taxes = new System.Collections.Generic.List<Ticketfy.Core.Models.CfdiTax>
-                    {
-                        new Ticketfy.Core.Models.CfdiTax { Name = "IVA", Rate = 0.16m, IsRetention = false, Base = (decimal)item.TotalPrice, Total = (decimal)item.TotalPrice * 0.16m }
-                    }
-                });
-            }
-
-            // FacturamaService dinámicamente obtendrá las credenciales desde los ajustes de la empresa.
-            var response = await _facturamaService.CreateInvoiceAsync(request);
-
-            if (response != null && !string.IsNullOrEmpty(response.Id))
-            {
-                SuccessMessage = "Factura emitida exitosamente (UUID: " + response.Id + ")";
-                await _saleService.UpdateFiscalStatusAsync(SelectedSale.Id, "TIMBRADO", response.Id, response.Id);
-                SelectedSale = null;
-                SearchFolio = string.Empty;
-                await LoadInvoicesAsync();
-            }
-            else
-            {
-                ErrorMessage = "Error al emitir factura, revisa el log para más detalles.";
-                await _saleService.UpdateFiscalStatusAsync(SelectedSale.Id, "ERROR AL TIMBRAR", null, null);
-            }
+            if (_fiscalQueue is null) throw new InvalidOperationException("La cola fiscal no está disponible.");
+            var (request, validationError) = CheckoutInvoiceHandler.BuildInvoiceRequest(
+                CustomerRfc.Trim().ToUpper(), CustomerName.Trim(), SelectedUsoCfdi,
+                SelectedRegimen, CustomerZipCode.Trim(), SelectedSale.Items);
+            if (request is null) { ErrorMessage = validationError ?? "Datos fiscales inválidos."; return; }
+            request.PaymentForm = SelectedFormaPago[..2];
+            request.PaymentMethod = SelectedMetodoPago[..3];
+            await _fiscalQueue.EnqueueIssueAsync(
+                SelectedSale.Id, request, $"cfdi-issue-sale-{SelectedSale.Id}");
+            await _saleService.UpdateFiscalStatusAsync(SelectedSale.Id, "EN COLA", null, null);
+            SuccessMessage = "Factura agregada a la cola fiscal. Se timbrará sin duplicar el folio.";
+            SelectedSale = null;
+            SearchFolio = string.Empty;
+            await LoadInvoicesAsync();
         }
         catch (Exception ex)
         {
@@ -189,6 +160,45 @@ public partial class FiscalViewModel : ObservableObject
         finally
         {
             IsLoading = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task QueueCancellationAsync()
+    {
+        if (SelectedInvoice is null || string.IsNullOrWhiteSpace(SelectedInvoice.InvoiceId) || _fiscalQueue is null) return;
+        try
+        {
+            await _fiscalQueue.EnqueueCancellationAsync(
+                SelectedInvoice.Id, SelectedInvoice.InvoiceId, CancellationMotive,
+                string.IsNullOrWhiteSpace(ReplacementUuid) ? null : ReplacementUuid.Trim(),
+                $"cfdi-cancel-{SelectedInvoice.InvoiceId}-{CancellationMotive}");
+            await _saleService.UpdateFiscalStatusAsync(SelectedInvoice.Id, "CANCELACION EN COLA", SelectedInvoice.UuidSat, SelectedInvoice.SerieFolio);
+            SuccessMessage = "Cancelación agregada a la cola fiscal.";
+            await LoadInvoicesAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error queueing fiscal cancellation");
+            ErrorMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task QueueReconciliationAsync()
+    {
+        if (SelectedInvoice is null || string.IsNullOrWhiteSpace(SelectedInvoice.InvoiceId) || _fiscalQueue is null) return;
+        try
+        {
+            await _fiscalQueue.EnqueueReconciliationAsync(
+                SelectedInvoice.Id, SelectedInvoice.InvoiceId,
+                $"cfdi-reconcile-{SelectedInvoice.InvoiceId}-{DateTimeOffset.UtcNow:yyyyMMddHH}");
+            SuccessMessage = "Consulta, XML y PDF agregados a la cola de conciliación.";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error queueing fiscal reconciliation");
+            ErrorMessage = ex.Message;
         }
     }
 
@@ -205,7 +215,7 @@ public partial class FiscalViewModel : ObservableObject
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
                 Invoices.Clear();
-                foreach (var sale in sales.Where(s => !string.IsNullOrEmpty(s.InvoiceId) || s.EstadoFiscal == "PENDIENTE" || s.EstadoFiscal == "ERROR AL TIMBRAR" || s.EstadoFiscal == "TIMBRADO"))
+                foreach (var sale in sales.Where(s => !string.IsNullOrEmpty(s.InvoiceId) || s.EstadoFiscal is "PENDIENTE" or "EN COLA" or "ERROR AL TIMBRAR" or "TIMBRADO" or "CANCELACION EN COLA"))
                 {
                     Invoices.Add(sale);
                 }

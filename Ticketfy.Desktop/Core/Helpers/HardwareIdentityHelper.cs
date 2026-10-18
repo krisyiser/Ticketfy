@@ -83,7 +83,7 @@ public static class HardwareIdentityHelper
         string machineNameStr = $"HOST:{Environment.MachineName.Trim().ToUpperInvariant()}";
         string fallbackHash = ComputeSha256(machineNameStr);
         _cachedHwid = $"HWID-HOST-{fallbackHash.Substring(0, 12).ToUpperInvariant()}";
-        
+
         PersistInHklmRegistry(_cachedHwid);
         PersistInProgramDataVault(_cachedHwid);
 

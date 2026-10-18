@@ -102,9 +102,9 @@ public partial class SaleService
         }
     }
 
-    private async Task<double> DeductInventoryRecursiveAsync(AppDbContext _ctx, string productId, double quantityMultiplier, HashSet<string> executionStack)
+    private async Task<decimal> DeductInventoryRecursiveAsync(AppDbContext _ctx, string productId, double quantityMultiplier, HashSet<string> executionStack)
     {
-        var product = await _ctx.Products.FindAsync(productId)
+        var product = await _ctx.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == productId)
             ?? throw new InvalidOperationException($"Producto o ingrediente no encontrado: {productId}");
 
         if (product.IsKit)
@@ -117,13 +117,13 @@ public partial class SaleService
                 .FirstOrDefaultAsync(k => k.ParentProductId == product.Id || k.Id == product.Id)
                 ?? throw new InvalidOperationException($"Estructura de Combo no encontrada para: {product.Name}");
 
-            double totalKitUnitCost = 0.0;
+            decimal totalKitUnitCost = 0m;
 
             foreach (var component in kit.Components)
             {
                 double totalRequired = quantityMultiplier * component.Quantity;
-                double compUnitCost = await DeductInventoryRecursiveAsync(_ctx, component.ProductId, totalRequired, executionStack);
-                totalKitUnitCost += component.Quantity * compUnitCost;
+                decimal compUnitCost = await DeductInventoryRecursiveAsync(_ctx, component.ProductId, totalRequired, executionStack);
+                totalKitUnitCost += Convert.ToDecimal(component.Quantity) * compUnitCost;
             }
 
             executionStack.Remove(productId);
@@ -131,8 +131,26 @@ public partial class SaleService
         }
         else
         {
-            product.Stock = Math.Max(0.0, Math.Round(product.Stock - quantityMultiplier, 3));
-            _ctx.Products.Update(product);
+            int affected = await _ctx.Database.ExecuteSqlInterpolatedAsync($@"
+                UPDATE products
+                SET stock = ROUND(stock - {quantityMultiplier}, 3),
+                    stock_version = stock_version + 1
+                WHERE id = {productId}
+                  AND stock_version = {product.StockVersion}
+                  AND stock >= {quantityMultiplier};");
+
+            if (affected != 1)
+            {
+                double? currentStock = await _ctx.Products.AsNoTracking()
+                    .Where(p => p.Id == productId)
+                    .Select(p => (double?)p.Stock)
+                    .FirstOrDefaultAsync();
+                if (currentStock.HasValue && currentStock.Value < quantityMultiplier)
+                    throw new InvalidOperationException($"Stock insuficiente para '{product.Name}'. Disponible: {currentStock.Value:N3}, requerido: {quantityMultiplier:N3}.");
+                throw new DbUpdateConcurrencyException($"El inventario de '{product.Name}' cambió durante el cobro.");
+            }
+
+            product.Stock = Math.Round(product.Stock - quantityMultiplier, 3);
             await CheckAndFlagLowStockAsync(_ctx, product);
             return product.Cost;
         }
@@ -140,7 +158,7 @@ public partial class SaleService
 
     private async Task RestockInventoryRecursiveAsync(AppDbContext _ctx, string productId, double quantityMultiplier, HashSet<string> executionStack)
     {
-        var product = await _ctx.Products.FindAsync(productId)
+        var product = await _ctx.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == productId)
             ?? throw new InvalidOperationException($"Producto o ingrediente no encontrado: {productId}");
 
         if (product.IsKit)
@@ -163,23 +181,31 @@ public partial class SaleService
         }
         else
         {
-            product.Stock = Math.Round(product.Stock + quantityMultiplier, 3);
-            _ctx.Products.Update(product);
+            int affected = await _ctx.Database.ExecuteSqlInterpolatedAsync($@"
+                UPDATE products
+                SET stock = ROUND(stock + {quantityMultiplier}, 3),
+                    stock_version = stock_version + 1
+                WHERE id = {productId}
+                  AND stock_version = {product.StockVersion};");
+            if (affected != 1)
+                throw new DbUpdateConcurrencyException($"El inventario de '{product.Name}' cambió durante la devolución.");
         }
     }
 
-    private List<SaleItemSnapshotDto> ApplyProratedGlobalDiscountAndTaxes(List<SaleItemSnapshotDto> items, double globalDiscountAmount)
+    private List<SaleItemSnapshotDto> ApplyProratedGlobalDiscountAndTaxes(List<SaleItemSnapshotDto> items, decimal globalDiscountAmount)
     {
-        decimal totalCartSubtotal = (decimal)items.Sum(i => (i.Quantity * (i.OriginalUnitPrice > 0 ? i.OriginalUnitPrice : i.UnitPrice)) - i.AppliedDiscountAmount);
-        decimal globalDiscountDec = (decimal)globalDiscountAmount;
+        decimal totalCartSubtotal = items.Sum(i =>
+            (Convert.ToDecimal(i.Quantity) * (i.OriginalUnitPrice > 0m ? i.OriginalUnitPrice : i.UnitPrice))
+            - i.AppliedDiscountAmount);
+        decimal globalDiscountDec = globalDiscountAmount;
         decimal accumulatedProratedDiscount = 0m;
         var result = new List<SaleItemSnapshotDto>();
 
         for (int i = 0; i < items.Count; i++)
         {
             var item = items[i];
-            double itemUnitPrice = item.OriginalUnitPrice > 0 ? item.OriginalUnitPrice : item.UnitPrice;
-            decimal lineSubtotal = (decimal)((item.Quantity * itemUnitPrice) - item.AppliedDiscountAmount);
+            decimal itemUnitPrice = item.OriginalUnitPrice > 0m ? item.OriginalUnitPrice : item.UnitPrice;
+            decimal lineSubtotal = (Convert.ToDecimal(item.Quantity) * itemUnitPrice) - item.AppliedDiscountAmount;
             decimal proratedGlobalDiscount = 0m;
 
             if (totalCartSubtotal > 0 && globalDiscountDec > 0)
@@ -203,9 +229,9 @@ public partial class SaleService
 
             result.Add(item with
             {
-                ProratedGlobalDiscountAmount = (double)proratedGlobalDiscount,
-                TaxAmount = (double)taxAmount,
-                TotalPrice = (double)totalLineAmount
+                ProratedGlobalDiscountAmount = proratedGlobalDiscount,
+                TaxAmount = taxAmount,
+                TotalPrice = totalLineAmount
             });
         }
         return result;

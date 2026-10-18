@@ -20,7 +20,7 @@ public class ShiftMovementEntity
     public MovementType MovementType { get; set; } = MovementType.AbonoCliente;
 
     [Column("amount")]
-    public double Amount { get; set; }
+    public decimal Amount { get; set; }
 
     [Column("is_outflow")]
     public bool IsOutflow { get; set; } = false;

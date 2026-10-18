@@ -20,13 +20,13 @@ public partial class CashierPerformanceViewModel : ObservableObject
     [ObservableProperty] private DateTimeOffset? _endDate = DateTimeOffset.Now;
     [ObservableProperty] private bool _isLoading = false;
     [ObservableProperty] private string _feedbackMessage = string.Empty;
-    [ObservableProperty] private double _commissionPercentage = 0.0;
+    [ObservableProperty] private decimal _commissionPercentage = 0m;
 
-    partial void OnCommissionPercentageChanged(double value)
+    partial void OnCommissionPercentageChanged(decimal value)
     {
         foreach (var report in CashierProductivityReports)
         {
-            report.EstimatedCommission = Math.Round(report.GrossSales * (value / 100.0), 2);
+            report.EstimatedCommission = Math.Round(report.GrossSales * (value / 100m), 2);
         }
     }
 
@@ -54,7 +54,7 @@ public partial class CashierPerformanceViewModel : ObservableObject
             CashierProductivityReports.Clear();
             foreach (var r in reports)
             {
-                r.EstimatedCommission = Math.Round(r.GrossSales * (CommissionPercentage / 100.0), 2);
+                r.EstimatedCommission = Math.Round(r.GrossSales * (CommissionPercentage / 100m), 2);
                 CashierProductivityReports.Add(r);
             }
             FeedbackMessage = $"Reporte cargado: {CashierProductivityReports.Count} cajeros analizados";

@@ -23,7 +23,7 @@ public partial class FirstTimeSetupViewModel : ValidatableViewModelBase
     [ObservableProperty] private string _adminUsername = string.Empty;
     [ObservableProperty] private string _adminPassword = string.Empty;
     [ObservableProperty] private string _passwordHint = string.Empty;
-    
+
     [ObservableProperty] private string _adminPin1 = string.Empty;
     [ObservableProperty] private string _adminPin2 = string.Empty;
     [ObservableProperty] private string _adminPin3 = string.Empty;
@@ -52,14 +52,9 @@ public partial class FirstTimeSetupViewModel : ValidatableViewModelBase
             {
                 AdminFullName = admin.FullName;
                 AdminUsername = admin.Username;
-                PasswordHint = admin.PasswordHint ?? string.Empty;
-                if (!string.IsNullOrEmpty(admin.PinCode) && admin.PinCode.Length == 4)
-                {
-                    AdminPin1 = admin.PinCode[0].ToString();
-                    AdminPin2 = admin.PinCode[1].ToString();
-                    AdminPin3 = admin.PinCode[2].ToString();
-                    AdminPin4 = admin.PinCode[3].ToString();
-                }
+                PasswordHint = string.Empty;
+                // PINs are never read back into the UI. Entering a new PIN is
+                // an explicit credential rotation operation.
             }
         }
         catch { }
@@ -75,10 +70,9 @@ public partial class FirstTimeSetupViewModel : ValidatableViewModelBase
     private async Task CreateAdminAccountAsync()
     {
         ErrorMessage = string.Empty;
-        if (string.IsNullOrWhiteSpace(AdminFullName) || 
-            string.IsNullOrWhiteSpace(AdminUsername) || 
-            string.IsNullOrWhiteSpace(AdminPassword) || 
-            string.IsNullOrWhiteSpace(PasswordHint) || 
+        if (string.IsNullOrWhiteSpace(AdminFullName) ||
+            string.IsNullOrWhiteSpace(AdminUsername) ||
+            string.IsNullOrWhiteSpace(AdminPassword) ||
             string.IsNullOrWhiteSpace(AdminPin))
         {
             ErrorMessage = "Todos los campos son obligatorios.";
@@ -94,14 +88,14 @@ public partial class FirstTimeSetupViewModel : ValidatableViewModelBase
         try
         {
             string hash = CryptoHelper.HashPassword(AdminPassword);
-            
+
             var adminUser = new UserEntity
             {
                 Id = Guid.NewGuid(),
                 FullName = AdminFullName,
                 Username = AdminUsername,
                 PasswordHash = hash,
-                PasswordHint = PasswordHint,
+                PasswordHint = string.Empty,
                 PinCode = AdminPin,
                 Role = UserRole.Admin,
                 RoleString = "ADMINISTRADOR",
@@ -109,7 +103,7 @@ public partial class FirstTimeSetupViewModel : ValidatableViewModelBase
             };
 
             await _userRepository.SaveOrUpdateAdminUserAsync(adminUser);
-            
+
             // Advance to the next wizard step instead of logging in directly
             _navigateToNextStep();
         }

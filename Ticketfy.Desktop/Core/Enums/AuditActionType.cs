@@ -9,5 +9,12 @@ public enum AuditActionType
     ManualDiscountExceeded = 4,
     InventoryStockAdjustment = 5,
     ShiftDrawerOpenedManually = 6,
-    UserLoginFailed = 7
+    UserLoginFailed = 7,
+    UserCreated = 8,
+    UserUpdated = 9,
+    UserDeleted = 10,
+    RolePermissionsChanged = 11,
+    SecuritySettingsChanged = 12,
+    LicenseStateChanged = 13,
+    AuditIntegrityFailure = 14
 }

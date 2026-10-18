@@ -129,7 +129,7 @@ public partial class PinInputControl : UserControl
         Dot4.Text = val.Length > 3 ? "●" : string.Empty;
 
         bool hasFocus = MasterInput?.IsFocused ?? false;
-        
+
         // Rules for active highlight box:
         // 0 chars (empty) => Box 1 (index 0)
         // 1 char  => Box 1 (index 0)

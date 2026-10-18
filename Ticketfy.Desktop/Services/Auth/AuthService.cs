@@ -7,6 +7,8 @@ using Ticketfy.Services.Interfaces;
 using Serilog;
 using System;
 using System.Threading.Tasks;
+using Ticketfy.Services.Security;
+using Ticketfy.Logging;
 
 namespace Ticketfy.Services.Auth;
 
@@ -40,23 +42,25 @@ public sealed partial class AuthService : ObservableObject
         var user = await _userService.GetByNameAsync(username);
         if (user is null || !user.IsActive)
         {
-            Log.Warning("Authentication failed: user '{Username}' not found or inactive", username);
+            Log.Warning("Authentication failed: user {UserReference} not found or inactive", LogSanitizer.Pseudonymize(username));
             return new AuthenticateResult(false);
         }
 
         var hash = await _userService.GetPasswordHashAsync(user.Id);
-        if (hash is null || (!CryptoHelper.VerifyPassword(password, hash) && !Ticketfy.Services.Security.SecurityManager.VerifyPassword(password, hash)))
+        if (hash is null || !SecurityManager.VerifyPassword(password, hash))
         {
-            Log.Warning("Authentication failed: invalid credentials for '{Username}'", username);
+            Log.Warning("Authentication failed: invalid credentials for user {UserReference}", LogSanitizer.Pseudonymize(username));
             return new AuthenticateResult(false);
         }
 
-        var pin = await _userService.GetPinHashAsync(user.Id) ?? "1234";
-        var userModel = _permissionEngine.MapDtoToModel(user, pin);
+        if (SecurityManager.NeedsRehash(hash))
+            await _userService.UpdatePasswordHashAsync(user.Id, SecurityManager.HashPassword(password));
+
+        var userModel = _permissionEngine.MapDtoToModel(user);
 
         CurrentUser = user;
         IsAuthenticated = true;
-        Log.Information("Login successful: {Username} ({Role})", user.Nombre, userModel.RoleString);
+        Log.Information("Login successful for user {UserReference} ({Role})", LogSanitizer.Pseudonymize(user.Username), userModel.RoleString);
 
         return new AuthenticateResult(true, userModel);
     }
@@ -69,18 +73,24 @@ public sealed partial class AuthService : ObservableObject
     public async Task<bool> VerifyManagerPinAsync(string userId, string pin)
     {
         var storedPin = await _userService.GetPinHashAsync(userId);
-        return storedPin == pin;
+        if (storedPin is null || !SecurityManager.VerifyPin(pin, storedPin)) return false;
+        if (SecurityManager.PinNeedsRehash(storedPin))
+            await _userService.UpdatePinHashAsync(userId, SecurityManager.HashPin(pin));
+        return true;
     }
 
     public async Task<bool> VerifyManagerPasswordAsync(string userId, string password)
     {
         var hash = await _userService.GetPasswordHashAsync(userId);
-        return hash is not null && CryptoHelper.VerifyPassword(password, hash);
+        if (hash is null || !SecurityManager.VerifyPassword(password, hash)) return false;
+        if (SecurityManager.NeedsRehash(hash))
+            await _userService.UpdatePasswordHashAsync(userId, SecurityManager.HashPassword(password));
+        return true;
     }
 
     public void Logout()
     {
-        Log.Information("Logout: {Username}", CurrentUser?.Nombre ?? "unknown");
+        Log.Information("Logout for user {UserReference}", LogSanitizer.Pseudonymize(CurrentUser?.Username));
         CurrentUser = null;
         IsAuthenticated = false;
     }
@@ -97,4 +107,9 @@ public sealed partial class AuthService : ObservableObject
         if (normReq == "ADMIN") return normUser is "ADMINISTRADOR";
         return string.Equals(normUser, normReq, StringComparison.OrdinalIgnoreCase);
     }
+
+    public Task<bool> HasPermissionAsync(string permissionKey) =>
+        CurrentUser is null
+            ? Task.FromResult(false)
+            : _permissionEngine.HasPermissionAsync(CurrentUser.Rol, permissionKey);
 }

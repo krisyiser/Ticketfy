@@ -15,23 +15,25 @@ public interface IPromotionService
 /// <summary>Parked/paused order CRUD.</summary>
 public interface IParkedOrderService
 {
-Task<List<ParkedOrderDto>> GetAllAsync();
-Task SaveAsync(ParkedOrderDto order);
-Task DeleteAsync(string id);
+    Task<List<ParkedOrderDto>> GetAllAsync();
+    Task SaveAsync(ParkedOrderDto order);
+    Task DeleteAsync(string id);
 }
 
 /// <summary>System user CRUD with RBAC.</summary>
 public interface IUserService
 {
-Task<int> GetCountAsync();
-Task<List<UserDto>> GetAllAsync();
-Task<UserDto?> GetByNameAsync(string name);
-Task<List<UserDto>> GetManagersAsync();
-Task SaveAsync(string id, string nombre, string username, string rol, string? passwordHash, string? pinHash, string? passwordHint = null);
-Task DeleteAsync(string id);
-Task<string?> GetPasswordHashAsync(string userId);
-Task<string?> GetPinHashAsync(string userId);
-Task<string?> GetPasswordHintAsync(string username);
+    Task<int> GetCountAsync();
+    Task<List<UserDto>> GetAllAsync();
+    Task<UserDto?> GetByNameAsync(string name);
+    Task<List<UserDto>> GetManagersAsync();
+    Task SaveAsync(string id, string nombre, string username, string rol, string? passwordHash, string? pinHash, string? passwordHint = null);
+    Task DeleteAsync(string id);
+    Task<string?> GetPasswordHashAsync(string userId);
+    Task<string?> GetPinHashAsync(string userId);
+    Task UpdatePasswordHashAsync(string userId, string passwordHash);
+    Task UpdatePinHashAsync(string userId, string pinHash);
+    Task<string?> GetPasswordHintAsync(string username);
 }
 
 /// <summary>Key-value settings persistence.</summary>
@@ -50,11 +52,12 @@ public interface IAuditService
     Task LogAsync(Ticketfy.Data.Entities.AuditLogEntity log);
     Task LogAsync(string level, string message, string? meta = null);
     Task<List<Ticketfy.Data.Entities.AuditLogEntity>> GetRecentLogsAsync(int limit = 100);
+    Task<bool> VerifyIntegrityAsync();
 }
 
 /// <summary>Product co-occurrence engine for combo recommendations.</summary>
 public interface IComboEngine
 {
-Task UpdateCoOccurrencesAsync(List<string> productIds);
-Task<List<string>> GetRecommendationsAsync(string productId, int limit = 3);
+    Task UpdateCoOccurrencesAsync(List<string> productIds);
+    Task<List<string>> GetRecommendationsAsync(string productId, int limit = 3);
 }

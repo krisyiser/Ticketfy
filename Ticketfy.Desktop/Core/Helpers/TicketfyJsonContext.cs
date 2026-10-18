@@ -13,6 +13,7 @@ namespace Ticketfy.Desktop.Core.Helpers;
 [JsonSerializable(typeof(List<SaleItemSnapshotDto>))]
 [JsonSerializable(typeof(SaleItemSnapshotDto))]
 [JsonSerializable(typeof(SaleEntity))]
+[JsonSerializable(typeof(SaleDto))]
 [JsonSerializable(typeof(AuditLogEntity))]
 [JsonSerializable(typeof(ParkedOrderEntity))]
 [JsonSerializable(typeof(object))]

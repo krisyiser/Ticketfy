@@ -8,11 +8,12 @@ namespace Ticketfy.Core.Models;
 public record SaleCreationDto(
     string? CustomerId,
     List<CartItemDto> Items,
-    double Total,
-    double CreditAmount,
+    decimal Total,
+    decimal CreditAmount,
     PaymentMethod PaymentMethod,
     string? GiftcardNumber = null,
-    double GiftcardAmount = 0
+    decimal GiftcardAmount = 0m,
+    string? OperationId = null
 );
 
 public class SaleResultModel

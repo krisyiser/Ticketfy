@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace Ticketfy.ViewModels.Dialogs;
 
-public record CustomerLedgerEntryDto(string Date, string Concept, double Charge, double Payment, double Balance);
+public record CustomerLedgerEntryDto(string Date, string Concept, decimal Charge, decimal Payment, decimal Balance);
 
 public partial class CustomerStatementDialogViewModel : ObservableObject
 {
@@ -20,13 +20,13 @@ public partial class CustomerStatementDialogViewModel : ObservableObject
 
     [ObservableProperty] private string _customerName = string.Empty;
     [ObservableProperty] private string _customerRfc = string.Empty;
-    [ObservableProperty] private double _currentDebt;
+    [ObservableProperty] private decimal _currentDebt;
 
     public ObservableCollection<CustomerLedgerEntryDto> LedgerEntries { get; } = [];
 
     public event Action? RequestClose;
 
-    public CustomerStatementDialogViewModel(AppDbContext db, string customerId, string customerName, string rfc, double currentDebt)
+    public CustomerStatementDialogViewModel(AppDbContext db, string customerId, string customerName, string rfc, decimal currentDebt)
     {
         _db = db;
         _customerId = customerId;
@@ -51,13 +51,13 @@ public partial class CustomerStatementDialogViewModel : ObservableObject
                 .Where(p => p.CustomerId == _customerId)
                 .ToListAsync();
 
-            var list = sales.Select(s => new { Date = s.Date, Concept = $"Compra Ticket #{s.Id[..Math.Min(8, s.Id.Length)]}", Charge = s.Total, Payment = 0.0 })
-                .Concat(payments.Select(p => new { Date = p.Date, Concept = "Abono a Cuenta de Crédito", Charge = 0.0, Payment = p.Amount }))
+            var list = sales.Select(s => new { Date = s.Date, Concept = $"Compra Ticket #{s.Id[..Math.Min(8, s.Id.Length)]}", Charge = s.Total, Payment = 0m })
+                .Concat(payments.Select(p => new { Date = p.Date, Concept = "Abono a Cuenta de Crédito", Charge = 0m, Payment = p.Amount }))
                 .OrderBy(x => x.Date)
                 .ToList();
 
             LedgerEntries.Clear();
-            double runningBalance = 0.0;
+            decimal runningBalance = 0m;
             foreach (var item in list)
             {
                 runningBalance += item.Charge - item.Payment;

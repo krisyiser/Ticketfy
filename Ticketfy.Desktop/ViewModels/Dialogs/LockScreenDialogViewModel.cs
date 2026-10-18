@@ -48,8 +48,8 @@ public partial class LockScreenDialogViewModel : ObservableObject
 
     private async void ValidateAndUnlockAsync()
     {
-        var currentPin = _sessionManager.CurrentCashier?.Pin4Digits ?? "1234";
-        bool isCurrentMatch = EnteredPin == currentPin;
+        bool isCurrentMatch = _sessionManager.CurrentCashier is { } currentUser
+            && await _userRepository.ValidatePinAsync(currentUser.Username, EnteredPin) != null;
         bool isAdminMatch = await _userRepository.ValidateAdminPinAsync(EnteredPin);
 
         if (isCurrentMatch || isAdminMatch)

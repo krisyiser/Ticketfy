@@ -19,10 +19,17 @@ public class ReturnEntity
     public string? CashierUserId { get; set; }
 
     [Column("total_refunded")]
-    public double TotalRefunded { get; set; }
+    public decimal TotalRefunded { get; set; }
 
     [Column("cogs_reversed")]
-    public double CogsReversed { get; set; }
+    public decimal CogsReversed { get; set; }
+
+    [Required]
+    [Column("operation_id")]
+    public string OperationId { get; set; } = string.Empty;
+
+    [Column("status")]
+    public Ticketfy.Core.Enums.ReturnStatus Status { get; set; } = Ticketfy.Core.Enums.ReturnStatus.Completed;
 
     [Column("refund_method")]
     public string RefundMethod { get; set; } = "Efectivo";

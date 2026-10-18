@@ -47,7 +47,7 @@ public class CoOccurrenceWorker
         if (productIds.Count <= 1) return;
 
         using var _ctx = await _contextFactory.CreateDbContextAsync();
-        
+
         for (int i = 0; i < productIds.Count; i++)
         {
             for (int j = i + 1; j < productIds.Count; j++)

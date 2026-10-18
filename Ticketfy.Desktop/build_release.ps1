@@ -1,10 +1,36 @@
 param (
-    [string]$Version = "1.0.0"
+    [string]$Version = ""
 )
 
 $ErrorActionPreference = "Stop"
 $ProjectPath = Join-Path $PSScriptRoot "Ticketfy.Desktop.csproj"
 $ReleaseDir = Join-Path $PSScriptRoot "Output\Releases"
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    [xml]$ProjectXml = Get-Content $ProjectPath
+    $Version = [string](($ProjectXml.Project.PropertyGroup | Where-Object Version | Select-Object -First 1).Version)
+    $Version = $Version.Trim()
+}
+if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Version must use the numeric major.minor.patch format."
+}
+
+$SigningThumbprint = $env:TICKETFY_SIGNING_CERT_THUMBPRINT
+$TimestampUrl = $env:TICKETFY_TIMESTAMP_URL
+if ([string]::IsNullOrWhiteSpace($SigningThumbprint)) { throw "TICKETFY_SIGNING_CERT_THUMBPRINT is required for every release." }
+if ([string]::IsNullOrWhiteSpace($TimestampUrl)) { throw "TICKETFY_TIMESTAMP_URL is required for a trusted release timestamp." }
+$SignTool = (Get-Command signtool.exe -ErrorAction SilentlyContinue).Source
+if ([string]::IsNullOrWhiteSpace($SignTool)) {
+    $SignTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+}
+if ([string]::IsNullOrWhiteSpace($SignTool)) { throw "signtool.exe was not found. Install the Windows SDK." }
+
+function Invoke-RequiredCodeSigning([string]$Path) {
+    & $SignTool sign /sha1 $SigningThumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 $Path
+    if ($LASTEXITCODE -ne 0) { throw "Code signing failed: $Path" }
+    & $SignTool verify /pa /all $Path
+    if ($LASTEXITCODE -ne 0) { throw "Signature verification failed: $Path" }
+}
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "Compilando Ticketfy v$Version Multi-Arquitectura (x64 / x86)..." -ForegroundColor Cyan
@@ -20,6 +46,8 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
+Invoke-RequiredCodeSigning (Join-Path $PublishDir64 "Ticketfy.Desktop.exe")
+
 # 2. Publicar versión 32-bit (win-x86)
 Write-Host "[2/2] Publicando versión 32-bit (win-x86)..." -ForegroundColor Yellow
 $PublishDir86 = Join-Path $PSScriptRoot "bin\Release\net9.0\win-x86\publish"
@@ -29,6 +57,7 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "Error en la compilación x86." -ForegroundColor Red
     exit $LASTEXITCODE
 }
+Invoke-RequiredCodeSigning (Join-Path $PublishDir86 "Ticketfy.Desktop.exe")
 
 # 3. Purga estricta de instaladores antiguos para garantizar congruencia absoluta de versión
 Write-Host "Deteniendo procesos que puedan bloquear los archivos de release..." -ForegroundColor Cyan
@@ -100,22 +129,6 @@ if ($IsccExe) {
         if ($LASTEXITCODE -eq 0 -and (Test-Path "$ReleaseDir\Ticketfy-Setup-v$Version-x64.exe")) {
             Copy-Item -Path "$ReleaseDir\Ticketfy-Setup-v$Version-x64.exe" -Destination "$ReleaseDir\Ticketfy-Setup-v$Version.exe" -Force
             
-            # Firma Digital Authenticode con Certificado Studio Kuali / Jóvenes Creadores MX
-            $SignTool = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe"
-            $PfxPath = Join-Path $PSScriptRoot "TicketfyCodeSigning.pfx"
-            if ((Test-Path $SignTool) -and (Test-Path $PfxPath)) {
-                Write-Host "Firmando digitalmente el instalador con certificado Authenticode (VALCORE)..." -ForegroundColor Cyan
-                & $SignTool sign /f $PfxPath /p "Valcore2026!" /tr "http://timestamp.digicert.com" /td sha256 /fd sha256 "$ReleaseDir\Ticketfy-Setup-v$Version-x64.exe" | Out-Null
-                & $SignTool sign /f $PfxPath /p "Valcore2026!" /tr "http://timestamp.digicert.com" /td sha256 /fd sha256 "$ReleaseDir\Ticketfy-Setup-v$Version.exe" | Out-Null
-                Write-Host "¡Instalador firmado digitalmente con éxito!" -ForegroundColor Green
-            }
-
-            # Crear paquete ZIP de alta reputación anti-bloqueo Chrome Safe Browsing
-            $ZipSetupPath = "$ReleaseDir\Ticketfy-Instalador-v$Version-x64.zip"
-            if (Test-Path $ZipSetupPath) { Remove-Item $ZipSetupPath -Force }
-            Compress-Archive -Path "$ReleaseDir\Ticketfy-Setup-v$Version-x64.exe" -DestinationPath $ZipSetupPath -Force
-            Write-Host "¡Paquete ZIP de instalación anti-bloqueo Chrome generado exitosamente!" -ForegroundColor Green
-
             Write-Host "¡Instalador Inno Setup v$Version compilado y verificado exitosamente!" -ForegroundColor Green
         }
     }
@@ -132,50 +145,39 @@ if (Test-Path "$TempPack64\Ticketfy.Desktop-win-Portable.zip") {
     Copy-Item -Path "$TempPack64\Ticketfy.Desktop-win-Portable.zip" -Destination "$ReleaseDir\Ticketfy-Portable-v$Version-x64.zip" -Force
 }
 
+# Every executable that leaves the build pipeline must carry and verify a
+# trusted Authenticode signature. Unsigned output aborts the release.
+Get-ChildItem -LiteralPath $ReleaseDir -Filter *.exe -Recurse | ForEach-Object {
+    Invoke-RequiredCodeSigning $_.FullName
+}
+
+$ZipSetupPath = "$ReleaseDir\Ticketfy-Instalador-v$Version-x64.zip"
+if (Test-Path $ZipSetupPath) { Remove-Item -LiteralPath $ZipSetupPath -Force }
+Compress-Archive -LiteralPath "$ReleaseDir\Ticketfy-Setup-v$Version-x64.exe" -DestinationPath $ZipSetupPath -Force
+
 Remove-Item -Recurse -Force $TempPack64 -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force $TempPack86 -ErrorAction SilentlyContinue
 
-# 4. Generar Manifiesto de Descargas para valcore.cloud
-Write-Host "Generando manifiesto web de descargas releases.json para valcore.cloud..." -ForegroundColor Cyan
-$ReleasesJson = @"
+# 4. Generar manifiesto local para trazabilidad de la compilación
+Write-Host "Generando manifiesto local de compilación..." -ForegroundColor Cyan
+$LocalBuildJson = @"
 {
   "version": "$Version",
-  "updated_at": "$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ')",
-  "downloads": {
+  "created_at": "$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ssK')",
+  "mode": "local-development",
+  "artifacts": {
     "x64": "Ticketfy-Setup-v$Version-x64.exe",
     "x86": "Ticketfy-Setup-v$Version-x86.exe",
-    "default": "Ticketfy-Setup-v$Version-x64.exe",
     "portable": "Ticketfy-Portable-v$Version-x64.zip"
   }
 }
 "@
-[System.IO.File]::WriteAllText("$ReleaseDir\releases.json", $ReleasesJson, (New-Object System.Text.UTF8Encoding($false)))
+[System.IO.File]::WriteAllText("$ReleaseDir\local-build.json", $LocalBuildJson, (New-Object System.Text.UTF8Encoding($false)))
 
-# Copiar y actualizar scripts detectores web
-if (Test-Path "..\web") {
-    Copy-Item -Path "..\web\*" -Destination "$ReleaseDir\" -Force
-    if (Test-Path "$ReleaseDir\valcore-download.js") {
-        $jsContent = Get-Content "$ReleaseDir\valcore-download.js" -Raw
-        $jsContent = $jsContent -replace "version: '[^']+'", "version: '$Version'"
-        Set-Content -Path "$ReleaseDir\valcore-download.js" -Value $jsContent -Encoding UTF8
-    }
-}
-
-# 5. Despliegue automático de contenedor web en servidor de producción (100.109.190.105)
-Write-Host "Sincronizando contenedor web de producción valcore.cloud..." -ForegroundColor Cyan
-try {
-    $deployScript = Join-Path $PSScriptRoot "deploy_release_remote.py"
-    if (Test-Path $deployScript) {
-        python $deployScript $Version
-    }
-} catch {
-    Write-Host "Aviso: No se pudo ejecutar deploy automático de la web, pero el release OTA ya fue publicado." -ForegroundColor Yellow
-}
-
-Write-Host "¡Construcción y publicación de actualización OTA completadas con éxito!" -ForegroundColor Green
+Write-Host "¡Construcción local completada con éxito! No se publicó ningún artefacto remoto." -ForegroundColor Green
 Write-Host "Instalador 64-bit: $ReleaseDir\Ticketfy-Setup-v$Version-x64.exe" -ForegroundColor Green
 Write-Host "Instalador 32-bit: $ReleaseDir\Ticketfy-Setup-v$Version-x86.exe" -ForegroundColor Green
-Write-Host "Manifiesto Web:    $ReleaseDir\releases.json" -ForegroundColor Green
+Write-Host "Manifiesto local:  $ReleaseDir\local-build.json" -ForegroundColor Green
 
 # 5. Limpieza de temporales
 Write-Host "Limpiando artefactos temporales..." -ForegroundColor Cyan

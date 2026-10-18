@@ -11,7 +11,10 @@
         <Border Grid.Row="0" Margin="0,0,0,16" Padding="16,12" Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8">
             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                 <mi:MaterialIcon Kind="ReceiptTextOutline" Width="22" Height="22" Foreground="{DynamicResource AccentPrimaryBrush}" />
-                <TextBlock Text="Facturación Electrónica SAT CFDI 4.0" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
+                <StackPanel>
+                    <TextBlock Text="Facturación Electrónica SAT CFDI 4.0" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <TextBlock Text="{Binding FacturamaStatusMessage}" FontSize="11" Foreground="{DynamicResource AccentWarningBrush}" />
+                </StackPanel>
             </StackPanel>
         </Border>
 
@@ -76,10 +79,10 @@
                             <ComboBox ItemsSource="{Binding MetodosPago}" SelectedItem="{Binding SelectedMetodoPago, Mode=TwoWay}" Background="{DynamicResource BgTertiaryBrush}" HorizontalAlignment="Stretch"/>
                         </StackPanel>
 
-                        <Button Command="{Binding EmitInvoiceCommand}" Classes="primary-action" HorizontalAlignment="Right" Padding="16,10" CornerRadius="4" Margin="0,8,0,0" IsEnabled="{Binding !IsLoading}">
+                        <Button Command="{Binding EmitInvoiceCommand}" Classes="primary-action" HorizontalAlignment="Right" Padding="16,10" CornerRadius="4" Margin="0,8,0,0" IsEnabled="{Binding IsFacturamaAvailable}">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <mi:MaterialIcon Kind="Send" />
-                                <TextBlock Text="TIMBRAR FACTURA" FontWeight="Bold" VerticalAlignment="Center"/>
+                                <TextBlock Text="AGREGAR A COLA FISCAL" FontWeight="Bold" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                     </StackPanel>
@@ -128,7 +131,14 @@
 
             <!-- Bottom: Invoices History DataGrid -->
             <Border Grid.Column="0" Grid.ColumnSpan="2" Grid.Row="1" Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="0">
-                <DataGrid ItemsSource="{Binding Invoices}" AutoGenerateColumns="False" CanUserResizeColumns="True" CanUserReorderColumns="True" IsReadOnly="True" GridLinesVisibility="Horizontal" HeadersVisibility="Column">
+                <Grid RowDefinitions="Auto,*">
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="10">
+                    <ComboBox Width="80" ItemsSource="{Binding CancellationMotives}" SelectedItem="{Binding CancellationMotive}" />
+                    <TextBox Width="240" Text="{Binding ReplacementUuid}" Watermark="UUID sustituto (sólo motivo 01)" />
+                    <Button Command="{Binding QueueCancellationCommand}" IsEnabled="{Binding SelectedInvoice, Converter={x:Static ObjectConverters.IsNotNull}}" Content="Solicitar cancelación" />
+                    <Button Command="{Binding QueueReconciliationCommand}" IsEnabled="{Binding SelectedInvoice, Converter={x:Static ObjectConverters.IsNotNull}}" Content="Conciliar y descargar" />
+                </StackPanel>
+                <DataGrid Grid.Row="1" ItemsSource="{Binding Invoices}" SelectedItem="{Binding SelectedInvoice, Mode=TwoWay}" AutoGenerateColumns="False" CanUserResizeColumns="True" CanUserReorderColumns="True" IsReadOnly="True" GridLinesVisibility="Horizontal" HeadersVisibility="Column">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Folio Venta" Binding="{Binding Id}" Width="2*" />
                         <DataGridTextColumn Header="Fecha" Binding="{Binding Date}" Width="2*" />
@@ -137,6 +147,7 @@
                         <DataGridTextColumn Header="Total" Binding="{Binding Total, StringFormat='${0:N2}'}" Width="1.5*" />
                     </DataGrid.Columns>
                 </DataGrid>
+                </Grid>
             </Border>
         </Grid>
     </Grid>

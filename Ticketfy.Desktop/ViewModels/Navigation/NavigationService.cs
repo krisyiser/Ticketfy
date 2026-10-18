@@ -94,21 +94,21 @@ public partial class NavigationService : ObservableObject
 
         ActiveViewModel = target.ToLower() switch
         {
-            "pos"                  => _posVm,
-            "inventory"            => _inventoryVm,
-            "customers"            => _customersVm,
-            "suppliers"            => _suppliersVm,
-            "proveedores"          => _suppliersVm,
-            "expenses"             => _expensesVm,
-            "gastos"               => _expensesVm,
-            "history"              => _historyVm,
-            "promotions"           => _promotionsVm,
-            "fiscal"               => _fiscalVm,
-            "settings"             => _settingsVm,
-            "performance"          => _cashierPerformanceVm,
-            "rendimiento"          => _cashierPerformanceVm,
-            "cashierperformance"   => _cashierPerformanceVm,
-            _                      => _posVm
+            "pos" => _posVm,
+            "inventory" => _inventoryVm,
+            "customers" => _customersVm,
+            "suppliers" => _suppliersVm,
+            "proveedores" => _suppliersVm,
+            "expenses" => _expensesVm,
+            "gastos" => _expensesVm,
+            "history" => _historyVm,
+            "promotions" => _promotionsVm,
+            "fiscal" => _fiscalVm,
+            "settings" => _settingsVm,
+            "performance" => _cashierPerformanceVm,
+            "rendimiento" => _cashierPerformanceVm,
+            "cashierperformance" => _cashierPerformanceVm,
+            _ => _posVm
         };
 
         await ActivateCurrentModuleAsync();

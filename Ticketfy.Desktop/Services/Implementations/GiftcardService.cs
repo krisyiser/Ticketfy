@@ -30,7 +30,7 @@ public sealed class GiftcardService : IGiftcardService
             .FirstOrDefaultAsync(g => g.CardNumber == cardNumber && g.IsActive);
     }
 
-    public async Task<bool> DeductBalanceAsync(string cardNumber, double amount)
+    public async Task<bool> DeductBalanceAsync(string cardNumber, decimal amount)
     {
         var card = await _ctx.Giftcards.FirstOrDefaultAsync(g => g.CardNumber == cardNumber && g.IsActive);
         if (card == null || card.Balance < amount) return false;
@@ -52,7 +52,7 @@ public sealed class GiftcardService : IGiftcardService
         if (card.Balance <= 0)
             return (false, 0m, "Monedero sin fondos disponibles ($0.00).");
 
-        return (true, (decimal)card.Balance, string.Empty);
+        return (true, card.Balance, string.Empty);
     }
 
     public async Task<bool> RedeemBalanceAsync(string cardNumber, decimal amountToRedeem, string saleId = "")
@@ -60,17 +60,16 @@ public sealed class GiftcardService : IGiftcardService
         var card = await _ctx.Giftcards.FirstOrDefaultAsync(g => g.CardNumber == cardNumber && g.IsActive)
             ?? throw new InvalidOperationException("Monedero no válido.");
 
-        double amount = (double)amountToRedeem;
-        if (card.Balance < amount)
+        if (card.Balance < amountToRedeem)
             throw new InvalidOperationException("Fondos insuficientes en el monedero.");
 
-        card.Balance -= amount;
+        card.Balance -= amountToRedeem;
         _ctx.Giftcards.Update(card);
         await _ctx.SaveChangesAsync();
         return true;
     }
 
-    public async Task CreateCardAsync(string cardNumber, double initialBalance, string? customerId = null)
+    public async Task CreateCardAsync(string cardNumber, decimal initialBalance, string? customerId = null)
     {
         var entity = new GiftcardEntity
         {
@@ -90,7 +89,7 @@ public sealed class GiftcardService : IGiftcardService
         var card = await _ctx.Giftcards.FindAsync(cardId);
         if (card == null) return;
 
-        card.Balance += (double)amount;
+        card.Balance += amount;
 
         // GUARANTEE MONEY INFLOW RECORD
         if (method == Ticketfy.Core.Enums.PaymentMethod.Efectivo)
@@ -100,7 +99,7 @@ public sealed class GiftcardService : IGiftcardService
                 Id = Guid.NewGuid().ToString(),
                 ShiftId = activeShiftId,
                 MovementType = Ticketfy.Core.Enums.MovementType.AbonoCliente, // Treat as generic inflow
-                Amount = (double)amount,
+                Amount = amount,
                 IsOutflow = false,
                 Description = $"Recarga Monedero {card.CardNumber}",
                 Timestamp = DateTime.Now.ToString("s")

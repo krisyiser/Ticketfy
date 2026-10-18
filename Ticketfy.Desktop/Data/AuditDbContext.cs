@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Ticketfy.Data.Entities;
 using System;
 using System.IO;
+using Ticketfy.Core.Configuration;
 
 namespace Ticketfy.Data;
 
@@ -22,11 +23,19 @@ public class AuditDbContext : DbContext
         base.OnConfiguring(optionsBuilder);
         if (!optionsBuilder.IsConfigured)
         {
-            string appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            string appFolder = Path.Combine(appDataFolder, "Ticketfy", "Database");
-            if (!Directory.Exists(appFolder)) Directory.CreateDirectory(appFolder);
-            string dbPath = Path.Combine(appFolder, "audit_logs.db");
-            optionsBuilder.UseSqlite($"Data Source={dbPath};");
+            AppDataPaths.EnsureRequiredDirectories();
+            optionsBuilder.UseSqlite($"Data Source={AppDataPaths.AuditDatabaseFile};");
         }
+    }
+}
+
+public sealed class AuditDbContextFactory : Microsoft.EntityFrameworkCore.Design.IDesignTimeDbContextFactory<AuditDbContext>
+{
+    public AuditDbContext CreateDbContext(string[] args)
+    {
+        var options = new DbContextOptionsBuilder<AuditDbContext>()
+            .UseSqlite($"Data Source={Path.Combine(AppContext.BaseDirectory, "ticketfy.audit.design.db")};Mode=ReadWriteCreate;")
+            .Options;
+        return new AuditDbContext(options);
     }
 }

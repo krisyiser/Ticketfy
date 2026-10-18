@@ -61,7 +61,6 @@ public partial class AutoUpdateViewModel : ObservableObject
                     Dispatcher.UIThread.Post(() => IsUpdateUpToDate = false));
             });
 
-        _autoUpdateService.StartPeriodicChecks(TimeSpan.FromHours(4));
     }
 
     [RelayCommand]

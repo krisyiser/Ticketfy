@@ -50,7 +50,7 @@ public sealed class ProductServiceTests : IDisposable
         var retrieved = await _service.GetByBarcodeAsync("7501112223334");
         Assert.NotNull(retrieved);
         Assert.Equal("Test Beverage 500ml", retrieved.Name);
-        Assert.Equal(15.0, retrieved.Price);
+        Assert.Equal(15m, retrieved.Price);
         Assert.Equal(50, retrieved.Stock);
     }
 
@@ -60,13 +60,13 @@ public sealed class ProductServiceTests : IDisposable
         var dto = new ProductDto("PROD-TEST-002", "7509998887776", "Original Name", 5.0, 10.0, 8.0, 5, 20, "Abarrotes", "Pza", 0, null);
         await _service.AddAsync(dto);
 
-        var updatedDto = dto with { Name = "Updated Name", Price = 12.5, Stock = 30 };
+        var updatedDto = dto with { Name = "Updated Name", Price = 12.5m, Stock = 30 };
         await _service.UpdateAsync(updatedDto);
 
         var retrieved = await _service.GetByIdAsync("PROD-TEST-002");
         Assert.NotNull(retrieved);
         Assert.Equal("Updated Name", retrieved.Name);
-        Assert.Equal(12.5, retrieved.Price);
+        Assert.Equal(12.5m, retrieved.Price);
         Assert.Equal(30, retrieved.Stock);
     }
 
@@ -80,6 +80,44 @@ public sealed class ProductServiceTests : IDisposable
 
         var retrieved = await _service.GetByIdAsync("PROD-TEST-003");
         Assert.Null(retrieved);
+    }
+
+    [Fact]
+    public async Task CatalogBulkImportSearchAndClear_KeepInventoryConsistent()
+    {
+        var first = new ProductDto("P-BULK-1", "10001", "Café molido", 40m, 65m, 0m, 0, 8, "Cafetería", "Pza", 0, null);
+        var second = new ProductDto("P-BULK-2", "10002", "Azúcar", 20m, 32m, 0m, 0, 12, "Abarrotes", "Pza", 0, null);
+        await _service.BulkSaveAsync([first, second]);
+
+        await _service.BulkSaveAsync([first with { Name = "Café premium", Stock = 15 }]);
+        Assert.Equal(2, (await _service.GetAllAsync()).Count);
+        Assert.Equal("Café premium", (await _service.GetByCategoryAsync("Cafetería")).Single().Name);
+        Assert.Equal("P-BULK-1", (await _service.SearchFtsAsync("premium")).Single().Id);
+        Assert.Equal(2, (await _service.SearchFtsAsync(" ")).Count);
+
+        int imported = await _service.ImportFromCsvTextAsync(
+            "barcode,name,cost,price,stock,category,unit\n10003,Leche,18.50,27.90,20,Lácteos,Pza");
+        Assert.Equal(1, imported);
+        Assert.Equal(27.90m, (await _service.GetByBarcodeAsync("10003"))!.Price);
+
+        Assert.True(await _service.AdjustStockManuallyAsync("P-BULK-1", 9, "Conteo físico", "tester"));
+        Assert.Equal(9, (await _service.GetByIdAsync("P-BULK-1"))!.Stock);
+        Assert.Equal(0, await _service.ImportCsvAsync(Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".csv")));
+
+        await _service.ClearInventoryAsync();
+        Assert.Empty(await _service.GetAllAsync());
+    }
+
+    [Fact]
+    public async Task DuplicateBarcode_IsRejectedForCreateAndUpdate()
+    {
+        var first = new ProductDto("P-DUP-1", "DUPLICATE", "Uno", 1m, 2m, 0m, 0, 1, "General", "Pza", 0, null);
+        var second = new ProductDto("P-DUP-2", "OTHER", "Dos", 1m, 2m, 0m, 0, 1, "General", "Pza", 0, null);
+        await _service.AddAsync(first);
+        await _service.AddAsync(second);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _service.AddAsync(second with { Id = "P-DUP-3", Barcode = "DUPLICATE" }));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _service.UpdateAsync(second with { Barcode = "DUPLICATE" }));
     }
 
     public void Dispose()

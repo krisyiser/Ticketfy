@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using Ticketfy.Core.Security;
 
 namespace Ticketfy.ViewModels.Settings;
 
@@ -39,6 +40,8 @@ public partial class UsuariosSettingsViewModel : ObservableObject
 {
     private readonly IUserService? _userService;
     private readonly ISettingsService? _settingsService;
+    private readonly IAuditService? _auditService;
+    private readonly Func<string>? _auditActor;
 
     public static readonly HashSet<string> BaseRoles = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -215,8 +218,8 @@ public partial class UsuariosSettingsViewModel : ObservableObject
 
         if (_userService == null)
         {
-            IsAdminUnlocked = true;
-            AdminGateErrorMessage = string.Empty;
+            IsAdminUnlocked = false;
+            AdminGateErrorMessage = "El servicio de autenticación no está disponible.";
             return;
         }
 
@@ -232,11 +235,6 @@ public partial class UsuariosSettingsViewModel : ObservableObject
                     && (Ticketfy.Core.Helpers.CryptoHelper.VerifyPassword(AdminPasswordInput, hash)
                         || Ticketfy.Services.Security.SecurityManager.VerifyPassword(AdminPasswordInput, hash));
 
-                if (!valid && (AdminPasswordInput == "admin" || AdminPasswordInput == "1234"))
-                {
-                    valid = true;
-                }
-
                 if (valid)
                 {
                     IsAdminUnlocked = true;
@@ -245,18 +243,6 @@ public partial class UsuariosSettingsViewModel : ObservableObject
                     return;
                 }
             }
-            else
-            {
-                // Fallback for default setup password
-                if (AdminPasswordInput == "admin" || AdminPasswordInput == "1234" || AdminPasswordInput == "Valcore2026!")
-                {
-                    IsAdminUnlocked = true;
-                    AdminPasswordInput = string.Empty;
-                    AdminGateErrorMessage = string.Empty;
-                    return;
-                }
-            }
-
             AdminGateErrorMessage = "Contraseña de Administrador incorrecta.";
         }
         catch (Exception ex)
@@ -274,10 +260,12 @@ public partial class UsuariosSettingsViewModel : ObservableObject
         AdminGateErrorMessage = string.Empty;
     }
 
-    public UsuariosSettingsViewModel(IUserService? userService = null, ISettingsService? settingsService = null)
+    public UsuariosSettingsViewModel(IUserService? userService = null, ISettingsService? settingsService = null, IAuditService? auditService = null, Func<string>? auditActor = null)
     {
         _userService = userService;
         _settingsService = settingsService;
+        _auditService = auditService;
+        _auditActor = auditActor;
 
         _ = InitAsync();
     }
@@ -365,6 +353,19 @@ public partial class UsuariosSettingsViewModel : ObservableObject
         {
             var dict = RolePermissions.ToDictionary(p => p.Key, p => p.IsGranted);
             string json = JsonSerializer.Serialize(dict);
+            if (_auditService != null)
+            {
+                await _auditService.LogAsync(new Ticketfy.Data.Entities.AuditLogEntity
+                {
+                    UserId = _auditActor?.Invoke() ?? "SYSTEM",
+                    EntityName = "RolePermissions",
+                    EntityId = SelectedPermissionRole.ToUpperInvariant(),
+                    ActionType = Ticketfy.Core.Enums.AuditActionType.RolePermissionsChanged,
+                    RiskLevel = Ticketfy.Core.Enums.RiskLevel.Critical,
+                    NewValue = json,
+                    Reason = "Administrative RBAC matrix change"
+                });
+            }
             await _settingsService.SetAsync($"RolePermissions_{SelectedPermissionRole.ToUpper()}", json);
             PermissionFeedbackMessage = $"¡Permisos del rol '{SelectedPermissionRole}' guardados y aplicados correctamente en SQLite!";
         }
@@ -425,76 +426,8 @@ public partial class UsuariosSettingsViewModel : ObservableObject
 
     private static Dictionary<string, bool> GetDefaultRolePreset(string role)
     {
-        string norm = role.Trim().ToUpper();
-        return norm switch
-        {
-            "ADMINISTRADOR" or "ADMIN" => new()
-            {
-                ["pos.checkout"] = true, ["pos.discount"] = true, ["pos.modify_price"] = true, ["pos.cancel_sale"] = true, ["pos.refund"] = true, ["pos.apply_points"] = true, ["pos.credit_sale"] = true,
-                ["cash.open"] = true, ["cash.close"] = true, ["cash.in_out"] = true, ["cash.history"] = true,
-                ["inventory.view"] = true, ["inventory.create"] = true, ["inventory.edit"] = true, ["inventory.delete"] = true, ["inventory.stock_adjust"] = true,
-                ["customers.view"] = true, ["customers.create_edit"] = true, ["customers.delete"] = true, ["customers.credit_limit"] = true,
-                ["quotes.manage"] = true,
-                ["reports.view"] = true, ["reports.profits"] = true, ["reports.export"] = true,
-                ["users.view"] = true, ["users.manage"] = true, ["users.roles"] = true,
-                ["settings.business"] = true, ["settings.hardware"] = true, ["settings.security"] = true
-            },
-            "GERENTE" => new()
-            {
-                ["pos.checkout"] = true, ["pos.discount"] = true, ["pos.modify_price"] = true, ["pos.cancel_sale"] = true, ["pos.refund"] = true, ["pos.apply_points"] = true, ["pos.credit_sale"] = true,
-                ["cash.open"] = true, ["cash.close"] = true, ["cash.in_out"] = true, ["cash.history"] = true,
-                ["inventory.view"] = true, ["inventory.create"] = true, ["inventory.edit"] = true, ["inventory.delete"] = false, ["inventory.stock_adjust"] = true,
-                ["customers.view"] = true, ["customers.create_edit"] = true, ["customers.delete"] = false, ["customers.credit_limit"] = true,
-                ["quotes.manage"] = true,
-                ["reports.view"] = true, ["reports.profits"] = true, ["reports.export"] = true,
-                ["users.view"] = true, ["users.manage"] = false, ["users.roles"] = false,
-                ["settings.business"] = false, ["settings.hardware"] = true, ["settings.security"] = false
-            },
-            "SUPERVISOR" => new()
-            {
-                ["pos.checkout"] = true, ["pos.discount"] = true, ["pos.modify_price"] = false, ["pos.cancel_sale"] = true, ["pos.refund"] = true, ["pos.apply_points"] = true, ["pos.credit_sale"] = false,
-                ["cash.open"] = true, ["cash.close"] = true, ["cash.in_out"] = true, ["cash.history"] = true,
-                ["inventory.view"] = true, ["inventory.create"] = false, ["inventory.edit"] = false, ["inventory.delete"] = false, ["inventory.stock_adjust"] = false,
-                ["customers.view"] = true, ["customers.create_edit"] = true, ["customers.delete"] = false, ["customers.credit_limit"] = false,
-                ["quotes.manage"] = true,
-                ["reports.view"] = true, ["reports.profits"] = false, ["reports.export"] = false,
-                ["users.view"] = true, ["users.manage"] = false, ["users.roles"] = false,
-                ["settings.business"] = false, ["settings.hardware"] = false, ["settings.security"] = false
-            },
-            "VENDEDOR" => new()
-            {
-                ["pos.checkout"] = true, ["pos.discount"] = false, ["pos.modify_price"] = false, ["pos.cancel_sale"] = false, ["pos.refund"] = false, ["pos.apply_points"] = true, ["pos.credit_sale"] = false,
-                ["cash.open"] = false, ["cash.close"] = false, ["cash.in_out"] = false, ["cash.history"] = false,
-                ["inventory.view"] = true, ["inventory.create"] = false, ["inventory.edit"] = false, ["inventory.delete"] = false, ["inventory.stock_adjust"] = false,
-                ["customers.view"] = true, ["customers.create_edit"] = true, ["customers.delete"] = false, ["customers.credit_limit"] = false,
-                ["quotes.manage"] = true,
-                ["reports.view"] = false, ["reports.profits"] = false, ["reports.export"] = false,
-                ["users.view"] = false, ["users.manage"] = false, ["users.roles"] = false,
-                ["settings.business"] = false, ["settings.hardware"] = false, ["settings.security"] = false
-            },
-            "CAJERO" => new()
-            {
-                ["pos.checkout"] = true, ["pos.discount"] = false, ["pos.modify_price"] = false, ["pos.cancel_sale"] = false, ["pos.refund"] = false, ["pos.apply_points"] = true, ["pos.credit_sale"] = false,
-                ["cash.open"] = true, ["cash.close"] = true, ["cash.in_out"] = true, ["cash.history"] = false,
-                ["inventory.view"] = true, ["inventory.create"] = false, ["inventory.edit"] = false, ["inventory.delete"] = false, ["inventory.stock_adjust"] = false,
-                ["customers.view"] = true, ["customers.create_edit"] = false, ["customers.delete"] = false, ["customers.credit_limit"] = false,
-                ["quotes.manage"] = false,
-                ["reports.view"] = false, ["reports.profits"] = false, ["reports.export"] = false,
-                ["users.view"] = false, ["users.manage"] = false, ["users.roles"] = false,
-                ["settings.business"] = false, ["settings.hardware"] = false, ["settings.security"] = false
-            },
-            _ => new() // ALL NEW CUSTOM ROLES DEFAULT TO FALSE FOR EVERY PERMISSION!
-            {
-                ["pos.checkout"] = false, ["pos.discount"] = false, ["pos.modify_price"] = false, ["pos.cancel_sale"] = false, ["pos.refund"] = false, ["pos.apply_points"] = false, ["pos.credit_sale"] = false,
-                ["cash.open"] = false, ["cash.close"] = false, ["cash.in_out"] = false, ["cash.history"] = false,
-                ["inventory.view"] = false, ["inventory.create"] = false, ["inventory.edit"] = false, ["inventory.delete"] = false, ["inventory.stock_adjust"] = false,
-                ["customers.view"] = false, ["customers.create_edit"] = false, ["customers.delete"] = false, ["customers.credit_limit"] = false,
-                ["quotes.manage"] = false,
-                ["reports.view"] = false, ["reports.profits"] = false, ["reports.export"] = false,
-                ["users.view"] = false, ["users.manage"] = false, ["users.roles"] = false,
-                ["settings.business"] = false, ["settings.hardware"] = false, ["settings.security"] = false
-            }
-        };
+        string normalized = role.Trim().ToUpperInvariant() switch { "ADMIN" => "ADMINISTRADOR", var value => value };
+        return PermissionCatalog.GetDefaultPermissions(normalized);
     }
 
     [RelayCommand]
@@ -571,9 +504,8 @@ public partial class UsuariosSettingsViewModel : ObservableObject
         if (UserToDelete == null || _userService == null) return;
 
         string savedHash = await _userService.GetPasswordHashAsync(UserToDelete.Id) ?? string.Empty;
-        bool valid = string.IsNullOrEmpty(savedHash)
-            || Ticketfy.Core.Helpers.CryptoHelper.VerifyPassword(AdminDeletePassword, savedHash)
-            || Ticketfy.Services.Security.SecurityManager.VerifyPassword(AdminDeletePassword, savedHash);
+        bool valid = !string.IsNullOrEmpty(savedHash)
+            && Ticketfy.Services.Security.SecurityManager.VerifyPassword(AdminDeletePassword, savedHash);
 
         if (valid)
         {

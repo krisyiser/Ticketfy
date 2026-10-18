@@ -40,7 +40,7 @@ public partial class PurchaseOrderViewModel : ObservableObject
 
     [ObservableProperty] private string _purchaseUnitPrice = string.Empty;
     [ObservableProperty] private string _purchaseQuantity = "1";
-    [ObservableProperty] private double _totalPurchaseCost;
+    [ObservableProperty] private decimal _totalPurchaseCost;
     [ObservableProperty] private string _feedbackMessage = string.Empty;
     [ObservableProperty] private bool _isFeedbackError = false;
     [ObservableProperty] private bool _isSubmitting = false;
@@ -134,14 +134,14 @@ public partial class PurchaseOrderViewModel : ObservableObject
             FeedbackMessage = "Ingrese una cantidad válida mayor a cero";
             return;
         }
-        if (!double.TryParse(PurchaseUnitPrice, out double price) || price < 0)
+        if (!decimal.TryParse(PurchaseUnitPrice, out decimal price) || price < 0)
         {
             IsFeedbackError = true;
             FeedbackMessage = "Ingrese un costo unitario válido";
             return;
         }
 
-        var total = price * qty;
+        var total = price * (decimal)qty;
         DraftPurchaseItems.Add(new PurchaseItemDto(
             Guid.NewGuid().ToString(),
             string.Empty,

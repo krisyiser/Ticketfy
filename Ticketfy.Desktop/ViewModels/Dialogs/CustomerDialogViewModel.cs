@@ -25,7 +25,7 @@ public partial class CustomerDialogViewModel : ObservableObject
     private string _rfc = string.Empty;
 
     [ObservableProperty]
-    private double? _creditLimit;
+    private decimal? _creditLimit;
 
     [ObservableProperty]
     private string _customerCode = $"CLI-{Random.Shared.Next(1000, 9999)}";
@@ -34,7 +34,7 @@ public partial class CustomerDialogViewModel : ObservableObject
     private string _errorMessage = string.Empty;
 
     private string? _editingCustomerId;
-    private double _existingDebt;
+    private decimal _existingDebt;
 
     public event Action? RequestClose;
 

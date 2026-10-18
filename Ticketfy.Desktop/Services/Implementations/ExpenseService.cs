@@ -130,13 +130,15 @@ public class ExpenseService : IExpenseService
 
         if (startDate.HasValue)
         {
-            salesList = salesList.Where(s => {
+            salesList = salesList.Where(s =>
+            {
                 if (DateTime.TryParse(s.Date, out var dt))
                     return dt >= startDate.Value;
                 return string.Compare(s.Date, startDate.Value.ToString("o")) >= 0;
             }).ToList();
 
-            expensesList = expensesList.Where(e => {
+            expensesList = expensesList.Where(e =>
+            {
                 if (DateTime.TryParse(e.Date, out var dt))
                     return dt >= startDate.Value;
                 return string.Compare(e.Date, startDate.Value.ToString("o")) >= 0;
@@ -145,34 +147,36 @@ public class ExpenseService : IExpenseService
 
         if (endDate.HasValue)
         {
-            salesList = salesList.Where(s => {
+            salesList = salesList.Where(s =>
+            {
                 if (DateTime.TryParse(s.Date, out var dt))
                     return dt <= endDate.Value;
                 return string.Compare(s.Date, endDate.Value.ToString("o")) <= 0;
             }).ToList();
 
-            expensesList = expensesList.Where(e => {
+            expensesList = expensesList.Where(e =>
+            {
                 if (DateTime.TryParse(e.Date, out var dt))
                     return dt <= endDate.Value;
                 return string.Compare(e.Date, endDate.Value.ToString("o")) <= 0;
             }).ToList();
         }
 
-        double totalRevenue = salesList.Sum(s => s.Total);
-        double totalCostOfGoodsSold = salesList.Sum(s => s.TotalCost);
-        double grossProfit = totalRevenue - totalCostOfGoodsSold;
-        double totalExpenses = expensesList.Sum(e => e.Amount);
-        double netProfit = grossProfit - totalExpenses;
+        decimal totalRevenue = salesList.Sum(s => s.Total);
+        decimal totalCostOfGoodsSold = salesList.Sum(s => s.TotalCost);
+        decimal grossProfit = totalRevenue - totalCostOfGoodsSold;
+        decimal totalExpenses = expensesList.Sum(e => e.Amount);
+        decimal netProfit = grossProfit - totalExpenses;
 
-        double cashRevenue = salesList
+        decimal cashRevenue = salesList
             .Sum(s => s.CashAmount > 0 ? s.CashAmount :
-                (!string.IsNullOrEmpty(s.PaymentMethod) && (s.PaymentMethod.Equals("Cash", StringComparison.OrdinalIgnoreCase) || s.PaymentMethod.Equals("Efectivo", StringComparison.OrdinalIgnoreCase)) ? s.Total : 0.0));
+                (!string.IsNullOrEmpty(s.PaymentMethod) && (s.PaymentMethod.Equals("Cash", StringComparison.OrdinalIgnoreCase) || s.PaymentMethod.Equals("Efectivo", StringComparison.OrdinalIgnoreCase)) ? s.Total : 0m));
 
-        double cardRevenue = salesList
+        decimal cardRevenue = salesList
             .Sum(s => s.CardAmount > 0 ? s.CardAmount :
-                (string.IsNullOrEmpty(s.PaymentMethod) || (!s.PaymentMethod.Equals("Cash", StringComparison.OrdinalIgnoreCase) && !s.PaymentMethod.Equals("Efectivo", StringComparison.OrdinalIgnoreCase)) ? s.Total : 0.0));
+                (string.IsNullOrEmpty(s.PaymentMethod) || (!s.PaymentMethod.Equals("Cash", StringComparison.OrdinalIgnoreCase) && !s.PaymentMethod.Equals("Efectivo", StringComparison.OrdinalIgnoreCase)) ? s.Total : 0m));
 
-        double cashExpenses = expensesList
+        decimal cashExpenses = expensesList
             .Where(e => string.IsNullOrEmpty(e.PaymentMethod) || e.PaymentMethod.Equals("Cash", StringComparison.OrdinalIgnoreCase) || e.PaymentMethod.Equals("Efectivo", StringComparison.OrdinalIgnoreCase))
             .Sum(e => e.Amount);
 
@@ -185,14 +189,14 @@ public class ExpenseService : IExpenseService
             .AsNoTracking()
             .Where(s => s.IsCancelled == 0);
 
-        decimal grossSales = (decimal)(await validSales.SumAsync(s => (double?)s.Total) ?? 0.0);
-        decimal totalCogs = (decimal)(await validSales.SumAsync(s => (double?)s.TotalCost) ?? 0.0);
+        decimal grossSales = await validSales.SumAsync(s => (decimal?)s.Total) ?? 0m;
+        decimal totalCogs = await validSales.SumAsync(s => (decimal?)s.TotalCost) ?? 0m;
 
         var validReturns = _context.Returns.AsNoTracking();
-        decimal totalRefunds = (decimal)(await validReturns.SumAsync(r => (double?)r.TotalRefunded) ?? 0.0);
-        decimal cogsReversed = (decimal)(await validReturns.SumAsync(r => (double?)r.CogsReversed) ?? 0.0);
+        decimal totalRefunds = await validReturns.SumAsync(r => (decimal?)r.TotalRefunded) ?? 0m;
+        decimal cogsReversed = await validReturns.SumAsync(r => (decimal?)r.CogsReversed) ?? 0m;
 
-        decimal operatingExpenses = (decimal)(await _context.Expenses.SumAsync(e => (double?)e.Amount) ?? 0.0);
+        decimal operatingExpenses = await _context.Expenses.SumAsync(e => (decimal?)e.Amount) ?? 0m;
 
         decimal netSales = grossSales - totalRefunds;
         decimal effectiveCogs = totalCogs - cogsReversed;

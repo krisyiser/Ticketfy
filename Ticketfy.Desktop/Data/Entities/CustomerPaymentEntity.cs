@@ -28,7 +28,14 @@ public class CustomerPaymentEntity
     public string Date { get; set; } = DateTime.Now.ToString("s");
 
     [Column("amount")]
-    public double Amount { get; set; }
+    public decimal Amount { get; set; }
+
+    [Required]
+    [Column("operation_id")]
+    public string OperationId { get; set; } = string.Empty;
+
+    [Column("status")]
+    public Ticketfy.Core.Enums.PaymentStatus Status { get; set; } = Ticketfy.Core.Enums.PaymentStatus.Completed;
 
     [Column("payment_method")]
     public string Method { get; set; } = "Efectivo";

@@ -61,7 +61,7 @@ public class NumericTextBox : TextBox
         }
 
         string pattern = AllowDecimals ? "^[0-9.]+$" : "^[0-9]+$";
-        
+
         if (!Regex.IsMatch(e.Text, pattern))
         {
             e.Handled = true;

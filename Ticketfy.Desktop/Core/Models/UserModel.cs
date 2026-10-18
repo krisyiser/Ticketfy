@@ -19,8 +19,8 @@ public partial class UserModel : ObservableObject
     public string Pin4Digits { get; init; } = string.Empty;
     public bool IsActive { get; init; } = true;
 
-    public string DisplayRole => !string.IsNullOrWhiteSpace(RoleString) 
-        ? RoleString.Trim().ToUpperInvariant() 
+    public string DisplayRole => !string.IsNullOrWhiteSpace(RoleString)
+        ? RoleString.Trim().ToUpperInvariant()
         : Role switch
         {
             SystemRole.ADMIN => "ADMINISTRADOR",

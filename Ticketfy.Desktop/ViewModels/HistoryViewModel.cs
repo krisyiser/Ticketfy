@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 
 namespace Ticketfy.ViewModels;
 
-public record HourlySalesDto(string HourLabel, int TicketCount, double TotalRevenue, bool IsPeakHour);
+public record HourlySalesDto(string HourLabel, int TicketCount, decimal TotalRevenue, bool IsPeakHour);
 
 public partial class HistoryViewModel : ObservableObject
 {
@@ -32,12 +32,12 @@ public partial class HistoryViewModel : ObservableObject
 
     [ObservableProperty] private string _feedbackMessage = string.Empty;
     [ObservableProperty] private string _peakHourLabel = "Ninguna";
-    [ObservableProperty] private double _peakHourRevenue = 0.0;
-    [ObservableProperty] private double _totalDayRevenue = 0.0;
+    [ObservableProperty] private decimal _peakHourRevenue;
+    [ObservableProperty] private decimal _totalDayRevenue;
     [ObservableProperty] private DateTime? _startDate = DateTime.Today;
     [ObservableProperty] private DateTime? _endDate = DateTime.Today;
     [ObservableProperty] private bool _isLoading = false;
-    [ObservableProperty] private double _commissionPercentage = 0.0;
+    [ObservableProperty] private decimal _commissionPercentage = 0m;
 
     // Custom Tab State
     [ObservableProperty]
@@ -51,13 +51,13 @@ public partial class HistoryViewModel : ObservableObject
         IsTabVentas = tab == "ventas";
     }
 
-    partial void OnCommissionPercentageChanged(double value)
+    partial void OnCommissionPercentageChanged(decimal value)
     {
         _ = SaveCommissionAsync(value);
         _ = LoadCashierPerformanceAsync();
     }
 
-    private async Task SaveCommissionAsync(double value)
+    private async Task SaveCommissionAsync(decimal value)
     {
         if (_settingsService == null) return;
         try { await _settingsService.SetAsync(CommissionKey, value.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)); }
@@ -112,10 +112,10 @@ public partial class HistoryViewModel : ObservableObject
         try
         {
             var saved = await _settingsService.GetAsync(CommissionKey);
-            if (!string.IsNullOrEmpty(saved) && double.TryParse(saved, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double v) && v >= 0)
+            if (!string.IsNullOrEmpty(saved) && decimal.TryParse(saved, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out decimal v) && v >= 0m)
                 CommissionPercentage = v;
             else
-                CommissionPercentage = 0.0;
+                CommissionPercentage = 0m;
         }
         catch (Exception ex) { Log.Warning(ex, "Could not load saved commission percentage"); }
     }
@@ -142,7 +142,7 @@ public partial class HistoryViewModel : ObservableObject
             {
                 var allCashups = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(_db.Cashups);
                 cashupsQuery = allCashups
-                    .Where(c => 
+                    .Where(c =>
                     {
                         if (TryParseCashupDate(c.Timestamp, out var dt))
                         {
@@ -150,7 +150,7 @@ public partial class HistoryViewModel : ObservableObject
                         }
                         return true;
                     })
-                    .OrderByDescending(c => 
+                    .OrderByDescending(c =>
                     {
                         TryParseCashupDate(c.Timestamp, out var dt);
                         return dt;
@@ -160,7 +160,7 @@ public partial class HistoryViewModel : ObservableObject
                 if (cashupsQuery.Count == 0 && StartDate == DateTime.Today && EndDate == DateTime.Today)
                 {
                     cashupsQuery = allCashups
-                        .OrderByDescending(c => 
+                        .OrderByDescending(c =>
                         {
                             TryParseCashupDate(c.Timestamp, out var dt);
                             return dt;
@@ -244,7 +244,7 @@ public partial class HistoryViewModel : ObservableObject
             .OrderBy(g => g.Key)
             .ToList();
 
-        double maxRev = 0.0;
+        decimal maxRev = 0m;
         int peakHour = -1;
 
         foreach (var g in groups)
@@ -275,13 +275,13 @@ public partial class HistoryViewModel : ObservableObject
     private async Task RePrintTicketAsync(SaleDto sale)
     {
         if (sale == null) return;
-        
+
         var desktop = Avalonia.Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime;
         if (desktop?.MainWindow == null) return;
 
         var vm = new Ticketfy.ViewModels.Dialogs.PrintPreviewWindowViewModel($"Reimpresión de Ticket #{sale.Id}");
         var win = new Ticketfy.Views.Dialogs.PrintPreviewWindow { DataContext = vm };
-        
+
         var confirmed = await win.ShowDialog<bool>(desktop.MainWindow);
         if (!confirmed) return;
 

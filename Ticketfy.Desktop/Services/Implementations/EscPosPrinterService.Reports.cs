@@ -50,8 +50,7 @@ public partial class EscPosPrinterService
             ms.Write(PaperCut, 0, PaperCut.Length);
 
             byte[] rawData = ms.ToArray();
-            _printerQueue.Writer.TryWrite(new PrintJob(printerPortOrName, rawData));
-            return Task.FromResult(true);
+            return EnqueuePrintJobAsync(printerPortOrName, rawData);
         }
         catch (Exception ex)
         {
@@ -101,8 +100,7 @@ public partial class EscPosPrinterService
             ms.Write(PaperCut, 0, PaperCut.Length);
 
             byte[] rawData = ms.ToArray();
-            _printerQueue.Writer.TryWrite(new PrintJob(printerPortOrName, rawData));
-            return Task.FromResult(true);
+            return EnqueuePrintJobAsync(printerPortOrName, rawData);
         }
         catch (Exception ex)
         {
@@ -166,8 +164,7 @@ public partial class EscPosPrinterService
             ms.Write(PaperCut, 0, PaperCut.Length);
 
             byte[] rawData = ms.ToArray();
-            _printerQueue.Writer.TryWrite(new PrintJob(printerPortOrName, rawData));
-            return Task.FromResult(true);
+            return EnqueuePrintJobAsync(printerPortOrName, rawData);
         }
         catch (Exception ex)
         {

@@ -1,22 +1,38 @@
 using Ticketfy.Core.Models;
 using Ticketfy.Data.Dtos;
-using Ticketfy.Services.Interfaces;
-using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 
 namespace Ticketfy.ViewModels.Dialogs.Checkout;
 
 /// <summary>
-/// Handles CFDI 4.0 invoice generation payload formatting, SAT validation,
-/// and Facturama integration. Extracted from CheckoutDialogViewModel.
+/// Builds and validates CFDI 4.0 payloads. Network access is intentionally not
+/// available here; every issue request must pass through the durable outbox.
 /// </summary>
 public static class CheckoutInvoiceHandler
 {
-    public static async Task<(bool success, string? invoiceId, string? invoiceStatus, string? estadoFiscal, string? errorMessage)> ProcessInvoiceAsync(
-        IFacturamaService facturamaService,
+    public static (FacturamaCfdiRequest? request, string? errorMessage) BuildInvoiceRequest(
+        string rfc,
+        string razonSocial,
+        string usoCfdi,
+        string regime,
+        string zipCode,
+        List<SaleItemSnapshotDto> itemSnapshots)
+    {
+        var request = BuildRequest(rfc, razonSocial, usoCfdi, regime, zipCode, itemSnapshots);
+        if (!Regex.IsMatch(request.Receiver.Rfc, @"^[A-Z&Ñ]{3,4}[0-9]{6}[A-Z0-9]{3}$", RegexOptions.IgnoreCase))
+            return (null, "El RFC ingresado no tiene un formato válido.");
+        if (!Regex.IsMatch(request.Receiver.TaxZipCode, @"^[0-9]{5}$"))
+            return (null, "El código postal fiscal debe contener exactamente 5 dígitos.");
+        if (request.Items.Exists(item => !Regex.IsMatch(item.ProductCode, @"^[0-9]{8}$")))
+            return (null, "Todos los productos deben tener una clave SAT de 8 dígitos.");
+        if (request.Items.Exists(item => string.IsNullOrWhiteSpace(item.UnitCode)))
+            return (null, "Todos los productos deben tener una clave de unidad SAT.");
+        return (request, null);
+    }
+
+    private static FacturamaCfdiRequest BuildRequest(
         string rfc,
         string razonSocial,
         string usoCfdi,
@@ -36,20 +52,15 @@ public static class CheckoutInvoiceHandler
             },
             PaymentForm = "01",
             PaymentMethod = "PUE",
-            ExpeditionPlace = "00000"
+            ExpeditionPlace = string.Empty
         };
-
-        if (!Regex.IsMatch(cfdiRequest.Receiver.Rfc, @"^[A-Z&Ñ]{3,4}[0-9]{6}[A-Z0-9]{3}$", RegexOptions.IgnoreCase))
-        {
-            return (false, null, null, null, "El RFC ingresado no tiene un formato válido.");
-        }
 
         foreach (var item in itemSnapshots)
         {
             decimal priceWithIva = (decimal)item.UnitPrice;
             decimal basePrice = Math.Round(priceWithIva / 1.16m, 6);
-            decimal totalTax = Math.Round(basePrice * 0.16m, 6);
             decimal subtotal = Math.Round(basePrice * (decimal)item.Quantity, 2);
+            decimal totalTax = Math.Round(subtotal * 0.16m, 2);
 
             cfdiRequest.Items.Add(new CfdiItem
             {
@@ -61,6 +72,8 @@ public static class CheckoutInvoiceHandler
                 UnitPrice = Math.Round(basePrice, 2),
                 Quantity = (decimal)item.Quantity,
                 Subtotal = subtotal,
+                TaxObject = "02",
+                Total = subtotal + totalTax,
                 Taxes = new List<CfdiTax>
                 {
                     new CfdiTax
@@ -68,34 +81,14 @@ public static class CheckoutInvoiceHandler
                         Name = "IVA",
                         IsRetention = false,
                         Rate = 0.16m,
-                        Total = Math.Round(totalTax * (decimal)item.Quantity, 2),
-                        Base = subtotal
+                        Total = totalTax,
+                        Base = subtotal,
+                        TaxObject = "02"
                     }
                 }
             });
         }
 
-        try
-        {
-            var response = await facturamaService.CreateInvoiceAsync(cfdiRequest);
-            if (response != null)
-            {
-                return (true, response.Id, response.Status, "TIMBRADO CFDI 4.0", null);
-            }
-            return (false, null, "Failed", "ERROR AL TIMBRAR", "Respuesta nula del servicio de facturación.");
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error al timbrar factura CFDI 4.0");
-
-            if (ex.Message.Contains("Código Postal", StringComparison.OrdinalIgnoreCase) ||
-                ex.Message.Contains("RFC", StringComparison.OrdinalIgnoreCase) ||
-                ex.Message.Contains("zip", StringComparison.OrdinalIgnoreCase))
-            {
-                return (false, null, null, null, "Código Postal o RFC incorrecto según SAT. Por favor verifica los datos.");
-            }
-
-            return (true, null, "Failed", "ERROR AL TIMBRAR", "No se pudo timbrar. Guardando venta localmente.");
-        }
+        return cfdiRequest;
     }
 }

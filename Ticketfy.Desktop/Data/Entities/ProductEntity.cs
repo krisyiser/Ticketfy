@@ -23,14 +23,14 @@ public class ProductEntity
     public string Name { get; set; } = string.Empty;
 
     [Column("cost")]
-    public double Cost { get; set; }
+    public decimal Cost { get; set; }
 
     [Required]
     [Column("price")]
-    public double Price { get; set; }
+    public decimal Price { get; set; }
 
     [Column("wholesalePrice")]
-    public double WholesalePrice { get; set; }
+    public decimal WholesalePrice { get; set; }
 
     [Column("wholesaleThreshold")]
     public int WholesaleThreshold { get; set; }
@@ -38,6 +38,10 @@ public class ProductEntity
     [Column("stock")]
     [ConcurrencyCheck]
     public double Stock { get; set; }
+
+    [ConcurrencyCheck]
+    [Column("stock_version")]
+    public long StockVersion { get; set; }
 
     [Required]
     [Column("category")]
@@ -89,8 +93,8 @@ public class ProductEntity
     [NotMapped]
     public decimal CostPrice
     {
-        get => (decimal)Cost;
-        set => Cost = (double)value;
+        get => Cost;
+        set => Cost = value;
     }
 
     [NotMapped]

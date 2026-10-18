@@ -18,8 +18,8 @@ using Ticketfy.Core.Models;
 using Ticketfy.Core.Repositories;
 using Serilog;
 using System;
-using System.IO;
 using System.Threading.Tasks;
+using Ticketfy.Core.Configuration;
 
 namespace Ticketfy.ViewModels;
 
@@ -69,10 +69,6 @@ public partial class MainWindowViewModel : ObservableObject
 
     public event Action? ToggleFullscreenRequested;
 
-    // ── Infrastructure (kept here as owned by the shell) ────────────────────
-    private readonly DeviceRegistrationService _deviceRegistrationService;
-    private readonly ISessionManager _sessionManager;
-
     public MainWindowViewModel()
     {
         // 1. Initialize Dialog Coordinator FIRST to prevent null reference delegates
@@ -84,14 +80,11 @@ public partial class MainWindowViewModel : ObservableObject
         };
 
         // ── Database setup ───────────────────────────────────────────────────
-        string appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        string appFolder = Path.Combine(appDataFolder, "ticketfy", "Database");
-        if (!Directory.Exists(appFolder)) Directory.CreateDirectory(appFolder);
-        string dbPath = Path.Combine(appFolder, "ticketfy.db");
+        AppDataPaths.EnsureRequiredDirectories();
 
         string securePassword = SecurityManager.GetMasterKey();
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite($"Data Source={dbPath};Password={securePassword};Cache=Shared;Mode=ReadWriteCreate;")
+            .UseSqlite($"Data Source={AppDataPaths.DatabaseFile};Password={securePassword};Cache=Shared;Mode=ReadWriteCreate;")
             .AddInterceptors(new Ticketfy.Data.Interceptors.SlowQueryInterceptor())
             .Options;
 
@@ -99,7 +92,7 @@ public partial class MainWindowViewModel : ObservableObject
         var dbContextFactory = new Ticketfy.Data.AppDbContextFactoryImpl<AppDbContext>(options);
 
         var auditOptions = new DbContextOptionsBuilder<AuditDbContext>()
-            .UseSqlite($"Data Source={Path.Combine(appFolder, "audit_logs.db")};")
+            .UseSqlite($"Data Source={AppDataPaths.AuditDatabaseFile};")
             .Options;
         var auditContextFactory = new Ticketfy.Data.AppDbContextFactoryImpl<AuditDbContext>(auditOptions);
 
@@ -112,12 +105,8 @@ public partial class MainWindowViewModel : ObservableObject
         // ── Services ─────────────────────────────────────────────────────────
         var printerService = new EscPosPrinterService();
         var backupService = new BackupService();
-        var satBillingQueue = new SatBillingQueueService();
-        _ = satBillingQueue.StartAsync(default);
-
         var productService = new ProductService(db);
         var customerService = new CustomerService(db, printerService);
-        var userService = new UserService(db);
         var auditService = new AuditService(auditContextFactory);
         var saleService = new SaleService(dbContextFactory, coOccurrenceQueue, auditService);
         var promotionService = new PromotionService(db);
@@ -126,27 +115,24 @@ public partial class MainWindowViewModel : ObservableObject
         var purchaseService = new PurchaseService(db);
         var expenseService = new ExpenseService(db, printerService);
         var settingsService = new SettingsService(db);
-        var terminalService = new MercadoPagoTerminalService(new System.Net.Http.HttpClient(), settingsService);
+        var permissionEngine = new UserRolePermissionEngine(settingsService);
+        var sessionManager = new SessionManager();
+        Func<string> auditActor = () => sessionManager.CurrentCashier?.Id.ToString() ?? "SYSTEM";
+        var userService = new UserService(db, auditService, auditActor);
+        var terminalService = new MercadoPagoTerminalService(new System.Net.Http.HttpClient(), settingsService, contextFactory: dbContextFactory);
         var shiftNoteService = new ShiftNoteService(db);
         var kitService = new ItemKitService(db);
         var predictiveService = new PredictiveIntelligenceService(dbContextFactory);
         var externalCatalogService = new ExternalCatalogService(new System.Net.Http.HttpClient());
         var performanceAnalyticsService = new PerformanceAnalyticsService(db);
         var attendanceService = new AttendanceService(db);
-        var authService = new AuthService(userService);
+        var authService = new AuthService(userService, permissionEngine);
         var shiftService = new ShiftService(db);
-        var userRepository = new UserRepository(db);
-        var sessionManager = new SessionManager();
-        _sessionManager = sessionManager;
+        var userRepository = new UserRepository(db, permissionEngine, auditService, auditActor);
 
         var certificateGenerator = new CertificateGeneratorService();
         var printDispatcherService = new PrintDispatcherService(printerService, certificateGenerator, dbContextFactory, settingsService);
         var tutorialService = new TutorialService(settingsService);
-
-        _deviceRegistrationService = new DeviceRegistrationService(settingsService, sessionManager);
-        _deviceRegistrationService.StartPeriodicHeartbeat();
-        sessionManager.CashierChanged += (user) =>
-            _ = _deviceRegistrationService.PingServerAsync(new BusinessProfile());
 
         var securityService = new SecurityInterceptionService(userRepository);
         securityService.RequestSupervisorPinDialog += (title, callback) =>
@@ -155,16 +141,13 @@ public partial class MainWindowViewModel : ObservableObject
             Dialogs.ShowDialog(dialog);
         };
 
-        // Safe resolution of FacturamaService
-        IFacturamaService facturamaService;
-        try
+        var facturamaService =
+            (App.Current?.Services?.GetService(typeof(IFacturamaService)) as IFacturamaService)
+            ?? new UnavailableFacturamaService();
+        var fiscalQueue = new FiscalIntegrationQueueService(dbContextFactory, facturamaService);
+        if (LocalDevelopmentMode.FacturamaEnabled)
         {
-            facturamaService = (App.Current?.Services?.GetService(typeof(IFacturamaService)) as IFacturamaService)
-                               ?? new FacturamaService(new System.Net.Http.HttpClient());
-        }
-        catch
-        {
-            facturamaService = new FacturamaService(new System.Net.Http.HttpClient());
+            _ = new FiscalQueueWorker(fiscalQueue).RunAsync(default);
         }
 
         // ── Module ViewModels ─────────────────────────────────────────────────
@@ -175,9 +158,9 @@ public partial class MainWindowViewModel : ObservableObject
         var customersVm = new CustomersViewModel(customerService);
         var historyVm = new HistoryViewModel(saleService, printerService, db, settingsService);
         var promotionsVm = new PromotionsViewModel(promotionService, kitService);
-        var fiscalVm = new FiscalViewModel(saleService, facturamaService);
+        var fiscalVm = new FiscalViewModel(saleService, fiscalQueue);
         var cashierPerformanceVm = new CashierPerformanceViewModel(performanceAnalyticsService, attendanceService);
-        var settingsVm = new SettingsViewModel(userService, settingsService);
+        var settingsVm = new SettingsViewModel(userService, settingsService, backupService, auditService, auditActor);
         var suppliersVm = new SuppliersViewModel(supplierService, purchaseService, productService, printerService);
         var expensesVm = new ExpensesViewModel(expenseService, shiftService);
         var loginVm = new LoginViewModel(authService, sessionManager,
@@ -244,14 +227,13 @@ public partial class MainWindowViewModel : ObservableObject
 
         // ── POS cashup shortcuts ──────────────────────────────────────────────
         posVm.OpenPartialCashupRequested += () => shiftCoordinator.OpenPartialCashup();
-        posVm.OpenFinalCashupRequested   += () => shiftCoordinator.OpenFinalCashup();
+        posVm.OpenFinalCashupRequested += () => shiftCoordinator.OpenFinalCashup();
 
         // ── Fullscreen / Logout ───────────────────────────────────────────────
         posVm.ToggleFullscreenRequested += () => ToggleFullscreenRequested?.Invoke();
         posVm.LogoutRequested += () =>
         {
             Navigation.GoToLogin();
-            _ = _deviceRegistrationService.PingServerAsync(new BusinessProfile());
         };
 
         // ── Login post-action ─────────────────────────────────────────────────
@@ -259,7 +241,6 @@ public partial class MainWindowViewModel : ObservableObject
         {
             Navigation.GoToPos();
             posVm.RegisterMessages();
-            _ = _deviceRegistrationService.PingServerAsync(new BusinessProfile());
             _ = posVm.LoadProductsAsync();
 
             var shiftSuccess = await shiftCoordinator.ValidateShiftStatusAsync();
@@ -293,19 +274,24 @@ public partial class MainWindowViewModel : ObservableObject
 
     // ── Commands delegated to sub-VMs ────────────────────────────────────────
 
-    [RelayCommand] private async Task NavigateTo(string target)
+    [RelayCommand]
+    private async Task NavigateTo(string target)
         => await Navigation.NavigateTo(target);
 
-    [RelayCommand] private async Task CheckForUpdates()
+    [RelayCommand]
+    private async Task CheckForUpdates()
         => await Update.CheckForUpdatesCommand.ExecuteAsync(null);
 
-    [RelayCommand] private void ApplyUpdateAndRestart()
+    [RelayCommand]
+    private void ApplyUpdateAndRestart()
         => Update.ApplyUpdateAndRestartCommand.Execute(null);
 
-    [RelayCommand] private async Task UnlockTerminalAsync()
+    [RelayCommand]
+    private async Task UnlockTerminalAsync()
         => await LockScreen.UnlockTerminalCommand.ExecuteAsync(null);
 
-    [RelayCommand] private void TriggerPosCheckout()
+    [RelayCommand]
+    private void TriggerPosCheckout()
     {
         if (Navigation.IsAtPos)
             Navigation.PosVm.Cart.CheckoutCommand.Execute("Efectivo");
@@ -319,10 +305,15 @@ public partial class MainWindowViewModel : ObservableObject
             case "Derecha":
                 SidebarDockPosition = "Right"; SidebarWidth = 80; SidebarHeight = double.NaN; SidebarOrientation = "Vertical";
                 break;
-            case "Arriba (Top Bar)": case "Arriba": case "Arriba (Banner)": case "Barra Superior Flotante":
+            case "Arriba (Top Bar)":
+            case "Arriba":
+            case "Arriba (Banner)":
+            case "Barra Superior Flotante":
                 SidebarDockPosition = "Top"; SidebarWidth = double.NaN; SidebarHeight = 64; SidebarOrientation = "Horizontal";
                 break;
-            case "Abajo (Bottom Bar)": case "Abajo": case "Abajo (Footer)":
+            case "Abajo (Bottom Bar)":
+            case "Abajo":
+            case "Abajo (Footer)":
                 SidebarDockPosition = "Bottom"; SidebarWidth = double.NaN; SidebarHeight = 64; SidebarOrientation = "Horizontal";
                 break;
             default:
@@ -401,9 +392,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var settingsSvc = new SettingsService(
             new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
-                .UseSqlite($"Data Source={Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "ticketfy", "Database", "ticketfy.db")};Password={SecurityManager.GetMasterKey()};")
+                .UseSqlite($"Data Source={AppDataPaths.DatabaseFile};Password={SecurityManager.GetMasterKey()};")
                 .Options));
         var val = await settingsSvc.GetAsync("IdleTimeoutMinutes");
         return int.TryParse(val, out var m) && m > 0 ? m : 5;

@@ -18,7 +18,7 @@ namespace Ticketfy.ViewModels;
 public partial class CartViewModel : ObservableObject
 {
     public CartStateStore CartState { get; }
-    
+
     private readonly ISaleService _saleService;
     private readonly ICustomerService _customerService;
 
@@ -59,11 +59,11 @@ public partial class CartViewModel : ObservableObject
             var list = await _customerService.GetAllAsync();
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                var publicoGeneral = new CustomerDto("", "Público General", "", "", "", 0.0, 0.0, 0.0, 0.0, "");
+                var publicoGeneral = new CustomerDto("", "Público General", "", "", "", 0m, 0m, 0.0, 0m, "");
                 Customers.Clear();
                 Customers.Add(publicoGeneral);
                 foreach (var c in list) Customers.Add(c);
-                
+
                 if (SelectedCustomer == null)
                 {
                     SelectedCustomer = publicoGeneral;

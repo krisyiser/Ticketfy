@@ -51,7 +51,7 @@ public class PurchaseService : IPurchaseService
         try
         {
             var purchaseId = string.IsNullOrEmpty(dto.Id) ? Guid.NewGuid().ToString() : dto.Id;
-            double totalCost = 0.0;
+            decimal totalCost = 0m;
 
             var itemDtos = new List<PurchaseItemDto>();
 
@@ -60,7 +60,7 @@ public class PurchaseService : IPurchaseService
                 if (item.UnitPrice <= 0)
                     throw new InvalidOperationException($"Error de integridad: El costo del producto {item.ProductId} no puede ser menor o igual a $0.00.");
 
-                var itemTotal = item.UnitPrice * item.Quantity;
+                var itemTotal = item.UnitPrice * (decimal)item.Quantity;
                 totalCost += itemTotal;
 
                 var itemEntity = new PurchaseItemEntity

@@ -1,11 +1,21 @@
 param (
-    [string]$Version = "3.1.56"
+    [string]$Version = "",
+    [string]$ReleasesDir = (Join-Path $PSScriptRoot "Output\Releases"),
+    [string]$GitDir = (Join-Path (Split-Path $PSScriptRoot -Parent) "TicketfyReleasesRepo"),
+    [string]$RemoteUrl = "https://git.valcore/yersi/ticketfy-releases.git"
 )
 
 $ErrorActionPreference = "Stop"
-$ReleasesDir = "c:\Users\YERSI\.gemini\antigravity-ide\scratch\NextVent\Ticketfy.Desktop\Output\Releases"
-$GitDir = "c:\Users\YERSI\.gemini\antigravity-ide\scratch\NextVent\TicketfyReleasesRepo"
+throw "Publicación remota deshabilitada: Forgejo está en mantenimiento y el proyecto opera en modo local."
 
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    [xml]$ProjectXml = Get-Content (Join-Path $PSScriptRoot "Ticketfy.Desktop.csproj")
+    $Version = [string](($ProjectXml.Project.PropertyGroup | Where-Object Version | Select-Object -First 1).Version)
+    $Version = $Version.Trim()
+}
+if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Version must use the numeric major.minor.patch format."
+}
 if (Test-Path $GitDir) {
     Remove-Item -Recurse -Force $GitDir
 }
@@ -30,9 +40,9 @@ if (Test-Path "$ReleasesDir\releases.json") {
 
 Set-Location $GitDir
 git init
-git -c http.sslVerify=false remote add origin https://git.valcore/yersi/ticketfy-releases.git
+git remote add origin $RemoteUrl
 git add .
-git -c http.sslVerify=false commit -m "release: v$Version"
-git -c http.sslVerify=false push -f origin HEAD:refs/heads/main
+git commit -m "release: v$Version"
+git push origin HEAD:refs/heads/main
 Write-Host "¡Repositorio git.valcore/yersi/ticketfy-releases actualizado exitosamente a v$Version!" -ForegroundColor Green
 

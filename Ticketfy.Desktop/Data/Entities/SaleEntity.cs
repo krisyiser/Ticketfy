@@ -16,6 +16,10 @@ public class SaleEntity
     public string Id { get; set; } = string.Empty;
 
     [Required]
+    [Column("operation_id")]
+    public string OperationId { get; set; } = string.Empty;
+
+    [Required]
     [Column("date")]
     public string Date { get; set; } = string.Empty;
 
@@ -25,29 +29,35 @@ public class SaleEntity
     public string ItemsJson { get; set; } = "[]";
 
     [Column("total")]
-    public double Total { get; set; }
+    public decimal Total { get; set; }
 
     [Column("totalCost")]
-    public double TotalCost { get; set; }
+    public decimal TotalCost { get; set; }
 
     [Column("profit")]
-    public double Profit { get; set; }
+    public decimal Profit { get; set; }
 
     [Column("paidAmount")]
-    public double PaidAmount { get; set; }
+    public decimal PaidAmount { get; set; }
 
     [Column("changeAmount")]
-    public double ChangeAmount { get; set; }
+    public decimal ChangeAmount { get; set; }
 
     [Required]
     [Column("paymentMethod")]
     public string PaymentMethod { get; set; } = "Cash";
 
     [Column("cashAmount")]
-    public double CashAmount { get; set; }
+    public decimal CashAmount { get; set; }
 
     [Column("cardAmount")]
-    public double CardAmount { get; set; }
+    public decimal CardAmount { get; set; }
+
+    [Column("giftcard_amount")]
+    public decimal GiftcardAmount { get; set; }
+
+    [Column("giftcard_number")]
+    public string? GiftcardNumber { get; set; }
 
     [Column("customerId")]
     public string? CustomerId { get; set; }
@@ -87,4 +97,7 @@ public class SaleEntity
 
     [Column("cancellation_date")]
     public string? CancellationDate { get; set; }
+
+    [Column("committed_at_utc")]
+    public string? CommittedAtUtc { get; set; }
 }

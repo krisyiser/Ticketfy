@@ -10,6 +10,7 @@ using Ticketfy.Core.Helpers;
 using Ticketfy.Core.Services;
 using Ticketfy.Services.Interfaces;
 using Serilog;
+using Ticketfy.Core.Configuration;
 
 namespace Ticketfy.Services.Implementations;
 
@@ -71,7 +72,6 @@ public class DeviceRegistrationService
     private readonly HttpClient _httpClient;
     private readonly ISettingsService? _settingsService;
     private readonly ISessionManager? _sessionManager;
-    private const string TICKETFY_API_KEY = "nv_sk_valcore_5f8a9"; 
     private const string API_HOST = "api.valcore.cloud";
     private const string API_URL = "https://api.valcore.cloud/api/v1/nodes/provision";
 
@@ -80,15 +80,9 @@ public class DeviceRegistrationService
         _settingsService = settingsService;
         _sessionManager = sessionManager;
 
-        // PARCHE SSL: Aceptar el certificado autofirmado de Traefik / Tailscale
-        var handler = new HttpClientHandler
-        {
-            ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true
-        };
-
-        _httpClient = new HttpClient(handler);
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", TICKETFY_API_KEY);
-        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("TicketfyDesktopClient/3.0.38 (Windows; ValcoreEngine)");
+        _httpClient = new HttpClient();
+        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(
+            $"TicketfyDesktopClient/{Ticketfy.Core.Helpers.AppVersionHelper.DisplayVersion.TrimStart('v', 'V')} (Windows; ValcoreEngine)");
     }
 
     public async Task RegisterNodeAsync(BusinessProfile profile)
@@ -98,16 +92,36 @@ public class DeviceRegistrationService
 
     public async Task PingServerAsync(BusinessProfile profile)
     {
+        if (!LocalDevelopmentMode.RemoteInfrastructureEnabled)
+        {
+            Log.Debug("Device registration skipped: local development mode is active");
+            return;
+        }
+
         try
         {
-            var machineId = HardwareIdentityHelper.GetMotherboardUUID() ?? "DEV-MACHINE-" + Environment.MachineName;
+            string? apiKey = Environment.GetEnvironmentVariable("TICKETFY_API_KEY");
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                Log.Warning("Device registration skipped because TICKETFY_API_KEY is not configured");
+                return;
+            }
+
+            var machineId = HardwareIdentityHelper.GetMotherboardUUID();
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                Log.Warning("Device registration skipped because no stable hardware identifier is available");
+                return;
+            }
+
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
             var localIp = NetworkHelper.GetLocalIpAddress() ?? "127.0.0.1";
 
             var payload = new ProvisionPayload
             {
                 HardwareId = machineId,
                 LocalIp = localIp,
-                InstalledVersion = Ticketfy.Core.Constants.AppConstants.AppVersion
+                InstalledVersion = Ticketfy.Core.Helpers.AppVersionHelper.DisplayVersion
             };
 
             // 1. Lectura de Hardware Profunda (AOT-Safe)
@@ -146,14 +160,14 @@ public class DeviceRegistrationService
                 if (string.IsNullOrWhiteSpace(name)) name = await _settingsService.GetAsync("BusinessName");
                 payload.Business.CommercialName = string.IsNullOrWhiteSpace(name) ? profile.BusinessName : name;
                 if (string.IsNullOrWhiteSpace(payload.Business.CommercialName)) payload.Business.CommercialName = "Negocio Ticketfy";
-                
+
                 var email = await _settingsService.GetAsync("EmpresaEmailContacto");
                 if (string.IsNullOrWhiteSpace(email)) email = await _settingsService.GetAsync("BusinessEmail");
                 payload.Business.Email = string.IsNullOrWhiteSpace(email) ? profile.Email : email;
 
                 var industry = await _settingsService.GetAsync("EmpresaGiroComercial");
                 payload.Business.Industry = string.IsNullOrWhiteSpace(industry) ? "Comercio General" : industry;
-                
+
                 var calle = await _settingsService.GetAsync("EmpresaCalleYNumero") ?? await _settingsService.GetAsync("BusinessAddress");
                 var colonia = await _settingsService.GetAsync("EmpresaColonia");
                 var ciudad = await _settingsService.GetAsync("EmpresaCiudadMunicipio");
@@ -187,13 +201,13 @@ public class DeviceRegistrationService
                 try
                 {
                     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15)); // Aumentado a 15s para redes lentas
-                    
+
                     var request = new HttpRequestMessage(HttpMethod.Post, API_URL);
                     request.Headers.Host = API_HOST;
                     request.Content = System.Net.Http.Json.JsonContent.Create(payload, TelemetryJsonContext.Default.ProvisionPayload);
-                    
+
                     var response = await _httpClient.SendAsync(request, cts.Token);
-                    
+
                     if (!response.IsSuccessStatusCode)
                     {
                         var errorText = await response.Content.ReadAsStringAsync(cts.Token);
@@ -201,9 +215,8 @@ public class DeviceRegistrationService
 
                         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized || response.StatusCode == System.Net.HttpStatusCode.Forbidden)
                         {
-                            var localAppFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ticketfy");
-                            var licensePath = System.IO.Path.Combine(localAppFolder, "license.jwt");
-                            
+                            var licensePath = AppDataPaths.LicenseFile;
+
                             if (System.IO.File.Exists(licensePath))
                             {
                                 await System.IO.File.WriteAllTextAsync(licensePath, "REVOKED", cts.Token);
@@ -224,24 +237,22 @@ public class DeviceRegistrationService
                     else
                     {
                         Log.Information("✅ TELEMETRÍA ENVIADA CON ÉXITO AL TICKETFY HUB.");
-                        try 
+                        try
                         {
                             var jsonResponse = await response.Content.ReadFromJsonAsync(TelemetryJsonContext.Default.ProvisionResponse, cts.Token);
                             if (jsonResponse != null)
                             {
                                 if (!string.IsNullOrEmpty(jsonResponse.LicenseToken))
                                 {
-                                    var localAppFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ticketfy");
-                                    System.IO.Directory.CreateDirectory(localAppFolder);
-                                    var licensePath = System.IO.Path.Combine(localAppFolder, "license.jwt");
+                                    AppDataPaths.EnsureRequiredDirectories();
+                                    var licensePath = AppDataPaths.LicenseFile;
                                     await System.IO.File.WriteAllTextAsync(licensePath, jsonResponse.LicenseToken, cts.Token);
                                     Log.Information("✅ LICENCIA ACTUALIZADA DESDE TICKETFY HUB.");
                                 }
                                 else
                                 {
-                                    var localAppFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ticketfy");
-                                    var licensePath = System.IO.Path.Combine(localAppFolder, "license.jwt");
-                                    
+                                    var licensePath = AppDataPaths.LicenseFile;
+
                                     if (System.IO.File.Exists(licensePath))
                                     {
                                         await System.IO.File.WriteAllTextAsync(licensePath, "REVOKED", cts.Token);
@@ -271,7 +282,7 @@ public class DeviceRegistrationService
                     Log.Error($"Error crítico en Phone Home: {ex.Message}", ex);
                 }
             });
-            
+
             await Task.CompletedTask;
         }
         catch (Exception ex)
@@ -287,6 +298,12 @@ public class DeviceRegistrationService
     /// </summary>
     public void StartPeriodicHeartbeat()
     {
+        if (!LocalDevelopmentMode.RemoteInfrastructureEnabled)
+        {
+            Log.Debug("Device heartbeat not started: local development mode is active");
+            return;
+        }
+
         if (_heartbeatTimer != null) return;
 
         _heartbeatTimer = new System.Threading.Timer(async _ =>

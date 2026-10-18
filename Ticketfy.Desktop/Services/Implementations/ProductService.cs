@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Ticketfy.Core.Configuration;
 
 namespace Ticketfy.Services.Implementations;
 
@@ -56,101 +57,57 @@ public sealed class ProductService : IProductService
     {
         _ctx.ChangeTracker.Clear();
 
-        try
+        if (!string.IsNullOrWhiteSpace(product.Barcode))
         {
-            if (!string.IsNullOrWhiteSpace(product.Barcode))
+            var existing = await _ctx.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Barcode == product.Barcode);
+            if (existing != null)
             {
-                var existing = await _ctx.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Barcode == product.Barcode);
-                if (existing != null)
-                {
-                    throw new InvalidOperationException($"El código de barras '{product.Barcode}' ya está asignado al producto '{existing.Name}'.");
-                }
+                throw new InvalidOperationException($"El código de barras '{product.Barcode}' ya está asignado al producto '{existing.Name}'.");
             }
+        }
 
-            _ctx.Products.Add(MapToEntity(product));
-            await _ctx.SaveChangesAsync();
-        }
-        catch (Exception ex) when (ex.Message.Contains("no such column", StringComparison.OrdinalIgnoreCase) || ex.GetBaseException().Message.Contains("no such column", StringComparison.OrdinalIgnoreCase))
-        {
-            await EnsureProductSchemaPatchedAsync();
-            _ctx.ChangeTracker.Clear();
-            _ctx.Products.Add(MapToEntity(product));
-            await _ctx.SaveChangesAsync();
-        }
+        _ctx.Products.Add(MapToEntity(product));
+        await _ctx.SaveChangesAsync();
     }
 
     public async Task UpdateAsync(ProductDto product)
     {
         _ctx.ChangeTracker.Clear();
 
-        try
+        if (!string.IsNullOrWhiteSpace(product.Barcode))
         {
-            if (!string.IsNullOrWhiteSpace(product.Barcode))
+            var existing = await _ctx.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Barcode == product.Barcode && p.Id != product.Id);
+            if (existing != null)
             {
-                var existing = await _ctx.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Barcode == product.Barcode && p.Id != product.Id);
-                if (existing != null)
-                {
-                    throw new InvalidOperationException($"El código de barras '{product.Barcode}' ya está asignado al producto '{existing.Name}'.");
-                }
+                throw new InvalidOperationException($"El código de barras '{product.Barcode}' ya está asignado al producto '{existing.Name}'.");
             }
-
-            var entity = await _ctx.Products.FindAsync(product.Id);
-            if (entity is null) return;
-
-            entity.Barcode = product.Barcode;
-            entity.Name = product.Name;
-            entity.Cost = product.Cost;
-            entity.Price = product.Price;
-            entity.WholesalePrice = product.WholesalePrice;
-            entity.WholesaleThreshold = product.WholesaleThreshold;
-            entity.Stock = product.Stock;
-            entity.Category = product.Category;
-            entity.Unit = product.Unit;
-            entity.ExpiresSoon = product.ExpiresSoon;
-            entity.PointsRewarded = product.PointsRewarded;
-            entity.ReorderQuantity = product.ReorderQuantity;
-            entity.LocationRack = product.LocationRack;
-            entity.SatProductCode = product.SatProductCode;
-            entity.SatUnitCode = product.SatUnitCode;
-            entity.MinStock = product.MinStock;
-            entity.DefaultSupplierId = product.DefaultSupplierId;
-            entity.IsBulk = product.IsBulk;
-            entity.IsKit = product.IsKit;
-
-            _ctx.Products.Update(entity);
-            await _ctx.SaveChangesAsync();
         }
-        catch (Exception ex) when (ex.Message.Contains("no such column", StringComparison.OrdinalIgnoreCase) || ex.GetBaseException().Message.Contains("no such column", StringComparison.OrdinalIgnoreCase))
-        {
-            await EnsureProductSchemaPatchedAsync();
-            _ctx.ChangeTracker.Clear();
 
-            var entity = await _ctx.Products.FindAsync(product.Id);
-            if (entity is null) return;
+        var entity = await _ctx.Products.FindAsync(product.Id);
+        if (entity is null) return;
 
-            entity.Barcode = product.Barcode;
-            entity.Name = product.Name;
-            entity.Cost = product.Cost;
-            entity.Price = product.Price;
-            entity.WholesalePrice = product.WholesalePrice;
-            entity.WholesaleThreshold = product.WholesaleThreshold;
-            entity.Stock = product.Stock;
-            entity.Category = product.Category;
-            entity.Unit = product.Unit;
-            entity.ExpiresSoon = product.ExpiresSoon;
-            entity.PointsRewarded = product.PointsRewarded;
-            entity.ReorderQuantity = product.ReorderQuantity;
-            entity.LocationRack = product.LocationRack;
-            entity.SatProductCode = product.SatProductCode;
-            entity.SatUnitCode = product.SatUnitCode;
-            entity.MinStock = product.MinStock;
-            entity.DefaultSupplierId = product.DefaultSupplierId;
-            entity.IsBulk = product.IsBulk;
-            entity.IsKit = product.IsKit;
+        entity.Barcode = product.Barcode;
+        entity.Name = product.Name;
+        entity.Cost = product.Cost;
+        entity.Price = product.Price;
+        entity.WholesalePrice = product.WholesalePrice;
+        entity.WholesaleThreshold = product.WholesaleThreshold;
+        entity.Stock = product.Stock;
+        entity.Category = product.Category;
+        entity.Unit = product.Unit;
+        entity.ExpiresSoon = product.ExpiresSoon;
+        entity.PointsRewarded = product.PointsRewarded;
+        entity.ReorderQuantity = product.ReorderQuantity;
+        entity.LocationRack = product.LocationRack;
+        entity.SatProductCode = product.SatProductCode;
+        entity.SatUnitCode = product.SatUnitCode;
+        entity.MinStock = product.MinStock;
+        entity.DefaultSupplierId = product.DefaultSupplierId;
+        entity.IsBulk = product.IsBulk;
+        entity.IsKit = product.IsKit;
 
-            _ctx.Products.Update(entity);
-            await _ctx.SaveChangesAsync();
-        }
+        _ctx.Products.Update(entity);
+        await _ctx.SaveChangesAsync();
     }
 
     public async Task DeleteAsync(string id)
@@ -223,7 +180,7 @@ public sealed class ProductService : IProductService
         using var reader = new StringReader(csvContent);
         string? line;
         bool isHeader = true;
-        
+
         var csvParser = new System.Text.RegularExpressions.Regex("[,;](?=(?:[^\"]*\"[^\"]*\")*(?![^\"]*\"))");
 
         while ((line = await reader.ReadLineAsync()) != null)
@@ -244,8 +201,8 @@ public sealed class ProductService : IProductService
             if (parts.Length < 4) continue;
             string barcode = parts[0];
             string name = parts[1];
-            _ = double.TryParse(parts[2], out double cost);
-            _ = double.TryParse(parts[3], out double price);
+            _ = decimal.TryParse(parts[2], out decimal cost);
+            _ = decimal.TryParse(parts[3], out decimal price);
             double stock = parts.Length > 4 && double.TryParse(parts[4], out double s) ? s : 10.0;
             string category = parts.Length > 5 ? parts[5] : "General";
             string unit = parts.Length > 6 ? parts[6] : "pza";
@@ -278,10 +235,10 @@ public sealed class ProductService : IProductService
 
             if (Math.Abs(deltaStock) < 0.001) return true;
 
-            double financialLoss = Math.Abs(deltaStock) * product.Cost;
+            decimal financialLoss = Convert.ToDecimal(Math.Abs(deltaStock)) * product.Cost;
             string? supervisorId = null;
 
-            if (deltaStock < 0 && financialLoss >= 100.0 && securityService != null)
+            if (deltaStock < 0 && financialLoss >= 100m && securityService != null)
             {
                 var auth = await securityService.AuthorizeHighRiskActionAsync(
                     "Ajuste de Merma / Faltante de Stock",
@@ -310,7 +267,7 @@ public sealed class ProductService : IProductService
                     EntityId = product.Id,
                     OldValue = oldStock.ToString("F2"),
                     NewValue = newPhysicalStock.ToString("F2"),
-                    FinancialImpact = deltaStock < 0 ? financialLoss : 0.0,
+                    FinancialImpact = deltaStock < 0 ? financialLoss : 0m,
                     Reason = reason
                 });
             }
@@ -329,14 +286,12 @@ public sealed class ProductService : IProductService
     [Dapper.DapperAot]
     public async Task<IEnumerable<ProductDto>> GetCatalogForPosAsync()
     {
-        string appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        string dbPath = Path.Combine(appDataFolder, "ticketfy", "Database", "ticketfy.db");
         string securePassword = Ticketfy.Services.Security.SecurityManager.GetMasterKey();
-        string secureConnectionString = $"Data Source={dbPath};Password={securePassword};";
+        string secureConnectionString = $"Data Source={AppDataPaths.DatabaseFile};Password={securePassword};";
 
         using var connection = new Microsoft.Data.Sqlite.SqliteConnection(secureConnectionString);
         await connection.OpenAsync();
-        
+
         // Consulta SQL cruda y estricta, mapeada a un DTO por el compilador AOT
         const string sql = "SELECT Id, Barcode, Name, Cost, Price, WholesalePrice, WholesaleThreshold, Stock, Category, Unit, ExpiresSoon, CreatedAt, PointsRewarded, ReorderQuantity, LocationRack, sat_product_code AS SatProductCode, sat_unit_code AS SatUnitCode, MinStock, is_bulk AS IsBulk, is_kit AS IsKit FROM products";
         return await Dapper.SqlMapper.QueryAsync<ProductDto>(connection, sql);
@@ -374,35 +329,4 @@ public sealed class ProductService : IProductService
         IsKit = d.IsKit
     };
 
-    private async Task EnsureProductSchemaPatchedAsync()
-    {
-        try
-        {
-            string[] patchQueries = new[]
-            {
-                "ALTER TABLE products ADD COLUMN is_bulk INTEGER NOT NULL DEFAULT 0;",
-                "ALTER TABLE products ADD COLUMN is_kit INTEGER NOT NULL DEFAULT 0;",
-                "ALTER TABLE products ADD COLUMN default_supplier_id TEXT NULL;",
-                "ALTER TABLE products ADD COLUMN minStock REAL NOT NULL DEFAULT 5.0;",
-                "ALTER TABLE products ADD COLUMN points_rewarded REAL NOT NULL DEFAULT 1.0;",
-                "ALTER TABLE products ADD COLUMN reorder_quantity REAL NOT NULL DEFAULT 10.0;",
-                "ALTER TABLE products ADD COLUMN location_rack TEXT NULL DEFAULT '';",
-                "ALTER TABLE products ADD COLUMN sat_product_code TEXT NULL DEFAULT '01010101';",
-                "ALTER TABLE products ADD COLUMN sat_unit_code TEXT NULL DEFAULT 'H87';"
-            };
-
-            foreach (var query in patchQueries)
-            {
-                try
-                {
-                    await _ctx.Database.ExecuteSqlRawAsync(query);
-                }
-                catch { /* Column already exists */ }
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "Product table column auto-patch failed");
-        }
-    }
 }

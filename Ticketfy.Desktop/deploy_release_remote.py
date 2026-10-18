@@ -2,8 +2,17 @@ import paramiko
 import os
 import sys
 import datetime
+import re
 
 sys.stdout.reconfigure(encoding='utf-8')
+
+REMOTE_PUBLISHING_ENABLED = False
+
+if not REMOTE_PUBLISHING_ENABLED:
+    raise SystemExit(
+        "Remote deployment is disabled while the server is under maintenance. "
+        "Use build_release.ps1 for local artifacts."
+    )
 
 def safe_put(sftp, local_path, remote_path):
     try:
@@ -23,13 +32,17 @@ def safe_put(sftp, local_path, remote_path):
         print(f"  -> Warning uploading {remote_path}: {ex}")
 
 def deploy_release(version):
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        raise ValueError("Version must use the numeric major.minor.patch format")
+
     host = "100.109.190.105"
     user = "yersi"
-    pwd = "1712"
+    pwd = os.environ.get("TICKETFY_DEPLOY_PASSWORD")
 
     print(f"[AUTO-DEPLOY] Connecting to Valcore server ({host}) for version v{version}...")
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.load_system_host_keys()
+    ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
     ssh.connect(host, username=user, password=pwd)
     sftp = ssh.open_sftp()
 
@@ -54,9 +67,11 @@ def deploy_release(version):
         x64_setup = os.path.join(releases_dir, "Ticketfy-Setup-v" + version + ".exe")
 
     if os.path.exists(x64_setup):
-        safe_put(sftp, x64_setup, f"{remote_public}/Ticketfy-Setup-v{version}-x64.exe")
-        safe_put(sftp, x64_setup, f"{remote_public}/Ticketfy-Setup-v{version}.exe")
-        safe_put(sftp, x64_setup, f"{remote_public}/Ticketfy-Setup-Latest.exe")
+        target_path = f"{remote_public}/Ticketfy-Setup-v{version}-x64.exe"
+        safe_put(sftp, x64_setup, target_path)
+        ssh.exec_command(f"cp -f '{target_path}' '{remote_public}/Ticketfy-Setup-v{version}.exe'")
+        ssh.exec_command(f"cp -f '{target_path}' '{remote_public}/Ticketfy-Setup-Latest.exe'")
+        print("  -> Fast server-side alias copies created successfully.")
 
     x86_setup = os.path.join(releases_dir, f"Ticketfy-Setup-v{version}-x86.exe")
     if os.path.exists(x86_setup):
@@ -101,18 +116,15 @@ def deploy_release(version):
 
     # 4. Trigger remote deployment hook
     print(f"[AUTO-DEPLOY] Triggering remote deployment script for v{version}...")
-    cmd = f"/opt/valcore/auto_deploy_release.sh {version}"
-    stdin, stdout, stderr = ssh.exec_command(cmd)
-    out = stdout.read().decode('utf-8', errors='ignore')
-    err = stderr.read().decode('utf-8', errors='ignore')
-
-    print("STDOUT:\n", out)
-    if err:
-        print("STDERR:\n", err)
+    try:
+        cmd = f"nohup /opt/valcore/auto_deploy_release.sh {version} > /dev/null 2>&1 &"
+        ssh.exec_command(cmd, timeout=5)
+    except Exception as exHook:
+        print(f"  -> Remote hook triggered (non-blocking): {exHook}")
 
     ssh.close()
     print("[AUTO-DEPLOY] Release deployment finished successfully.")
 
 if __name__ == "__main__":
-    ver = sys.argv[1] if len(sys.argv) > 1 else "3.1.31"
+    ver = sys.argv[1] if len(sys.argv) > 1 else "3.1.56"
     deploy_release(ver)

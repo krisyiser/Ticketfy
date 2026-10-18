@@ -15,7 +15,7 @@ public class OffProductResponse
 {
     [JsonPropertyName("product")]
     public OffProductDetails? Product { get; set; }
-    
+
     [JsonPropertyName("status")]
     public int Status { get; set; }
 }
@@ -24,10 +24,10 @@ public class OffProductDetails
 {
     [JsonPropertyName("product_name")]
     public string? ProductName { get; set; }
-    
+
     [JsonPropertyName("categories")]
     public string? Categories { get; set; } // Viene como string separado por comas
-    
+
     [JsonPropertyName("image_front_url")]
     public string? ImageUrl { get; set; }
 }
@@ -60,7 +60,7 @@ public class ExternalCatalogService : IExternalCatalogService
 
                 var stream = await response.Content.ReadAsStreamAsync();
                 var data = await JsonSerializer.DeserializeAsync(
-                    stream, 
+                    stream,
                     ExternalCatalogJsonContext.Default.OffProductResponse);
 
                 if (data?.Status != 1 || data.Product == null) return null;
@@ -70,8 +70,8 @@ public class ExternalCatalogService : IExternalCatalogService
                     Id: Guid.NewGuid().ToString(),
                     Barcode: barcode,
                     Name: data.Product.ProductName ?? "Producto Desconocido",
-                    Cost: 0.0,
-                    Price: 0.0,
+                    Cost: 0m,
+                    Price: 0m,
                     Category: ParsePrimaryCategory(data.Product.Categories)
                 );
             });

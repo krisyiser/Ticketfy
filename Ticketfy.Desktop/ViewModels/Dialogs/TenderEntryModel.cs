@@ -8,6 +8,6 @@ namespace Ticketfy.ViewModels.Dialogs;
 public partial class TenderEntryModel : ObservableObject
 {
     public string MethodName { get; init; } = "Efectivo";
-    public double AmountPaid { get; set; }
+    public decimal AmountPaid { get; set; }
     public string ReferenceOrFolio { get; set; } = string.Empty;
 }

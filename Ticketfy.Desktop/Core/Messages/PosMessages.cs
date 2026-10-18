@@ -5,9 +5,9 @@ namespace Ticketfy.Core.Messages;
 
 public record CartStateSnapshotMessage(
     IReadOnlyList<CartItemDto> Items,
-    double Subtotal,
-    double TotalDiscount,
-    double GrandTotal,
+    decimal Subtotal,
+    decimal TotalDiscount,
+    decimal GrandTotal,
     string LastAddedProductName
 );
 

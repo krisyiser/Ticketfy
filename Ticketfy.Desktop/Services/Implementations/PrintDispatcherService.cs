@@ -31,26 +31,41 @@ public class PrintDispatcherService : IPrintDispatcherService
         _settings = settings;
     }
 
-    public async Task DispatchSaleDocumentsAsync(SaleDto sale)
+    public async Task DispatchSaleDocumentsAsync(SaleDto sale, bool printReceipt = true)
     {
-        // 1. SIEMPRE imprimir el ticket térmico legal
-        // We use default COM1 or whatever is configured, for now pass COM1 as default
-        _ = _thermalPrinter.PrintTicketAsync(sale, "COM1");
+        // 1. Imprimir y esperar confirmación del controlador; encolar no equivale
+        // a haber escrito correctamente en el dispositivo.
+        var appSettings = await _settings.GetAppSettingsAsync();
+        string printerTarget = string.IsNullOrWhiteSpace(appSettings.Hardware.PrinterPort)
+            ? "ImpresoraTickets"
+            : appSettings.Hardware.PrinterPort.Trim();
+        if (sale.CashAmount > 0m && appSettings.Hardware.EnableCashDrawerTrigger)
+        {
+            bool drawerOpened = await _thermalPrinter.OpenCashDrawerAsync(printerTarget, appSettings.Hardware.CashDrawerPin);
+            if (!drawerOpened)
+                Log.Error("Cash drawer pulse for sale {SaleId} failed on {PrinterTarget}", sale.Id, printerTarget);
+        }
+        if (printReceipt)
+        {
+            bool ticketPrinted = await _thermalPrinter.PrintTicketAsync(sale, printerTarget);
+            if (!ticketPrinted)
+                Log.Error("Receipt {SaleId} could not be written to configured printer {PrinterTarget}", sale.Id, printerTarget);
+        }
 
         // 2. Analizar el carrito en busca de items Premium
         // Load attributes from DB for the products in the sale
         using var ctx = await _dbFactory.CreateDbContextAsync();
         var productIds = sale.Items.Select(i => i.ProductId).Distinct().ToList();
-        
+
         var premiumProducts = await ctx.Products
             .Where(p => productIds.Contains(p.Id))
             .ToListAsync();
-            
+
         var premiumAttributes = await ctx.ProductAttributes
             .Where(a => productIds.Contains(a.ProductId) && a.AttributeName == PrintRoutingTags.CertificateOfAuthenticity)
             .ToListAsync();
 
-        var premiumItems = sale.Items.Where(i => 
+        var premiumItems = sale.Items.Where(i =>
             premiumAttributes.Any(a => a.ProductId == i.ProductId)
         ).ToList();
 
@@ -94,7 +109,7 @@ public class PrintDispatcherService : IPrintDispatcherService
             FileName = tempFile,
             UseShellExecute = true
         };
-        
+
         process.Start();
         // Disparar y olvidar. El OS maneja la cola de impresión láser.
     }

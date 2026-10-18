@@ -8,6 +8,8 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
         <StackPanel Spacing="16">
 
+            <TextBlock Text="{Binding ValidationMessage}" Foreground="{DynamicResource AccentDangerBrush}" TextWrapping="Wrap" />
+
             <!-- Title Header -->
             <Border Padding="16,12" Background="{DynamicResource BgSecondaryBrush}" CornerRadius="{DynamicResource AppCornerRadius}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                 <Grid ColumnDefinitions="Auto,*">
@@ -34,7 +36,7 @@
 
                         <StackPanel Grid.Column="1" Spacing="4" Margin="8,0,0,0">
                             <TextBlock Text="Puerto / Conexión de Impresora" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                            <TextBox Text="{Binding State.Hardware.PrinterPort, Mode=TwoWay}" Watermark="LPT1 / RAW Direct Socket" Padding="8,6" />
+                            <TextBox Text="{Binding State.Hardware.PrinterPort, Mode=TwoWay}" Watermark="ImpresoraTickets, COM1@9600 o tcp://192.168.1.50:9100" Padding="8,6" />
                         </StackPanel>
                     </Grid>
 

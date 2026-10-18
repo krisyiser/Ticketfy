@@ -51,26 +51,30 @@ public class PredictiveIntelligenceService : IPredictiveIntelligenceService
 
     public async Task<List<PredictiveAlertDto>> GetUrgentRestockAlertsAsync()
     {
-        var thresholdDate = DateTime.Now.AddDays(-28).ToString("o"); 
+        var thresholdDate = DateTime.Now.AddDays(-28).ToString("o");
         using var context = await _contextFactory.CreateDbContextAsync();
-        
+
         var recentSales = await context.Sales
             .Where(s => string.Compare(s.Date, thresholdDate) >= 0 && s.Status == Ticketfy.Core.Enums.SaleStatus.Completed)
             .Select(s => s.ItemsJson)
             .ToListAsync();
-            
+
         var productSales = new Dictionary<string, decimal>();
-        foreach(var json in recentSales)
+        foreach (var json in recentSales)
         {
-            try {
+            try
+            {
                 var items = System.Text.Json.JsonSerializer.Deserialize<List<Ticketfy.Data.Dtos.SaleItemSnapshotDto>>(json);
-                if (items != null) {
-                    foreach(var item in items) {
+                if (items != null)
+                {
+                    foreach (var item in items)
+                    {
                         if (!productSales.ContainsKey(item.ProductId)) productSales[item.ProductId] = 0;
                         productSales[item.ProductId] += (decimal)item.Quantity;
                     }
                 }
-            } catch { }
+            }
+            catch { }
         }
 
         var alerts = new List<PredictiveAlertDto>();
@@ -78,7 +82,7 @@ public class PredictiveIntelligenceService : IPredictiveIntelligenceService
         {
             var productIds = productSales.Keys.ToList();
             var products = await context.Products.Where(p => productIds.Contains(p.Id)).ToListAsync();
-            foreach(var p in products)
+            foreach (var p in products)
             {
                 var totalSold28Days = productSales[p.Id];
                 decimal dailyVelocity = totalSold28Days / 28m;
@@ -88,7 +92,7 @@ public class PredictiveIntelligenceService : IPredictiveIntelligenceService
 
                 if (daysRemaining <= 3.0m) // Límite crítico de 3 días
                 {
-                    alerts.Add(new PredictiveAlertDto 
+                    alerts.Add(new PredictiveAlertDto
                     {
                         Message = $"URGENTE: Te quedarás sin {p.Name} en {Math.Round(daysRemaining, 1)} días a tu ritmo de ventas actual. ¡Pide al proveedor hoy!",
                         DaysRemaining = daysRemaining
@@ -96,7 +100,7 @@ public class PredictiveIntelligenceService : IPredictiveIntelligenceService
                 }
             }
         }
-        
+
         return alerts.OrderBy(a => a.DaysRemaining).ToList();
     }
 }

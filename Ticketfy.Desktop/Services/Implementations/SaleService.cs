@@ -38,7 +38,7 @@ public partial class SaleService : ISaleService
         _auditService = auditService;
     }
 
-    public async Task<SaleDto> SaveAsync(SaleDto sale)
+    public async Task<SaleDto> SaveAsync(SaleDto sale, FiscalOutboxRequest? fiscalOutbox = null)
     {
         if (sale.Items is null || sale.Items.Count == 0)
         {
@@ -49,6 +49,19 @@ public partial class SaleService : ISaleService
         await using var transaction = await _ctx.Database.BeginTransactionAsync();
         try
         {
+            string operationId = string.IsNullOrWhiteSpace(sale.OperationId)
+                ? (string.IsNullOrWhiteSpace(sale.Id) ? Guid.NewGuid().ToString("N") : sale.Id)
+                : sale.OperationId.Trim();
+
+            var existingSale = await _ctx.Sales
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.OperationId == operationId);
+            if (existingSale is not null)
+            {
+                await transaction.RollbackAsync();
+                return MapToDto(existingSale);
+            }
+
             var saleId = sale.Id;
             if (string.IsNullOrEmpty(saleId) || !saleId.Contains("-") || saleId.Length != 11)
             {
@@ -61,8 +74,10 @@ public partial class SaleService : ISaleService
             }
 
             // Global discount proration & VAT (IVA) calculation
-            double snapshotsSum = sale.Items.Sum(i => (i.Quantity * (i.OriginalUnitPrice > 0 ? i.OriginalUnitPrice : i.UnitPrice)) - i.AppliedDiscountAmount);
-            double globalDiscountAmount = Math.Max(0.0, Math.Round(snapshotsSum - sale.Total, 2));
+            decimal snapshotsSum = sale.Items.Sum(i =>
+                (Convert.ToDecimal(i.Quantity) * (i.OriginalUnitPrice > 0m ? i.OriginalUnitPrice : i.UnitPrice))
+                - i.AppliedDiscountAmount);
+            decimal globalDiscountAmount = Math.Max(0m, Math.Round(snapshotsSum - sale.Total, 2));
             var processedItems = ApplyProratedGlobalDiscountAndTaxes(sale.Items, globalDiscountAmount);
 
             var itemsJson = JsonSerializer.Serialize(
@@ -78,6 +93,7 @@ public partial class SaleService : ISaleService
             var entity = new SaleEntity
             {
                 Id = saleId,
+                OperationId = operationId,
                 Date = string.IsNullOrEmpty(sale.Date) ? DateTimeOffset.Now.ToString("o") : sale.Date,
                 ItemsJson = itemsJson,
                 Total = total,
@@ -95,17 +111,20 @@ public partial class SaleService : ISaleService
                 InvoiceId = sale.InvoiceId,
                 InvoiceStatus = sale.InvoiceStatus,
                 CashAmount = sale.CashAmount,
-                CardAmount = sale.CardAmount
+                CardAmount = sale.CardAmount,
+                GiftcardAmount = sale.GiftcardAmount,
+                GiftcardNumber = sale.GiftcardNumber,
+                CommittedAtUtc = DateTimeOffset.UtcNow.ToString("o")
             };
 
             _ctx.Sales.Add(entity);
 
             // Deduct inventory recursively (Combo/Kit support) & compute true COGS
-            double totalTicketCogs = 0.0;
+            decimal totalTicketCogs = 0m;
             foreach (var item in processedItems)
             {
-                double unitCogs = await DeductInventoryRecursiveAsync(_ctx, item.ProductId, item.Quantity, new HashSet<string>());
-                totalTicketCogs += unitCogs * item.Quantity;
+                decimal unitCogs = await DeductInventoryRecursiveAsync(_ctx, item.ProductId, item.Quantity, new HashSet<string>());
+                totalTicketCogs += unitCogs * Convert.ToDecimal(item.Quantity);
             }
 
             totalCost = Math.Round(totalTicketCogs, 2);
@@ -116,7 +135,8 @@ public partial class SaleService : ISaleService
             // If customer linked, validate credit constraints & update debt or accrue/deduct loyalty points
             if (!string.IsNullOrEmpty(sale.CustomerId))
             {
-                var customer = await _ctx.Customers.FindAsync(sale.CustomerId);
+                var customer = await _ctx.Customers.AsNoTracking()
+                    .FirstOrDefaultAsync(c => c.Id == sale.CustomerId);
                 if (customer is not null)
                 {
                     if (sale.IsCredit)
@@ -126,25 +146,41 @@ public partial class SaleService : ISaleService
                             throw new InvalidOperationException($"El crédito está bloqueado para el cliente: {customer.Name}");
                         }
 
-                        decimal creditRequired = (decimal)total;
-                        decimal availableCredit = customer.AvailableCredit;
-
-                        if (availableCredit < creditRequired)
+                        long creditRequiredCents = ToStoredCents(total);
+                        int updated = await _ctx.Database.ExecuteSqlInterpolatedAsync($@"
+                            UPDATE customers
+                            SET debt = debt + {creditRequiredCents}
+                            WHERE id = {sale.CustomerId}
+                              AND is_credit_blocked = 0
+                              AND credit_limit - debt >= {creditRequiredCents};");
+                        if (updated != 1)
                         {
-                            throw new InvalidOperationException($"Crédito insuficiente. Disponible: {availableCredit:C}, Requerido: {creditRequired:C}");
+                            decimal availableCredit = await _ctx.Customers.AsNoTracking()
+                                .Where(c => c.Id == sale.CustomerId)
+                                .Select(c => c.CreditLimit - c.Debt)
+                                .SingleAsync();
+                            throw new InvalidOperationException($"Crédito insuficiente o modificado por otra operación. Disponible: {availableCredit:C}, Requerido: {total:C}");
                         }
-
-                        customer.Debt = Math.Round(customer.Debt + total, 2);
                     }
 
                     if (sale.PaymentMethod == "Puntos de Fidelidad")
                     {
-                        customer.PuntosSaldo = Math.Max(0.0, customer.PuntosSaldo - total);
+                        double pointsToRedeem = Convert.ToDouble(total);
+                        await _ctx.Database.ExecuteSqlInterpolatedAsync($@"
+                            UPDATE customers
+                            SET puntos_saldo = MAX(0, puntos_saldo - {pointsToRedeem})
+                            WHERE id = {sale.CustomerId};");
                     }
                     else
                     {
                         double earnedPoints = processedItems.Sum(i => i.PointsRewarded * i.Quantity);
-                        customer.PuntosSaldo += earnedPoints;
+                        if (earnedPoints != 0d)
+                        {
+                            await _ctx.Database.ExecuteSqlInterpolatedAsync($@"
+                                UPDATE customers
+                                SET puntos_saldo = puntos_saldo + {earnedPoints}
+                                WHERE id = {sale.CustomerId};");
+                        }
                     }
                 }
                 else if (sale.IsCredit)
@@ -155,6 +191,92 @@ public partial class SaleService : ISaleService
             else if (sale.IsCredit)
             {
                 throw new InvalidOperationException("Debe asignar un cliente registrado para cobrar a crédito.");
+            }
+
+            if (sale.GiftcardAmount > 0m)
+            {
+                if (string.IsNullOrWhiteSpace(sale.GiftcardNumber))
+                    throw new InvalidOperationException("Debe indicar el monedero utilizado.");
+
+                long giftcardAmountCents = ToStoredCents(sale.GiftcardAmount);
+                int updated = await _ctx.Database.ExecuteSqlInterpolatedAsync($@"
+                    UPDATE giftcards
+                    SET balance = balance - {giftcardAmountCents}
+                    WHERE card_number = {sale.GiftcardNumber}
+                      AND is_active = 1
+                      AND balance >= {giftcardAmountCents};");
+                if (updated != 1)
+                    throw new InvalidOperationException("Monedero no válido, sin fondos suficientes o modificado por otra operación.");
+            }
+
+            // Caja is part of the same commit as sale, stock, debt and journal.
+            var activeShift = await _ctx.Shifts.FirstOrDefaultAsync(s => s.IsOpen == 1);
+            if (activeShift is not null)
+            {
+                if (sale.IsCredit)
+                {
+                    activeShift.TotalCreditSales = Math.Round(activeShift.TotalCreditSales + total, 2);
+                }
+
+                // CashAmount is the cash allocation retained by the drawer after
+                // change, not the amount handed over by the customer.
+                decimal netCashIn = Math.Max(0m, Math.Round(sale.CashAmount, 2));
+                if (netCashIn > 0m)
+                {
+                    activeShift.TotalCashSales = Math.Round(activeShift.TotalCashSales + netCashIn, 2);
+                    activeShift.ExpectedBalance = Math.Round(activeShift.ExpectedBalance + netCashIn, 2);
+                    _ctx.ShiftMovements.Add(new ShiftMovementEntity
+                    {
+                        Id = Guid.NewGuid().ToString("N"),
+                        ShiftId = activeShift.Id,
+                        MovementType = MovementType.VentaEfectivo,
+                        Amount = netCashIn,
+                        IsOutflow = false,
+                        Description = $"Venta {saleId}",
+                        ReferenceId = saleId,
+                        Timestamp = DateTimeOffset.UtcNow.ToString("O")
+                    });
+                }
+            }
+
+            var checkoutOperation = await _ctx.CheckoutOperations.FindAsync(operationId);
+            if (checkoutOperation is not null)
+            {
+                checkoutOperation.SaleId = saleId;
+                checkoutOperation.State = CheckoutOperationState.Completed;
+                checkoutOperation.UpdatedAtUtc = DateTimeOffset.UtcNow.ToString("o");
+                checkoutOperation.FailureReason = null;
+            }
+
+            _ctx.TransactionJournal.Add(new TransactionJournalEntryEntity
+            {
+                OperationId = operationId,
+                EventType = "SALE_COMPLETED",
+                EntityId = saleId,
+                Amount = total,
+                Details = sale.PaymentMethod
+            });
+
+            if (fiscalOutbox is not null)
+            {
+                if (string.IsNullOrWhiteSpace(fiscalOutbox.IdempotencyKey) || fiscalOutbox.IdempotencyKey.Length > 100)
+                    throw new InvalidOperationException("Clave de idempotencia fiscal inválida.");
+                fiscalOutbox.Request.Folio ??= new string(saleId.Where(char.IsLetterOrDigit).Take(40).ToArray());
+                fiscalOutbox.Request.OrderNumber ??= fiscalOutbox.IdempotencyKey[..Math.Min(fiscalOutbox.IdempotencyKey.Length, 100)];
+                string queuedAt = DateTimeOffset.UtcNow.ToString("O");
+                _ctx.FiscalOperations.Add(new FiscalOperationEntity
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    IdempotencyKey = fiscalOutbox.IdempotencyKey,
+                    SaleId = saleId,
+                    OperationType = FiscalOperationType.Issue,
+                    Status = IntegrationOperationStatus.Pending,
+                    PayloadJson = JsonSerializer.Serialize(fiscalOutbox.Request, FacturamaJsonContext.Default.FacturamaCfdiRequest),
+                    NextAttemptAtUtc = queuedAt,
+                    CreatedAtUtc = queuedAt,
+                    UpdatedAtUtc = queuedAt
+                });
+                entity.EstadoFiscal = "EN COLA";
             }
 
             try
@@ -181,6 +303,9 @@ public partial class SaleService : ISaleService
                 PaidAmount = paidAmount,
                 ChangeAmount = changeAmount,
                 SerieFolio = saleId,
+                OperationId = operationId,
+                GiftcardNumber = sale.GiftcardNumber,
+                GiftcardAmount = sale.GiftcardAmount,
                 Status = SaleStatus.Completed
             };
 
@@ -194,6 +319,9 @@ public partial class SaleService : ISaleService
         }
     }
 
+    private static long ToStoredCents(decimal amount) =>
+        Convert.ToInt64(Math.Round(amount, 2, MidpointRounding.ToEven) * 100m);
+
     public async Task<SaleResultModel> ProcessSaleAsync(SaleCreationDto dto)
     {
         bool isCredit = dto.CreditAmount > 0 || dto.PaymentMethod == PaymentMethod.Credito || dto.PaymentMethod == PaymentMethod.Credit;
@@ -201,7 +329,7 @@ public partial class SaleService : ISaleService
             ProductId: i.Id,
             Name: i.Name,
             UnitPrice: i.UnitPrice,
-            Cost: i.UnitPrice * 0.6,
+            Cost: Math.Round(i.UnitPrice * 0.6m, 2),
             Quantity: i.Quantity,
             Unit: i.Unit,
             Category: i.Category ?? "General",
@@ -212,7 +340,7 @@ public partial class SaleService : ISaleService
             AppliedPromotionId: i.AppliedPromotionId
         )).ToList();
 
-        var totalCost = snapshots.Sum(s => s.Cost * s.Quantity);
+        var totalCost = snapshots.Sum(s => s.Cost * Convert.ToDecimal(s.Quantity));
         var profit = dto.Total - totalCost;
 
         var saleDto = new SaleDto(
@@ -223,7 +351,7 @@ public partial class SaleService : ISaleService
             TotalCost: totalCost,
             Profit: profit,
             PaidAmount: dto.Total,
-            ChangeAmount: 0,
+            ChangeAmount: 0m,
             PaymentMethod: dto.PaymentMethod.ToString(),
             CustomerId: dto.CustomerId,
             IsCredit: isCredit,
@@ -231,7 +359,8 @@ public partial class SaleService : ISaleService
             CancelledAt: null,
             EstadoFiscal: "PENDIENTE",
             UuidSat: null,
-            SerieFolio: null
+            SerieFolio: null,
+            OperationId: dto.OperationId
         );
 
         try
@@ -290,7 +419,7 @@ public partial class SaleService : ISaleService
     /// <summary>
     /// Generates date-bounded cashier performance analytics with SQL-level projection to prevent memory leaks and unbounded data dumps.
     /// </summary>
-    public async Task<List<CashierPerformanceDto>> GetCashierPerformanceReportAsync(DateTime? startDate = null, DateTime? endDate = null, double defaultCommissionPct = 0.0)
+    public async Task<List<CashierPerformanceDto>> GetCashierPerformanceReportAsync(DateTime? startDate = null, DateTime? endDate = null, decimal defaultCommissionPct = 0m)
     {
         try
         {
@@ -329,9 +458,9 @@ public partial class SaleService : ISaleService
             {
                 // Attribute total period sales to the operational cashier(s) cleanly
                 int count = validSales.Count;
-                double totalRev = validSales.Sum(s => s.Total);
-                double avgTicket = count > 0 ? totalRev / count : 0.0;
-                double commission = totalRev * (defaultCommissionPct / 100.0);
+                decimal totalRev = validSales.Sum(s => s.Total);
+                decimal avgTicket = count > 0 ? totalRev / count : 0m;
+                decimal commission = totalRev * (defaultCommissionPct / 100m);
 
                 foreach (var cashier in cashiers)
                 {
@@ -348,9 +477,9 @@ public partial class SaleService : ISaleService
             else
             {
                 int count = validSales.Count;
-                double totalRev = validSales.Sum(s => s.Total);
-                double avgTicket = count > 0 ? totalRev / count : 0.0;
-                double commission = totalRev * (defaultCommissionPct / 100.0);
+                decimal totalRev = validSales.Sum(s => s.Total);
+                decimal avgTicket = count > 0 ? totalRev / count : 0m;
+                decimal commission = totalRev * (defaultCommissionPct / 100m);
 
                 report.Add(new CashierPerformanceDto(
                     "CAJERO MATRIZ",
@@ -400,7 +529,10 @@ public partial class SaleService : ISaleService
             CashierUserId: null,
             CashierName: null,
             CashAmount: e.CashAmount,
-            CardAmount: e.CardAmount
+            CardAmount: e.CardAmount,
+            OperationId: e.OperationId,
+            GiftcardNumber: e.GiftcardNumber,
+            GiftcardAmount: e.GiftcardAmount
         );
     }
 }

@@ -21,7 +21,7 @@ public partial class SetupAdditionalUsersViewModel : ValidatableViewModelBase
     [ObservableProperty] private string _username = string.Empty;
     [ObservableProperty] private string _password = string.Empty;
     [ObservableProperty] private string _passwordHint = string.Empty;
-    
+
     [ObservableProperty] private string _pin1 = string.Empty;
     [ObservableProperty] private string _pin2 = string.Empty;
     [ObservableProperty] private string _pin3 = string.Empty;
@@ -54,9 +54,9 @@ public partial class SetupAdditionalUsersViewModel : ValidatableViewModelBase
         ErrorMessage = string.Empty;
         SuccessMessage = string.Empty;
 
-        if (string.IsNullOrWhiteSpace(FullName) || 
-            string.IsNullOrWhiteSpace(Username) || 
-            string.IsNullOrWhiteSpace(Password) || 
+        if (string.IsNullOrWhiteSpace(FullName) ||
+            string.IsNullOrWhiteSpace(Username) ||
+            string.IsNullOrWhiteSpace(Password) ||
             string.IsNullOrWhiteSpace(Pin))
         {
             ErrorMessage = "Todos los campos obligatorios deben ser llenados.";
@@ -72,14 +72,14 @@ public partial class SetupAdditionalUsersViewModel : ValidatableViewModelBase
         try
         {
             string hash = CryptoHelper.HashPassword(Password);
-            
+
             var user = new UserEntity
             {
                 Id = Guid.NewGuid(),
                 FullName = FullName,
                 Username = Username,
                 PasswordHash = hash,
-                PasswordHint = PasswordHint,
+                PasswordHint = string.Empty,
                 PinCode = Pin,
                 Role = SelectedRole,
                 RoleString = SelectedRole == UserRole.Admin ? "ADMINISTRADOR" : (SelectedRole == UserRole.Gerente ? "GERENTE" : "CAJERO"),
@@ -87,9 +87,9 @@ public partial class SetupAdditionalUsersViewModel : ValidatableViewModelBase
             };
 
             await _userRepository.CreateUserAsync(user);
-            
+
             SuccessMessage = $"Usuario {Username} creado exitosamente.";
-            
+
             // Clear fields for another user
             FullName = string.Empty;
             Username = string.Empty;
