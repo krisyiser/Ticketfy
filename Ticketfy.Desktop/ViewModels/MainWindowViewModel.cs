@@ -35,6 +35,7 @@ public partial class MainWindowViewModel : ObservableObject
     public AutoUpdateViewModel Update { get; }
     public LockScreenViewModel LockScreen { get; }
     public TutorialCoordinatorViewModel Tutorial { get; }
+    public HardwareStatusViewModel Hardware { get; }
 
     // ── Passthrough bindings for MainWindow.axaml compatibility ─────────────
     public ObservableObject ActiveViewModel => Navigation.ActiveViewModel;
@@ -103,7 +104,6 @@ public partial class MainWindowViewModel : ObservableObject
         _ = new AlertBackgroundWorker(dbContextFactory).StartAsync(default);
 
         // ── Services ─────────────────────────────────────────────────────────
-        var printerService = new EscPosPrinterService();
         var backupService =
             (App.Current?.Services?.GetService(typeof(IBackupService)) as IBackupService)
             ?? new BackupService();
@@ -113,30 +113,34 @@ public partial class MainWindowViewModel : ObservableObject
         var operationalTelemetry =
             (App.Current?.Services?.GetService(typeof(IOperationalTelemetry)) as IOperationalTelemetry)
             ?? new LocalOperationalTelemetry();
-        var productService = new ProductService(db);
-        var customerService = new CustomerService(db, printerService);
-        var auditService = new AuditService(auditContextFactory);
-        var saleService = new SaleService(dbContextFactory, coOccurrenceQueue, auditService);
-        var promotionService = new PromotionService(db);
-        var giftcardService = new GiftcardService(db);
-        var supplierService = new SupplierService(db);
-        var purchaseService = new PurchaseService(db);
-        var expenseService = new ExpenseService(db, printerService);
-        var settingsService = new SettingsService(db);
-        var permissionEngine = new UserRolePermissionEngine(settingsService);
+        var permissionEngine = new UserRolePermissionEngine(new SettingsService(dbContextFactory));
         var sessionManager = new SessionManager();
+        var operations = new Ticketfy.Services.CommercialOperationContext(sessionManager, permissionEngine,
+            Environment.GetEnvironmentVariable("TICKETFY_REGISTER_ID") ?? "POS-" + Environment.MachineName);
+        var settingsService = new SettingsService(dbContextFactory, operations);
+        var printerService = new EscPosPrinterService(settingsService);
+        Hardware = new HardwareStatusViewModel(settingsService);
+        var productService = new ProductService(dbContextFactory, operations);
+        var customerService = new CustomerService(dbContextFactory, operations);
+        var auditService = new AuditService(auditContextFactory);
+        var saleService = new SaleService(dbContextFactory, coOccurrenceQueue, auditService, operations);
+        var promotionService = new PromotionService(dbContextFactory, operations);
+        var giftcardService = new GiftcardService(db, operations);
+        var supplierService = new SupplierService(dbContextFactory, operations);
+        var purchaseService = new PurchaseService(dbContextFactory, operations);
+        var expenseService = new ExpenseService(dbContextFactory, operations);
         Func<string> auditActor = () => sessionManager.CurrentCashier?.Id.ToString() ?? "SYSTEM";
-        var userService = new UserService(db, auditService, auditActor);
+        var userService = new UserService(db, auditService, auditActor, operations);
         var terminalService = new MercadoPagoTerminalService(new System.Net.Http.HttpClient(), settingsService, contextFactory: dbContextFactory);
         var shiftNoteService = new ShiftNoteService(db);
-        var kitService = new ItemKitService(db);
+        var kitService = new ItemKitService(db, operations);
         var predictiveService = new PredictiveIntelligenceService(dbContextFactory);
         var externalCatalogService = new ExternalCatalogService(new System.Net.Http.HttpClient());
-        var performanceAnalyticsService = new PerformanceAnalyticsService(db);
+        var performanceAnalyticsService = new PerformanceAnalyticsService(db, operations);
         var attendanceService = new AttendanceService(db);
         var authService = new AuthService(userService, permissionEngine);
-        var shiftService = new ShiftService(db);
-        var userRepository = new UserRepository(db, permissionEngine, auditService, auditActor);
+        var shiftService = new ShiftService(dbContextFactory, operations);
+        var userRepository = new UserRepository(db, permissionEngine, auditService, auditActor, operations);
 
         var certificateGenerator = new CertificateGeneratorService();
         var printDispatcherService = new PrintDispatcherService(printerService, certificateGenerator, dbContextFactory, settingsService);
@@ -162,9 +166,9 @@ public partial class MainWindowViewModel : ObservableObject
         var posVm = new PosViewModel(productService, db, shiftNoteService, kitService, customerService,
             sessionManager, userRepository, promotionService, auditService, attendanceService,
             predictiveService, externalCatalogService);
-        var inventoryVm = new InventoryViewModel(productService, externalCatalogService, purchaseService, predictiveService);
+        var inventoryVm = new InventoryViewModel(productService, externalCatalogService, purchaseService, predictiveService, printerService);
         var customersVm = new CustomersViewModel(customerService);
-        var historyVm = new HistoryViewModel(saleService, printerService, db, settingsService);
+        var historyVm = new HistoryViewModel(saleService, printerService, db, settingsService, shiftService);
         var promotionsVm = new PromotionsViewModel(promotionService, kitService);
         var fiscalVm = new FiscalViewModel(saleService, fiscalQueue);
         var cashierPerformanceVm = new CashierPerformanceViewModel(performanceAnalyticsService, attendanceService);
@@ -182,7 +186,9 @@ public partial class MainWindowViewModel : ObservableObject
 
         // ── Navigation Service ───────────────────────────────────────────────
         Navigation = new NavigationService(loginVm, posVm, inventoryVm, customersVm, historyVm,
-            promotionsVm, fiscalVm, settingsVm, suppliersVm, expensesVm, cashierPerformanceVm);
+            promotionsVm, fiscalVm, settingsVm, suppliersVm, expensesVm, cashierPerformanceVm, operations, dbContextFactory);
+        Navigation.CommercialControl = new CommercialControlViewModel(productService, customerService, supplierService,
+            purchaseService, shiftService, giftcardService, new CommercialReconciliationService(dbContextFactory, operations), dbContextFactory, operations, saleService);
         Navigation.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(NavigationService.ActiveViewModel))
@@ -223,13 +229,13 @@ public partial class MainWindowViewModel : ObservableObject
         var wirer = new DialogWirer(Dialogs, productService, customerService, saleService,
             printerService, printDispatcherService, giftcardService, db, shiftService,
             sessionManager, userRepository, backupService, attendanceService, auditService,
-            terminalService, kitService, shiftNoteService);
+            terminalService, kitService, shiftNoteService, new CommercialReconciliationService(dbContextFactory, operations), new CategoryService(dbContextFactory, operations));
 
         wirer.WirePosVm(posVm, inventoryVm, historyVm);
         wirer.WireInventoryVm(inventoryVm, posVm);
         wirer.WireCustomersVm(customersVm, posVm);
         wirer.WireHistoryVm(historyVm, posVm);
-        wirer.WirePromotionsVm(promotionsVm, posVm);
+        wirer.WirePromotionsVm(promotionsVm, posVm, promotionService);
         wirer.WireExpensesVm(expensesVm);
 
         // Wirer handles promotionsVm event subscriptions cleanly via DialogWirer.
@@ -278,7 +284,7 @@ public partial class MainWindowViewModel : ObservableObject
                     WeakReferenceMessenger.Default.Send(new ForceLogoutMessage()));
         });
 
-        _ = InitializeApplicationStateAsync(userRepository, settingsService, db);
+        _ = InitializeApplicationStateAsync(userRepository, settingsService, db, sessionManager, permissionEngine);
     }
 
     // ── Commands delegated to sub-VMs ────────────────────────────────────────
@@ -333,7 +339,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     // ── App startup routing ───────────────────────────────────────────────────
     private async Task InitializeApplicationStateAsync(IUserRepository userRepository,
-        ISettingsService settingsService, AppDbContext db)
+        ISettingsService settingsService, AppDbContext db, ISessionManager sessionManager, IUserRolePermissionEngine permissionEngine)
     {
         try
         {
@@ -350,12 +356,13 @@ public partial class MainWindowViewModel : ObservableObject
 
             string? setupDone = await settingsService.GetAsync("IsOnboardingCompleted");
             bool hasUsers = await userRepository.HasAnyUsersAsync();
-            if (setupDone != "true" || !hasUsers)
+            if (!hasUsers)
             {
                 var dialogService = new DialogService((vm) => Task.FromResult<object?>(null), () => { });
                 Action finishSetup = async () =>
                 {
                     await settingsService.SetAsync("IsOnboardingCompleted", "true");
+                    sessionManager.ClearSession();
                     Navigation.GoToLogin();
                 };
 
@@ -368,7 +375,8 @@ public partial class MainWindowViewModel : ObservableObject
                     Navigation.GoTo(new WelcomeLicenseViewModel(licenseService, goToAdminAccount));
 
                 goToAdminAccount = () =>
-                    Navigation.GoTo(new FirstTimeSetupViewModel(userRepository, dialogService, goToBusinessData, goToWelcome));
+                    Navigation.GoTo(new FirstTimeSetupViewModel(userRepository, dialogService, goToBusinessData, goToWelcome,
+                        user => sessionManager.StartSession(permissionEngine.MapToModel(user))));
 
                 goToBusinessData = () =>
                     Navigation.GoTo(new SetupBusinessDataViewModel(settingsService, goToAdditionalUsers, goToAdminAccount));

@@ -41,7 +41,7 @@ public sealed class Stage3CommercialIntegrationTests
             });
             await setup.SaveChangesAsync();
         }
-        var service = new SaleService(new TestDbContextFactory(options), new CoOccurrenceQueue(), new SpyAuditService());
+        var service = new SaleService(new TestDbContextFactory(options), new CoOccurrenceQueue(), new SpyAuditService(), CommercialTestSession.Create(options));
         var sale = new SaleDto(
             "", DateTimeOffset.UtcNow.ToString("O"),
             [new SaleItemSnapshotDto("P1", "Producto", 10m, 5m, 1, "Pza", "General", 0m, 10m)],
@@ -166,7 +166,7 @@ public sealed class Stage3CommercialIntegrationTests
             setup.Products.Add(new ProductEntity { Id = "P2", Barcode = "7500000000002", Name = "Producto", Cost = 5m, Price = 10m, Stock = 2, Category = "General", Unit = "Pza" });
             await setup.SaveChangesAsync();
         }
-        var service = new SaleService(new TestDbContextFactory(options), new CoOccurrenceQueue(), new SpyAuditService());
+        var service = new SaleService(new TestDbContextFactory(options), new CoOccurrenceQueue(), new SpyAuditService(), CommercialTestSession.Create(options));
         var sale = new SaleDto("", DateTimeOffset.UtcNow.ToString("O"),
             [new SaleItemSnapshotDto("P2", "Producto", 10m, 5m, 1, "Pza", "General", 0m, 10m)],
             10m, 5m, 5m, 10m, 0m, "Tarjeta", null, false, false, null,

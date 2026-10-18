@@ -102,9 +102,9 @@ public partial class SaleService
         }
     }
 
-    private async Task<decimal> DeductInventoryRecursiveAsync(AppDbContext _ctx, string productId, double quantityMultiplier, HashSet<string> executionStack)
+    private async Task<decimal> DeductInventoryRecursiveAsync(AppDbContext _ctx, string productId, double quantityMultiplier, HashSet<string> executionStack, OperationIdentity actor, string operationId, string documentId, string saleLineId)
     {
-        var product = await _ctx.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == productId)
+        var product = await _ctx.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == productId && p.IsActive)
             ?? throw new InvalidOperationException($"Producto o ingrediente no encontrado: {productId}");
 
         if (product.IsKit)
@@ -119,10 +119,13 @@ public partial class SaleService
 
             decimal totalKitUnitCost = 0m;
 
+            if (kit.Components.Count == 0 || kit.Components.Any(c => !double.IsFinite(c.Quantity) || c.Quantity <= 0))
+                throw new InvalidOperationException("El kit requiere componentes con cantidades válidas.");
+
             foreach (var component in kit.Components)
             {
                 double totalRequired = quantityMultiplier * component.Quantity;
-                decimal compUnitCost = await DeductInventoryRecursiveAsync(_ctx, component.ProductId, totalRequired, executionStack);
+                decimal compUnitCost = await DeductInventoryRecursiveAsync(_ctx, component.ProductId, totalRequired, executionStack, actor, operationId, documentId, saleLineId);
                 totalKitUnitCost += Convert.ToDecimal(component.Quantity) * compUnitCost;
             }
 
@@ -131,108 +134,27 @@ public partial class SaleService
         }
         else
         {
-            int affected = await _ctx.Database.ExecuteSqlInterpolatedAsync($@"
-                UPDATE products
-                SET stock = ROUND(stock - {quantityMultiplier}, 3),
-                    stock_version = stock_version + 1
-                WHERE id = {productId}
-                  AND stock_version = {product.StockVersion}
-                  AND stock >= {quantityMultiplier};");
-
-            if (affected != 1)
-            {
-                double? currentStock = await _ctx.Products.AsNoTracking()
-                    .Where(p => p.Id == productId)
-                    .Select(p => (double?)p.Stock)
-                    .FirstOrDefaultAsync();
-                if (currentStock.HasValue && currentStock.Value < quantityMultiplier)
-                    throw new InvalidOperationException($"Stock insuficiente para '{product.Name}'. Disponible: {currentStock.Value:N3}, requerido: {quantityMultiplier:N3}.");
-                throw new DbUpdateConcurrencyException($"El inventario de '{product.Name}' cambió durante el cobro.");
-            }
-
+            await CommercialLedger.StockAsync(_ctx, actor, operationId, documentId, productId,
+                -(decimal)quantityMultiplier, "SALE", saleLineId);
             product.Stock = Math.Round(product.Stock - quantityMultiplier, 3);
             await CheckAndFlagLowStockAsync(_ctx, product);
             return product.Cost;
         }
     }
 
-    private async Task RestockInventoryRecursiveAsync(AppDbContext _ctx, string productId, double quantityMultiplier, HashSet<string> executionStack)
+    private static List<SaleItemSnapshotDto> ApplyProratedGlobalDiscountAndTaxes(List<SaleItemSnapshotDto> items, decimal globalDiscountAmount)
     {
-        var product = await _ctx.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == productId)
-            ?? throw new InvalidOperationException($"Producto o ingrediente no encontrado: {productId}");
-
-        if (product.IsKit)
-        {
-            if (!executionStack.Add(productId))
-                throw new InvalidOperationException($"Error crítico: Referencia circular detectada en el Combo/Kit: {product.Name}");
-
-            var kit = await _ctx.ItemKits
-                .Include(k => k.Components)
-                .FirstOrDefaultAsync(k => k.ParentProductId == product.Id || k.Id == product.Id)
-                ?? throw new InvalidOperationException($"Estructura de Combo no encontrada para: {product.Name}");
-
-            foreach (var component in kit.Components)
-            {
-                double totalRequired = quantityMultiplier * component.Quantity;
-                await RestockInventoryRecursiveAsync(_ctx, component.ProductId, totalRequired, executionStack);
-            }
-
-            executionStack.Remove(productId);
-        }
-        else
-        {
-            int affected = await _ctx.Database.ExecuteSqlInterpolatedAsync($@"
-                UPDATE products
-                SET stock = ROUND(stock + {quantityMultiplier}, 3),
-                    stock_version = stock_version + 1
-                WHERE id = {productId}
-                  AND stock_version = {product.StockVersion};");
-            if (affected != 1)
-                throw new DbUpdateConcurrencyException($"El inventario de '{product.Name}' cambió durante la devolución.");
-        }
-    }
-
-    private List<SaleItemSnapshotDto> ApplyProratedGlobalDiscountAndTaxes(List<SaleItemSnapshotDto> items, decimal globalDiscountAmount)
-    {
-        decimal totalCartSubtotal = items.Sum(i =>
-            (Convert.ToDecimal(i.Quantity) * (i.OriginalUnitPrice > 0m ? i.OriginalUnitPrice : i.UnitPrice))
-            - i.AppliedDiscountAmount);
-        decimal globalDiscountDec = globalDiscountAmount;
-        decimal accumulatedProratedDiscount = 0m;
+        decimal subtotal = items.Sum(i => i.TotalPrice);
+        if (globalDiscountAmount > subtotal) throw new InvalidOperationException("El descuento supera el subtotal.");
+        decimal cumulative = 0m, allocated = 0m;
         var result = new List<SaleItemSnapshotDto>();
-
-        for (int i = 0; i < items.Count; i++)
+        foreach (var item in items)
         {
-            var item = items[i];
-            decimal itemUnitPrice = item.OriginalUnitPrice > 0m ? item.OriginalUnitPrice : item.UnitPrice;
-            decimal lineSubtotal = (Convert.ToDecimal(item.Quantity) * itemUnitPrice) - item.AppliedDiscountAmount;
-            decimal proratedGlobalDiscount = 0m;
-
-            if (totalCartSubtotal > 0 && globalDiscountDec > 0)
-            {
-                if (i == items.Count - 1)
-                {
-                    proratedGlobalDiscount = globalDiscountDec - accumulatedProratedDiscount;
-                }
-                else
-                {
-                    decimal weight = lineSubtotal / totalCartSubtotal;
-                    proratedGlobalDiscount = Math.Round(globalDiscountDec * weight, 2);
-                    accumulatedProratedDiscount += proratedGlobalDiscount;
-                }
-            }
-
-            decimal totalLineAmount = Math.Round(lineSubtotal - proratedGlobalDiscount, 2);
-            // TAX BREAKDOWN (16% IVA INCLUDED IN RETAIL PRICE)
-            decimal taxableBase = Math.Round(totalLineAmount / (1m + (decimal)Ticketfy.Core.Constants.AppConstants.DefaultIvaRate), 2);
-            decimal taxAmount = Math.Round(totalLineAmount - taxableBase, 2);
-
-            result.Add(item with
-            {
-                ProratedGlobalDiscountAmount = proratedGlobalDiscount,
-                TaxAmount = taxAmount,
-                TotalPrice = totalLineAmount
-            });
+            cumulative += item.TotalPrice;
+            decimal target = subtotal == 0 ? 0m : CommercialLedger.Money(globalDiscountAmount * cumulative / subtotal);
+            decimal discount = target - allocated;
+            allocated = target;
+            result.Add(item with { ProratedGlobalDiscountAmount = discount, TotalPrice = item.TotalPrice - discount, TaxAmount = 0m });
         }
         return result;
     }

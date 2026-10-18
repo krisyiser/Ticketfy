@@ -37,6 +37,13 @@ public static class PermissionCatalog
     public const string SettingsBusiness = "settings.business";
     public const string SettingsHardware = "settings.hardware";
     public const string SettingsSecurity = "settings.security";
+    public const string PurchasesManage = "purchases.manage";
+    public const string SuppliersManage = "suppliers.manage";
+    public const string ExpensesManage = "expenses.manage";
+    public const string PromotionsManage = "promotions.manage";
+    public const string WalletManage = "wallet.manage";
+    public const string PaymentsReconcile = "payments.reconcile";
+    public const string HistoryReconcile = "history.reconcile";
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -45,14 +52,15 @@ public static class PermissionCatalog
         InventoryView, InventoryCreate, InventoryEdit, InventoryDelete, InventoryStockAdjust,
         CustomersView, CustomersCreateEdit, CustomersDelete, CustomersCreditLimit,
         QuotesManage, ReportsView, ReportsProfits, ReportsExport,
-        UsersView, UsersManage, UsersRoles, SettingsBusiness, SettingsHardware, SettingsSecurity
+        UsersView, UsersManage, UsersRoles, SettingsBusiness, SettingsHardware, SettingsSecurity,
+        PurchasesManage, SuppliersManage, ExpensesManage, PromotionsManage, WalletManage, PaymentsReconcile, HistoryReconcile
     };
 
     private static readonly IReadOnlyDictionary<string, IReadOnlySet<string>> Grants =
         new Dictionary<string, IReadOnlySet<string>>(StringComparer.OrdinalIgnoreCase)
         {
             ["ADMINISTRADOR"] = new HashSet<string>(All, StringComparer.Ordinal),
-            ["GERENTE"] = SetExcept(InventoryDelete, CustomersDelete, UsersManage, UsersRoles, SettingsBusiness, SettingsSecurity),
+            ["GERENTE"] = SetExcept(InventoryDelete, CustomersDelete, UsersManage, UsersRoles, SettingsBusiness, SettingsSecurity, HistoryReconcile),
             ["SUPERVISOR"] = Set(PosCheckout, PosDiscount, PosCancelSale, PosRefund, PosApplyPoints,
                 CashOpen, CashClose, CashInOut, CashHistory, InventoryView, CustomersView,
                 CustomersCreateEdit, QuotesManage, ReportsView, UsersView),

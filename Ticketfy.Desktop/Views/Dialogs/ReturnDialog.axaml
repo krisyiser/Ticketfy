@@ -62,7 +62,7 @@
 
                     <StackPanel Grid.Column="1" Margin="4,0,0,0" Spacing="4">
                         <TextBlock Text="Método de Reembolso *" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                        <ComboBox ItemsSource="{Binding RefundMethods}" SelectedItem="{Binding RefundMethod, Mode=TwoWay}" HorizontalAlignment="Stretch" Padding="8" />
+                        <TextBlock Text="A los medios originales. Tarjetas y transferencias quedan pendientes hasta su conciliación bancaria." TextWrapping="Wrap" />
                     </StackPanel>
                 </Grid>
 

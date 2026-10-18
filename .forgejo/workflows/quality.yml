@@ -20,10 +20,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Instalar .NET 9
+      - name: Instalar .NET 10 LTS fijado en global.json
         uses: https://data.forgejo.org/actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
+          global-json-file: global.json
           cache: true
           cache-dependency-path: "**/packages.lock.json"
 

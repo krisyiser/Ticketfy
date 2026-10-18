@@ -12,6 +12,11 @@ namespace Ticketfy.Data.Entities;
 [Table("checkout_operations")]
 public sealed class CheckoutOperationEntity
 {
+    public string? ShiftId { get; set; }
+    public string? RegisterId { get; set; }
+    public string? CashierUserId { get; set; }
+    public string? FiscalPayload { get; set; }
+    public string? FiscalIdempotencyKey { get; set; }
     [Key]
     [Column("operation_id")]
     public string OperationId { get; set; } = string.Empty;

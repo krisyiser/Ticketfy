@@ -39,6 +39,7 @@ public sealed class Stage2SecurityTests
 
         Assert.NotNull(result);
         Assert.Empty(result.Pin4Digits);
+        await context.Entry(entity).ReloadAsync();
         Assert.StartsWith("$pbkdf2$sha256$600000$", entity.PinCode);
         Assert.True(SecurityManager.VerifyPin("1234", entity.PinCode));
     }

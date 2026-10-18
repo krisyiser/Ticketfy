@@ -12,6 +12,11 @@ namespace Ticketfy.ViewModels;
 
 public partial class ExpensesViewModel : ObservableObject
 {
+    private string _expenseOperationId = Guid.NewGuid().ToString("N");
+    private bool _savingExpense;
+    [ObservableProperty] private string _expenseReference = string.Empty;
+    [ObservableProperty] private string _cancellationReason = string.Empty;
+    [ObservableProperty] private bool _reversalVerified;
     private readonly IExpenseService _expenseService;
     private readonly IShiftService _shiftService;
 
@@ -146,9 +151,7 @@ public partial class ExpensesViewModel : ObservableObject
                 Egresos = summary.TotalExpenses;
 
                 // Total en Caja (Fondo Inicial + Ventas en Efectivo - Gastos en Efectivo)
-                decimal cashRev = summary.CashRevenue;
-                decimal cashExp = summary.CashExpenses;
-                TotalEnCaja = FondoInicial + cashRev - cashExp;
+                TotalEnCaja = activeShift?.ExpectedBalance ?? 0m;
 
                 Reinversion = CostoDeVentas;
                 // Utilidad Neta Real = Ventas - Costo de Ventas (COGS) - Gastos Operativos
@@ -164,6 +167,7 @@ public partial class ExpensesViewModel : ObservableObject
     [RelayCommand]
     private async Task AddExpenseAsync()
     {
+        if (_savingExpense) return;
         if (ExpenseAmount <= 0)
         {
             IsFeedbackError = true;
@@ -173,18 +177,20 @@ public partial class ExpensesViewModel : ObservableObject
 
         try
         {
+            _savingExpense = true;
             var dto = new ExpenseDto(
-                Guid.NewGuid().ToString(),
+                _expenseOperationId,
                 SelectedCategory,
                 ExpenseAmount,
                 DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
                 ExpenseDescription,
                 PaymentMethod,
-                "admin"
+                string.Empty, OperationId: _expenseOperationId, Reference: ExpenseReference
             );
 
             var created = await _expenseService.CreateAsync(dto);
             Expenses.Insert(0, created);
+            _expenseOperationId = Guid.NewGuid().ToString("N");
 
             // COMPLETE FORM RESET UPON SAVE
             ExpenseAmount = 0;
@@ -198,22 +204,28 @@ public partial class ExpensesViewModel : ObservableObject
         {
             Log.Error(ex, "Error adding expense");
             IsFeedbackError = true;
-            FeedbackMessage = "Error al registrar gasto operativo";
+            FeedbackMessage = ex.Message;
         }
+        finally { _savingExpense = false; }
     }
 
     [RelayCommand]
     private async Task DeleteExpenseAsync(ExpenseDto expense)
     {
+        if (_savingExpense || expense.IsCancelled) return;
         try
         {
-            await _expenseService.DeleteAsync(expense.Id);
-            Expenses.Remove(expense);
+            _savingExpense = true;
+            await _expenseService.CancelAsync(expense.Id, CancellationReason, $"VOID:{expense.Id}", ReversalVerified);
+            CancellationReason = ""; ReversalVerified = false;
+            IsFeedbackError = false; FeedbackMessage = "Gasto cancelado; se conserva el original y su compensación.";
             await LoadExpensesAsync();
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error deleting expense");
+            IsFeedbackError = true; FeedbackMessage = ex.Message;
         }
+        finally { _savingExpense = false; }
     }
 }

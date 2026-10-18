@@ -30,7 +30,12 @@ public record ProductDto(
     double MinStock = 5.0,
     string? DefaultSupplierId = null,
     bool IsBulk = false,
-    bool IsKit = false
+    bool IsKit = false,
+    bool IsActive = true,
+    double MaxStock = 0,
+    decimal TaxRate = 0.16m,
+    string? StockAdjustmentReason = null,
+    long? ExpectedStockVersion = null
 )
 {
     public ProductDto(string Id, string? Barcode, string Name, double Cost, double Price,
@@ -117,7 +122,10 @@ public record PromotionDto(
     string? TargetProductId = null,
     string TargetCategory = "",
     double MinQuantity = 1.0,
-    double FreeQuantity = 0.0
+    double FreeQuantity = 0.0,
+    DateTime? StartDate = null,
+    DateTime? EndDate = null,
+    int Priority = 0
 );
 
 public record UserDto(string Id, string Username, string FullName, string Role, bool IsActive)
@@ -137,7 +145,9 @@ public record ShiftDto(
     decimal ExpectedBalance,
     decimal? ActualBalance,
     decimal? Diff,
-    int IsOpen
+    int IsOpen,
+    string? RegisterId = null,
+    string? CashierUserId = null
 );
 
 public record ParkedOrderDto(string Id, DateTime CreatedAt, string CustomerName, string CartJson, decimal Total);
@@ -155,6 +165,7 @@ public partial class CartItemDto : ObservableObject
     public string SatProductCode { get; set; } = "01010101";
     public string SatUnitCode { get; set; } = "H87";
     public double PointsRewarded { get; set; } = 0.0;
+    public double AvailableStock { get; set; }
 
     private double _quantity = 1.0;
     public double Quantity
@@ -213,13 +224,13 @@ public partial class CartItemDto : ObservableObject
     [ObservableProperty]
     private string _promotionDescription = string.Empty;
 
-    public decimal FinalUnitPrice => Math.Max(0m, OriginalUnitPrice - (AppliedDiscountAmount / Convert.ToDecimal(Math.Max(1.0, Quantity))));
+    public decimal FinalUnitPrice => Quantity <= 0 ? 0m : Math.Round(TotalPrice / (decimal)Quantity, 2);
 
     public decimal TotalPrice => GetLineTotal();
 
     public decimal GetLineTotal()
     {
-        return Math.Max(0m, (OriginalUnitPrice * Convert.ToDecimal(Quantity)) - AppliedDiscountAmount);
+        return Math.Round(Math.Max(0m, (OriginalUnitPrice * Convert.ToDecimal(Quantity)) - AppliedDiscountAmount), 2, MidpointRounding.ToEven);
     }
 
     public CartItemDto() { }
@@ -257,7 +268,8 @@ public record SaleItemSnapshotDto(
     [property: JsonPropertyName("proratedGlobalDiscountAmount")] decimal ProratedGlobalDiscountAmount = 0m,
     [property: JsonPropertyName("taxAmount")] decimal TaxAmount = 0m,
     [property: JsonPropertyName("returnedQuantity")] double ReturnedQuantity = 0.0,
-    [property: JsonPropertyName("pointsRewarded")] double PointsRewarded = 0.0
+    [property: JsonPropertyName("pointsRewarded")] double PointsRewarded = 0.0,
+    string? SaleLineId = null
 )
 {
     public SaleItemSnapshotDto(string ProductId, string Name, double UnitPrice, double Cost,
@@ -305,9 +317,15 @@ public record SaleDto(
     decimal CardAmount = 0m,
     string? OperationId = null,
     string? GiftcardNumber = null,
-    decimal GiftcardAmount = 0m
+    decimal GiftcardAmount = 0m,
+    string? ShiftId = null,
+    string? RegisterId = null,
+    decimal GlobalDiscountAmount = 0m,
+    List<SaleTenderDto>? Payments = null,
+    decimal RefundedAmount = 0m
 )
 {
+    public decimal NetTotal => Total - RefundedAmount;
     public SaleDto(string Id, string Date, List<SaleItemSnapshotDto> Items,
         double Total, double TotalCost, double Profit, double PaidAmount, double ChangeAmount,
         string PaymentMethod, string? CustomerId, bool IsCredit, bool IsCancelled,
@@ -387,7 +405,12 @@ public record PurchaseDto(
     string Date,
     decimal TotalCost,
     string Notes,
-    List<PurchaseItemDto> Items
+    List<PurchaseItemDto> Items,
+    string? OperationId = null,
+    string PaymentMethod = "Crédito",
+    decimal PaidAmount = 0m,
+    string? PaymentReference = null,
+    string? DueDate = null
 );
 
 public record ExpenseDto(
@@ -397,7 +420,10 @@ public record ExpenseDto(
     string Date,
     string Description,
     string PaymentMethod,
-    string RegisteredByUser
+    string RegisteredByUser,
+    string? OperationId = null,
+    string? Reference = null,
+    bool IsCancelled = false
 )
 {
     public ExpenseDto(string Id, string Category, double Amount, string Date,

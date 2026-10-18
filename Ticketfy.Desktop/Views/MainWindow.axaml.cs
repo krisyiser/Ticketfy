@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
+        Opened += (_, _) => (DataContext as MainWindowViewModel)?.Hardware.Start();
 
         _idleTimer = new DispatcherTimer
         {
@@ -27,6 +28,7 @@ public partial class MainWindow : Window
         };
         _idleTimer.Tick += OnIdleTimeout;
         _idleTimer.Start();
+        Closed += (_, _) => { _idleTimer.Stop(); (DataContext as MainWindowViewModel)?.Hardware.Dispose(); };
 
         // Global Event Listeners for Inactivity auto-lock
         AddHandler(PointerMovedEvent, OnUserActivity, RoutingStrategies.Tunnel);

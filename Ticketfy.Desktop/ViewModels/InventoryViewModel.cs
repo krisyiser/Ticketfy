@@ -71,11 +71,11 @@ public partial class InventoryViewModel : ObservableObject
     [RelayCommand] private async Task ViewSnapshotsAsync() => await ActionsVM.ViewSnapshotsAsync();
     [RelayCommand] private void ClearFeedback() => ActionsVM.ClearFeedbackCommand.Execute(null);
 
-    public InventoryViewModel(IProductService productService, IExternalCatalogService externalCatalogService, IPurchaseService? purchaseService = null, IPredictiveIntelligenceService? predictiveService = null)
+    public InventoryViewModel(IProductService productService, IExternalCatalogService externalCatalogService, IPurchaseService? purchaseService = null, IPredictiveIntelligenceService? predictiveService = null, IEscPosPrinterService? printerService = null)
     {
         _productService = productService;
         CatalogVM = new InventoryCatalogViewModel(productService);
-        ActionsVM = new InventoryActionsViewModel(productService, externalCatalogService);
+        ActionsVM = new InventoryActionsViewModel(productService, externalCatalogService, printerService: printerService);
         IntelligenceVM = new InventoryIntelligenceViewModel(predictiveService);
 
         ActionsVM.ProductsUpdated += async () => await LoadProductsAsync();

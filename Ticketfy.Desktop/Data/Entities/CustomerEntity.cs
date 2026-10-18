@@ -12,6 +12,7 @@ namespace Ticketfy.Data.Entities;
 [Table("customers")]
 public class CustomerEntity
 {
+    public bool IsActive { get; set; } = true;
     [Key]
     [Column("id")]
     public string Id { get; set; } = string.Empty;

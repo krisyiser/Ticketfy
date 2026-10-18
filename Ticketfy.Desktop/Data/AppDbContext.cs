@@ -16,6 +16,21 @@ public class SqliteDecimalConverter : ValueConverter<decimal, long>
 
 public class AppDbContext : DbContext
 {
+    public DbContextOptions<AppDbContext> Options { get; }
+    public DbSet<CommandReceiptEntity> CommandReceipts => Set<CommandReceiptEntity>();
+    public DbSet<HistoricalBalanceReconciliationEntity> HistoricalBalanceReconciliations => Set<HistoricalBalanceReconciliationEntity>();
+    public DbSet<IncomingTransferIntentEntity> IncomingTransferIntents => Set<IncomingTransferIntentEntity>();
+    public DbSet<IncomingTransferReceiptEntity> IncomingTransferReceipts => Set<IncomingTransferReceiptEntity>();
+    public DbSet<TenderConfirmationEntity> TenderConfirmations => Set<TenderConfirmationEntity>();
+    public DbSet<RefundSettlementEntity> RefundSettlements => Set<RefundSettlementEntity>();
+    public DbSet<SalePaymentEntity> SalePayments => Set<SalePaymentEntity>();
+    public DbSet<SaleLineEntity> SaleLines => Set<SaleLineEntity>();
+    public DbSet<ReturnLineEntity> ReturnLines => Set<ReturnLineEntity>();
+    public DbSet<PaymentRefundEntity> PaymentRefunds => Set<PaymentRefundEntity>();
+    public DbSet<InventoryMovementEntity> InventoryMovements => Set<InventoryMovementEntity>();
+    public DbSet<AccountEntryEntity> AccountEntries => Set<AccountEntryEntity>();
+    public DbSet<SupplierPaymentEntity> SupplierPayments => Set<SupplierPaymentEntity>();
+    public DbSet<SupplierReturnEntity> SupplierReturns => Set<SupplierReturnEntity>();
     public DbSet<ProductEntity> Products => Set<ProductEntity>();
     public DbSet<CustomerEntity> Customers => Set<CustomerEntity>();
     public DbSet<PromotionEntity> Promotions => Set<PromotionEntity>();
@@ -51,11 +66,67 @@ public class AppDbContext : DbContext
     public DbSet<PaymentTerminalOperationEntity> PaymentTerminalOperations => Set<PaymentTerminalOperationEntity>();
     public DbSet<IntegrationWebhookEventEntity> IntegrationWebhookEvents => Set<IntegrationWebhookEventEntity>();
 
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) => Options = options;
+
+    private void ValidatePostedRecords()
+    {
+        ChangeTracker.DetectChanges();
+        if (ChangeTracker.Entries().Any(e => e.Entity is IImmutableRecord
+            && e.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Los registros publicados son inmutables; registre una operación compensatoria.");
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        ValidatePostedRecords();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        ValidatePostedRecords();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<TenderConfirmationEntity>().HasIndex(e => new { e.Kind, e.ExternalReference }).IsUnique();
+        modelBuilder.Entity<IncomingTransferReceiptEntity>().HasIndex(e => e.ExternalReference).IsUnique();
+        modelBuilder.Entity<IncomingTransferReceiptEntity>().HasIndex(e => e.RefundReference).IsUnique().HasFilter("\"RefundReference\" IS NOT NULL");
+        modelBuilder.Entity<HistoricalBalanceReconciliationEntity>().HasIndex(e => new { e.Scope, e.TargetId });
+        modelBuilder.Entity<RefundSettlementEntity>().HasIndex(e => e.OperationId).IsUnique();
+        modelBuilder.Entity<RefundSettlementEntity>().HasIndex(e => e.ExternalReference).IsUnique();
+        modelBuilder.Entity<RefundSettlementEntity>().HasOne<PaymentRefundEntity>().WithMany().HasForeignKey(e => e.RefundId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<ProductEntity>().HasIndex(p => p.Barcode).IsUnique().HasFilter("\"barcode\" IS NOT NULL AND \"barcode\" <> ''");
+        modelBuilder.Entity<CustomerEntity>().HasIndex(p => p.CustomerCode).IsUnique().HasFilter("\"customer_code\" <> ''");
+        modelBuilder.Entity<GiftcardEntity>().HasIndex(p => p.CardNumber).IsUnique();
+        modelBuilder.Entity<PurchaseEntity>().HasIndex(p => new { p.SupplierId, p.InvoiceNumber }).IsUnique().HasFilter("\"InvoiceNumber\" <> '' AND \"LedgerVersion\" > 0");
+        modelBuilder.Entity<ShiftEntity>().HasIndex(s => s.RegisterId).IsUnique().HasFilter("\"isOpen\" = 1 AND \"RegisterId\" IS NOT NULL");
+        modelBuilder.Entity<ShiftEntity>().HasIndex(s => s.OpenOperationId).IsUnique();
+        modelBuilder.Entity<CashupEntity>().HasIndex(s => s.OperationId).IsUnique();
+        modelBuilder.Entity<ExpenseEntity>().HasIndex(s => s.OperationId).IsUnique();
+        modelBuilder.Entity<PurchaseEntity>().HasIndex(s => s.OperationId).IsUnique();
+        modelBuilder.Entity<SalePaymentEntity>().HasIndex(s => new { s.OperationId, s.Kind }).IsUnique();
+        modelBuilder.Entity<SalePaymentEntity>().HasIndex(s => s.ExternalReference).IsUnique().HasFilter("\"ExternalReference\" IS NOT NULL");
+        modelBuilder.Entity<SalePaymentEntity>().HasOne<SaleEntity>().WithMany().HasForeignKey(s => s.SaleId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<SaleLineEntity>().HasIndex(s => new { s.SaleId, s.LineNumber }).IsUnique();
+        modelBuilder.Entity<SaleLineEntity>().HasOne<SaleEntity>().WithMany().HasForeignKey(s => s.SaleId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<ReturnLineEntity>().HasOne<SaleLineEntity>().WithMany().HasForeignKey(s => s.SaleLineId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<ReturnLineEntity>().HasOne<ReturnEntity>().WithMany().HasForeignKey(s => s.ReturnId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<PaymentRefundEntity>().HasOne<SalePaymentEntity>().WithMany().HasForeignKey(s => s.PaymentId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<PaymentRefundEntity>().HasIndex(s => new { s.OperationId, s.PaymentId }).IsUnique();
+        modelBuilder.Entity<InventoryMovementEntity>().HasIndex(s => new { s.ProductId, s.CreatedAtUtc });
+        modelBuilder.Entity<AccountEntryEntity>().HasIndex(s => new { s.AccountKind, s.AccountId, s.CreatedAtUtc });
+        modelBuilder.Entity<AccountEntryEntity>().HasIndex(s => new { s.OperationId, s.AccountKind, s.AccountId, s.DocumentId, s.EntryType }).IsUnique();
+        modelBuilder.Entity<SupplierPaymentEntity>().HasIndex(s => s.OperationId).IsUnique();
+        modelBuilder.Entity<SupplierReturnEntity>().HasIndex(s => s.OperationId).IsUnique();
+        modelBuilder.Entity<SaleLineEntity>().Property(s => s.Quantity).HasConversion<SqliteQuantityConverter>();
+        modelBuilder.Entity<ReturnLineEntity>().Property(s => s.Quantity).HasConversion<SqliteQuantityConverter>();
+        modelBuilder.Entity<SupplierReturnEntity>().Property(s => s.Quantity).HasConversion<SqliteQuantityConverter>();
+        modelBuilder.Entity<InventoryMovementEntity>().Property(s => s.Quantity).HasConversion<SqliteQuantityConverter>();
+        modelBuilder.Entity<InventoryMovementEntity>().Property(s => s.StockBefore).HasConversion<SqliteQuantityConverter>();
+        modelBuilder.Entity<InventoryMovementEntity>().Property(s => s.StockAfter).HasConversion<SqliteQuantityConverter>();
         modelBuilder.Entity<CategoryEntity>().HasKey(c => c.Id);
         modelBuilder.Entity<ProductEntity>().HasKey(p => p.Id);
         modelBuilder.Entity<CustomerEntity>().HasKey(c => c.Id);
@@ -141,6 +212,9 @@ public class AppDbContext : DbContext
         }
     }
 }
+
+public sealed class SqliteQuantityConverter() : ValueConverter<decimal, long>(
+    v => Convert.ToInt64(Math.Round(v, 3, MidpointRounding.ToEven) * 1000m), v => v / 1000m);
 
 public class AppDbContextFactory : Microsoft.EntityFrameworkCore.Design.IDesignTimeDbContextFactory<AppDbContext>
 {

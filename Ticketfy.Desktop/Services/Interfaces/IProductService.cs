@@ -9,6 +9,7 @@ namespace Ticketfy.Services.Interfaces;
 /// </summary>
 public interface IProductService
 {
+    Task<List<Ticketfy.Data.Entities.InventoryMovementEntity>> GetKardexAsync(string productId) => throw new System.NotSupportedException();
     Task<List<ProductDto>> GetAllAsync();
     Task<List<ProductDto>> GetByCategoryAsync(string category);
     Task<ProductDto?> GetByBarcodeAsync(string barcode);

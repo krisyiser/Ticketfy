@@ -83,8 +83,10 @@ public partial class CartViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void Checkout(string method)
+    private async Task CheckoutAsync(string method)
     {
+        await CartState.RefreshPromotionsAsync();
+        if (!string.IsNullOrEmpty(CartState.PricingError)) return;
         InitialPaymentMode = method ?? "Efectivo";
         OpenCheckoutRequested?.Invoke();
     }
@@ -92,10 +94,8 @@ public partial class CartViewModel : ObservableObject
     [RelayCommand]
     private void IncreaseQuantity(CartItemDto item)
     {
-        // Domain validates internally
-        // Assume absoluteDbStock is 999 for simplicity in this proxy method,
-        // Since Catalog should handle the real stock. But let's pass a safe value.
-        CartState.AddItem(item, 999.0);
+        var result = item.IncreaseQuantity(1.0, item.AvailableStock);
+        if (result.Success) CartState.RecalculateTotals();
     }
 
     [RelayCommand]

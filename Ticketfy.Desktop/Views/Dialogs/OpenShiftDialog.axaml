@@ -34,7 +34,7 @@
 
                 <!-- Buttons -->
                 <Grid ColumnDefinitions="*,*">
-                    <Button Grid.Column="0" Command="{Binding CancelCommand}" Content="Cancelar" Margin="0,0,6,0" Padding="12" Height="44" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="{DynamicResource BgTertiaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <Button Grid.Column="0" Command="{Binding CancelCommand}" Content="Administrar sin turno" Margin="0,0,6,0" Padding="12" Height="44" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="{DynamicResource BgTertiaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Foreground="{DynamicResource TextPrimaryBrush}" />
                     <Button Grid.Column="1" Command="{Binding OpenShiftCommand}" Content="Iniciar Turno" Margin="6,0,0,0" Padding="12" Height="44" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Classes="primary-action" FontWeight="Bold" />
                 </Grid>
             </StackPanel>

@@ -139,11 +139,8 @@ public partial class ShiftCoordinatorViewModel : ObservableObject
             {
                 ShiftOpened?.Invoke();
             }
-            else
-            {
-                _sessionManager.SwitchCashier(null!);
-                LogoutRequested?.Invoke();
-            }
+            // An authenticated operator may enter permitted administrative modules without a shift.
+            // Every monetary service independently requires an owned open shift.
             tcs.TrySetResult(success);
         };
         ShowDialogRequested?.Invoke(openShiftVm);

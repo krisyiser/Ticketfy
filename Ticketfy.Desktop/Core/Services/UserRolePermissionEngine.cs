@@ -121,6 +121,7 @@ public class UserRolePermissionEngine : IUserRolePermissionEngine
         catch (Exception ex)
         {
             Log.Error(ex, "UserRolePermissionEngine: Error loading permissions for role {Role}", normRole);
+            throw new UnauthorizedAccessException("No se pudo verificar la política de permisos. La acción ha sido bloqueada.", ex);
         }
 
         return [];

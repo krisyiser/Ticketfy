@@ -13,7 +13,7 @@ if (-not $output.StartsWith($repoRoot + [IO.Path]::DirectorySeparatorChar, [Stri
 }
 
 if (Test-Path -LiteralPath $output) {
-    Remove-Item -LiteralPath $output -Recurse -Force
+    throw "El directorio de salida ya existe. Elija uno nuevo para conservar la evidencia: $output"
 }
 $publish = Join-Path $output "publish-win-x64"
 New-Item -ItemType Directory -Path $publish -Force | Out-Null
@@ -31,7 +31,7 @@ $publishArguments = @(
     "-p:PathMap=$repoRoot=/_/src"
 )
 if ($restoreArgument) { $publishArguments += $restoreArgument }
-& dotnet @publishArguments
+& dotnet @publishArguments | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish falló con código $LASTEXITCODE." }
 
 [xml]$projectXml = Get-Content -LiteralPath $project
@@ -40,11 +40,20 @@ if ([string]::IsNullOrWhiteSpace($version)) { throw "El proyecto no define Versi
 $commit = (& git -C $repoRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw "No se pudo determinar el commit del paquete." }
 $sourceState = if (& git -C $repoRoot status --porcelain) { "dirty" } else { "clean" }
+$sdkVersion = (& dotnet --version).Trim()
+if ($LASTEXITCODE -ne 0) { throw "No se pudo determinar el SDK del paquete." }
+$targetFramework = [string]($projectXml.Project.PropertyGroup | Where-Object { $_.TargetFramework } | Select-Object -First 1).TargetFramework
+$runtimeConfig = Get-Content (Join-Path $publish "Ticketfy.Desktop.runtimeconfig.json") -Raw | ConvertFrom-Json
+$runtimeVersion = ($runtimeConfig.runtimeOptions.includedFrameworks | Where-Object name -eq "Microsoft.NETCore.App").version
+if ([string]::IsNullOrWhiteSpace($runtimeVersion)) { throw "El paquete debe incluir el runtime .NET." }
 
 $manifest = [ordered]@{
     product = "Ticketfy.Desktop"
     version = $version
     runtime = "win-x64"
+    target_framework = $targetFramework
+    sdk = $sdkVersion
+    runtime_version = $runtimeVersion
     commit = $commit
     source_state = $sourceState
     signed = $false

@@ -23,9 +23,14 @@ public partial class CheckoutDialogViewModel : ObservableObject
     private readonly IPrintDispatcherService _printDispatcher;
     private readonly IPaymentTerminalService _terminalService;
     private readonly IGiftcardService? _giftcardService;
+    private readonly Ticketfy.Services.Implementations.CommercialReconciliationService? _reconciliation;
+    [ObservableProperty] private string _bankReference = string.Empty;
+    [ObservableProperty] private bool _bankPaymentVerified;
+    public bool IsBankTransfer => PaymentMethod is "Transferencia SPEI" or "CoDi / QR";
     private readonly List<CartItemDto> _cartItems = [];
     private readonly Func<Task>? _onSuccessCallback;
     private string _checkoutOperationId = Guid.NewGuid().ToString("N");
+    private bool _committed;
 
     [ObservableProperty] private bool _isWaitingForTerminal;
     [ObservableProperty] private string _terminalStatusMessage = string.Empty;
@@ -35,7 +40,7 @@ public partial class CheckoutDialogViewModel : ObservableObject
 
     public decimal TotalApplied => AppliedTenders.Sum(t => t.AmountPaid);
     public decimal RemainingBalance => Math.Max(0m, TotalToPay - TotalApplied);
-    public bool IsFullyPaid => (TotalApplied >= TotalToPay || ReceivedAmount >= TotalToPay) && TotalToPay > 0;
+    public bool IsFullyPaid => TotalApplied + ReceivedAmount >= TotalToPay && TotalToPay >= 0;
 
     [ObservableProperty] private decimal _totalToPay;
     [ObservableProperty] private decimal _receivedAmount;
@@ -76,7 +81,7 @@ public partial class CheckoutDialogViewModel : ObservableObject
 
     private bool CanConfirmPayment()
     {
-        if (IsProcessing) return false;
+        if (IsProcessing || _committed) return false;
 
         if (PaymentMethod == "Mixto")
         {
@@ -108,7 +113,7 @@ public partial class CheckoutDialogViewModel : ObservableObject
             {
                 return "Monto Inválido";
             }
-            decimal effectivePaid = Math.Max(ReceivedAmount, TotalApplied);
+            decimal effectivePaid = ReceivedAmount + TotalApplied;
             return effectivePaid < TotalToPay
                 ? $"Faltante: ${(TotalToPay - effectivePaid):N2}"
                 : $"Cambio: ${(effectivePaid - TotalToPay):N2}";
@@ -184,9 +189,11 @@ public partial class CheckoutDialogViewModel : ObservableObject
         decimal total,
         Func<Task>? onSuccessCallback = null,
         IGiftcardService? giftcardService = null,
-        CustomerDto? preselectedCustomer = null)
+        CustomerDto? preselectedCustomer = null,
+        Ticketfy.Services.Implementations.CommercialReconciliationService? reconciliation = null)
     {
         _saleService = saleService;
+        _reconciliation = reconciliation;
         _customerService = customerService;
         _printDispatcher = printDispatcher;
         _terminalService = terminalService;
@@ -231,6 +238,8 @@ public partial class CheckoutDialogViewModel : ObservableObject
 
     partial void OnSelectedCustomerChanged(CustomerDto? value)
     {
+        AppliedTenders.Clear();
+        NotifyTenderChanges();
         if (value != null)
         {
             CustomerPointsBalance = value.PuntosSaldo;
@@ -242,6 +251,7 @@ public partial class CheckoutDialogViewModel : ObservableObject
         }
         else
         {
+            CustomerPointsBalance = 0;
             CustomerCreditLimit = 0m;
             CustomerCurrentDebt = 0m;
         }

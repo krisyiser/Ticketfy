@@ -11,6 +11,11 @@ namespace Ticketfy.Data.Entities;
 [Table("sales")]
 public class SaleEntity
 {
+    public string? ShiftId { get; set; }
+    public string? RegisterId { get; set; }
+    public string? CashierUserId { get; set; }
+    public string? CashierName { get; set; }
+    public int LedgerVersion { get; set; }
     [Key]
     [Column("id")]
     public string Id { get; set; } = string.Empty;

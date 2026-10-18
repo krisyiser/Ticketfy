@@ -13,18 +13,18 @@ namespace Ticketfy.Services.Implementations;
 
 public class ItemKitService : IItemKitService
 {
-    private readonly AppDbContext _db;
+    private readonly IDbContextFactory<AppDbContext> _factory;
+    private readonly CommercialOperationContext? _operations;
 
-    public ItemKitService(AppDbContext db)
-    {
-        _db = db;
-    }
+    public ItemKitService(AppDbContext db, CommercialOperationContext? operations = null)
+    { _factory = new AppDbContextFactoryImpl<AppDbContext>(db.Options); _operations = operations; }
 
     public async Task<List<ItemKitDto>> GetAllAsync()
     {
+        await using var _db = await _factory.CreateDbContextAsync();
         try
         {
-            var kits = await _db.ItemKits.ToListAsync();
+            var kits = await _db.ItemKits.Where(k => _db.Products.Any(p => p.Id == k.ParentProductId && p.IsActive)).ToListAsync();
             var allKitItems = await _db.ItemKitItems.ToListAsync();
             var products = await _db.Products.ToDictionaryAsync(p => p.Id, p => p.Name);
 
@@ -55,11 +55,12 @@ public class ItemKitService : IItemKitService
 
     public async Task<ItemKitDto?> GetByBarcodeAsync(string barcode)
     {
+        await using var _db = await _factory.CreateDbContextAsync();
         if (string.IsNullOrWhiteSpace(barcode)) return null;
         try
         {
             var kit = await _db.ItemKits.FirstOrDefaultAsync(k => k.KitBarcode == barcode.Trim());
-            if (kit == null) return null;
+            if (kit == null || !await _db.Products.AnyAsync(p => p.Id == kit.ParentProductId && p.IsActive)) return null;
 
             var kitItems = await _db.ItemKitItems.Where(ki => ki.ItemKitId == kit.Id).ToListAsync();
             var products = await _db.Products.ToDictionaryAsync(p => p.Id, p => p.Name);
@@ -85,6 +86,13 @@ public class ItemKitService : IItemKitService
 
     public async Task<bool> SaveAsync(string id, string barcode, string name, decimal price, string description, List<ItemKitItemDto> items)
     {
+        await using var _db = await _factory.CreateDbContextAsync();
+        var actor = await (_operations ?? throw new UnauthorizedAccessException("Sesión requerida."))
+            .RequireAsync(_db, Ticketfy.Core.Security.PermissionCatalog.InventoryCreate);
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(barcode) || price < 0 || items.Count == 0
+            || items.Any(i => i.Quantity <= 0 || !double.IsFinite(i.Quantity) || Math.Round(i.Quantity, 3) != i.Quantity || i.ProductId == id))
+            throw new InvalidOperationException("El combo requiere nombre, código, precio y componentes válidos.");
+        await using var tx = await _db.Database.BeginTransactionAsync();
         try
         {
             var cleanBarcode = string.IsNullOrWhiteSpace(barcode) ? $"750{Random.Shared.Next(100000000, 999999999)}" : barcode.Trim();
@@ -94,6 +102,7 @@ public class ItemKitService : IItemKitService
 
             // 1. Sync ProductEntity so it appears in POS Catalog under category "Promociones"
             var product = await _db.Products.FirstOrDefaultAsync(p => (!string.IsNullOrEmpty(id) && p.Id == id) || (p.Barcode != null && p.Barcode == cleanBarcode));
+            if (product is not null && !product.IsKit) throw new InvalidOperationException("El código pertenece a un producto individual.");
             var targetId = product?.Id ?? (string.IsNullOrWhiteSpace(id) ? Guid.NewGuid().ToString() : id);
 
             if (product == null)
@@ -107,7 +116,7 @@ public class ItemKitService : IItemKitService
                     Cost = 0m,
                     Category = "Promociones",
                     Unit = "Pza",
-                    Stock = 9999.0,
+                    Stock = 0,
                     MinStock = 1.0,
                     IsKit = true,
                     CreatedAt = DateTime.Now.ToString("s")
@@ -116,11 +125,13 @@ public class ItemKitService : IItemKitService
             }
             else
             {
+                await _operations.RequireAsync(_db, Ticketfy.Core.Security.PermissionCatalog.InventoryEdit);
                 product.Barcode = cleanBarcode;
                 product.Name = cleanName;
                 product.Price = price;
                 product.Category = "Promociones";
                 product.IsKit = true;
+                product.StockVersion++;
                 _db.Products.Update(product);
             }
 
@@ -169,34 +180,16 @@ public class ItemKitService : IItemKitService
                 }
             }
 
-            // 3. Sync PromotionEntity for unified Promotions module tracking
-            var promo = await _db.Promotions.FirstOrDefaultAsync(p => p.Id == targetId || p.TargetProductId == targetId);
-            if (promo == null)
+            foreach (var component in items ?? throw new InvalidOperationException("El kit requiere componentes."))
             {
-                _db.Promotions.Add(new PromotionEntity
-                {
-                    Id = targetId,
-                    Name = cleanName,
-                    Type = "product",
-                    StrategyType = Ticketfy.Core.Enums.PromotionType.FixedAmountDiscount,
-                    TargetProductId = targetId,
-                    DiscountType = "fixed",
-                    DiscountValue = price,
-                    IsActive = 1,
-                    StartDate = DateTime.Now.AddDays(-1).ToString("s"),
-                    EndDate = DateTime.Now.AddYears(5).ToString("s")
-                });
+                if (!await _db.Products.AnyAsync(p => p.Id == component.ProductId && p.IsActive))
+                    throw new InvalidOperationException("Componente inexistente o inactivo.");
+                if (await ReachesAsync(_db, component.ProductId, targetId, new HashSet<string>()))
+                    throw new InvalidOperationException("El combo produciría un ciclo de componentes.");
             }
-            else
-            {
-                promo.Name = cleanName;
-                promo.DiscountValue = price;
-                promo.IsActive = 1;
-                promo.TargetProductId = targetId;
-                _db.Promotions.Update(promo);
-            }
-
+            CommercialLedger.Journal(_db, actor, Guid.NewGuid().ToString("N"), "KIT_SAVED", targetId, 0, "Composición de combo");
             await _db.SaveChangesAsync();
+            await tx.CommitAsync();
             Log.Information("Saved ItemKit {Name} ({Barcode}) with {Count} items as Product in 'Promociones'", cleanName, cleanBarcode, items?.Count ?? 0);
             return true;
         }
@@ -211,55 +204,27 @@ public class ItemKitService : IItemKitService
 
     public async Task<bool> DeleteAsync(string id)
     {
-        try
-        {
-            var kit = await _db.ItemKits.FirstOrDefaultAsync(k => k.Id == id || k.ParentProductId == id);
-            if (kit != null)
-            {
-                var items = await _db.ItemKitItems.Where(ki => ki.ItemKitId == kit.Id).ToListAsync();
-                _db.ItemKitItems.RemoveRange(items);
-                _db.ItemKits.Remove(kit);
-            }
-
-            var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == id);
-            if (product != null) _db.Products.Remove(product);
-
-            var promo = await _db.Promotions.FirstOrDefaultAsync(p => p.Id == id || p.TargetProductId == id);
-            if (promo != null) _db.Promotions.Remove(promo);
-
-            await _db.SaveChangesAsync();
-            Log.Information("Deleted ItemKit and linked Product/Promotion {Id}", id);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error deleting ItemKit {Id}", id);
-            return false;
-        }
+        await using var db = await _factory.CreateDbContextAsync();
+        var actor = await (_operations ?? throw new UnauthorizedAccessException("Sesión requerida."))
+            .RequireAsync(db, Ticketfy.Core.Security.PermissionCatalog.InventoryDelete);
+        var product = await db.Products.SingleOrDefaultAsync(p => p.Id == id && p.IsKit);
+        if (product is null) return false;
+        product.IsActive = false;
+        CommercialLedger.Journal(db, actor, Guid.NewGuid().ToString("N"), "KIT_INACTIVATED", id, 0, "Baja lógica de combo");
+        await db.SaveChangesAsync();
+        return true;
     }
+    public Task<bool> DeductKitStockAsync(string kitId, double kitQuantity) =>
+        throw new InvalidOperationException("El inventario de combos se descuenta únicamente dentro de una venta.");
 
-    public async Task<bool> DeductKitStockAsync(string kitId, double kitQuantity)
+    private static async Task<bool> ReachesAsync(AppDbContext db, string current, string target, HashSet<string> visited)
     {
-        try
-        {
-            var kitItems = await _db.ItemKitItems.Where(ki => ki.ItemKitId == kitId).ToListAsync();
-            foreach (var item in kitItems)
-            {
-                var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == item.ProductId);
-                if (product != null)
-                {
-                    double totalDeduction = item.Quantity * kitQuantity;
-                    product.Stock = Math.Max(0, product.Stock - totalDeduction);
-                    Log.Information("Deducted {Qty} of Product {Name} for Kit Sale", totalDeduction, product.Name);
-                }
-            }
-            await _db.SaveChangesAsync();
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error deducting stock for ItemKit {KitId}", kitId);
-            return false;
-        }
+        if (current == target) return true;
+        if (!visited.Add(current)) return false;
+        var kit = await db.ItemKits.AsNoTracking().SingleOrDefaultAsync(k => k.ParentProductId == current || k.Id == current);
+        if (kit is null) return false;
+        foreach (var item in await db.ItemKitItems.AsNoTracking().Where(i => i.ItemKitId == kit.Id).ToListAsync())
+            if (await ReachesAsync(db, item.ProductId, target, visited)) return true;
+        return false;
     }
 }

@@ -20,6 +20,8 @@ public partial class PromotionsViewModel : ObservableObject
     [ObservableProperty] private bool _isFeedbackError = false;
 
     public event Action? OpenCreateItemKitRequested;
+    public event Action? OpenCreatePromotionRequested;
+    public event Action<PromotionDto>? OpenEditPromotionRequested;
 
     public PromotionsViewModel(IPromotionService promotionService, IItemKitService? kitService = null)
     {
@@ -35,28 +37,6 @@ public partial class PromotionsViewModel : ObservableObject
             var items = await _promotionService.GetAllAsync();
             var promosList = items.ToList();
 
-            if (_kitService != null)
-            {
-                var kits = await _kitService.GetAllAsync();
-                foreach (var k in kits)
-                {
-                    if (!promosList.Any(p => p.Id == k.Id))
-                    {
-                        promosList.Add(new PromotionDto(
-                            k.Id,
-                            $"{k.Name} (Combo)",
-                            k.Price,
-                            true,
-                            Ticketfy.Core.Enums.PromotionType.FixedAmountDiscount,
-                            k.Id,
-                            "Promociones",
-                            1.0,
-                            0.0
-                        ));
-                    }
-                }
-            }
-
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 Promotions.Clear();
@@ -70,7 +50,10 @@ public partial class PromotionsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void OpenAddPromotionDialog() => OpenCreateItemKitRequested?.Invoke();
+    private void OpenAddPromotionDialog() => OpenCreatePromotionRequested?.Invoke();
+
+    [RelayCommand]
+    private void EditPromotion(PromotionDto promotion) => OpenEditPromotionRequested?.Invoke(promotion);
 
     [RelayCommand]
     private void OpenCreateItemKitDialog() => OpenCreateItemKitRequested?.Invoke();
@@ -89,6 +72,7 @@ public partial class PromotionsViewModel : ObservableObject
         catch (Exception ex)
         {
             Log.Error(ex, "Error toggling promotion status");
+            IsFeedbackError = true; FeedbackMessage = ex.Message;
         }
     }
 
@@ -98,18 +82,15 @@ public partial class PromotionsViewModel : ObservableObject
         if (promo == null) return;
         try
         {
-            if (_kitService != null)
-            {
-                await _kitService.DeleteAsync(promo.Id);
-            }
             await _promotionService.DeleteAsync(promo.Id);
             Promotions.Remove(promo);
-            FeedbackMessage = "Combo / Promoción eliminado con éxito";
+            FeedbackMessage = "Promoción inactivada; se conserva el historial";
             await LoadPromotionsAsync();
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error deleting promotion");
+            IsFeedbackError = true; FeedbackMessage = ex.Message;
         }
     }
 }

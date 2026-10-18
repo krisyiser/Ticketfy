@@ -1,113 +1,87 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using System.Collections.ObjectModel;
 using Ticketfy.Data.Dtos;
 using Ticketfy.Services.Interfaces;
 using Ticketfy.Core.Enums;
-using Serilog;
-using System;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace Ticketfy.ViewModels.Dialogs;
 
 public partial class PromotionDialogViewModel : ObservableObject
 {
-    private readonly IPromotionService _promotionService;
-
-    [ObservableProperty]
-    private string _name = string.Empty;
-
-    [ObservableProperty]
-    private int _selectedTypeIndex = 0; // 0: Porcentaje (%), 1: Monto Fijo ($), 2: 2x1 Especial
-
-    [ObservableProperty]
-    private string _discountValueText = string.Empty;
-
-    [ObservableProperty]
-    private bool _isActive = true;
-
-    [ObservableProperty]
-    private string _errorMessage = string.Empty;
-
+    private readonly IPromotionService _service;
+    private readonly string _id = Guid.NewGuid().ToString("N");
+    private bool _saving;
+    private bool _saved;
+    [ObservableProperty] private string _name = "";
+    [ObservableProperty] private int _selectedTypeIndex;
+    [ObservableProperty] private string _discountValueText = "";
+    [ObservableProperty] private bool _isActive = true;
+    [ObservableProperty] private string _errorMessage = "";
+    [ObservableProperty] private ProductDto? _selectedProduct;
+    [ObservableProperty] private string _targetCategory = "";
+    [ObservableProperty] private bool _allProducts;
+    [ObservableProperty] private string _startDateText = DateTime.Today.ToString("yyyy-MM-dd");
+    [ObservableProperty] private string _endDateText = DateTime.Today.AddMonths(1).ToString("yyyy-MM-dd");
+    [ObservableProperty] private int _priority;
+    [ObservableProperty] private decimal _minimumQuantity = 1m;
+    [ObservableProperty] private decimal _freeQuantity = 1m;
+    public string Title => _initial is null ? "Nueva promoción" : "Editar promoción";
+    private readonly PromotionDto? _initial;
+    public ObservableCollection<ProductDto> Products { get; } = [];
     public event Action? RequestClose;
-
-    public PromotionDialogViewModel(IPromotionService promotionService)
+    public PromotionDialogViewModel(IPromotionService service, IProductService? products = null, PromotionDto? initial = null)
     {
-        _promotionService = promotionService;
+        _service = service;
+        _initial = initial;
+        if (initial is not null)
+        {
+            _id = initial.Id; Name = initial.Name; SelectedTypeIndex = (int)initial.StrategyType;
+            DiscountValueText = initial.DiscountValue.ToString(System.Globalization.CultureInfo.CurrentCulture);
+            IsActive = initial.IsActive; TargetCategory = initial.TargetCategory ?? "";
+            AllProducts = string.IsNullOrWhiteSpace(initial.TargetProductId) && string.IsNullOrWhiteSpace(TargetCategory);
+            StartDateText = (initial.StartDate ?? DateTime.Today).ToString("yyyy-MM-dd");
+            EndDateText = (initial.EndDate ?? DateTime.Today.AddMonths(1)).ToString("yyyy-MM-dd");
+            Priority = initial.Priority; MinimumQuantity = (decimal)initial.MinQuantity; FreeQuantity = (decimal)initial.FreeQuantity;
+        }
+        if (products is not null) _ = LoadAsync(products);
     }
-
-    [RelayCommand]
-    private void Cancel()
-    {
-        RequestClose?.Invoke();
-    }
-
-    [RelayCommand]
-    private async Task SaveAsync()
+    private async Task LoadAsync(IProductService products)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(Name))
-            {
-                ErrorMessage = "El nombre de la promoción u oferta es obligatorio.";
-                return;
-            }
-
-            // Sanitize discount numeric input
-            string rawDiscount = new string((DiscountValueText ?? string.Empty).Where(c => char.IsDigit(c) || c == '.').ToArray());
-
-            if (SelectedTypeIndex == 2) // 2x1 Especial
-            {
-                var dto2x1 = new PromotionDto(
-                    Guid.NewGuid().ToString(),
-                    Name.Trim(),
-                    0m,
-                    IsActive,
-                    PromotionType.BuyNGetM,
-                    null,
-                    "",
-                    2.0, // MinQuantity = 2
-                    1.0  // FreeQuantity = 1
-                );
-                await _promotionService.SaveAsync(dto2x1);
-                RequestClose?.Invoke();
-                return;
-            }
-
-            if (string.IsNullOrWhiteSpace(rawDiscount) || !decimal.TryParse(rawDiscount, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out decimal parsedVal) || parsedVal <= 0)
-            {
-                ErrorMessage = "El valor del descuento es obligatorio y debe ser un número válido mayor a 0.";
-                return;
-            }
-
-            PromotionType strategy = SelectedTypeIndex == 0 ? PromotionType.PercentageDiscount : PromotionType.FixedAmountDiscount;
-
-            if (strategy == PromotionType.PercentageDiscount && parsedVal > 100)
-            {
-                ErrorMessage = "El descuento en porcentaje no puede ser mayor al 100%.";
-                return;
-            }
-
-            ErrorMessage = string.Empty;
-            var dto = new PromotionDto(
-                Guid.NewGuid().ToString(),
-                Name.Trim(),
-                parsedVal,
-                IsActive,
-                strategy,
-                null,
-                "",
-                1.0,
-                0.0
-            );
-
-            await _promotionService.SaveAsync(dto);
-            RequestClose?.Invoke();
+            foreach (var p in await products.GetAllAsync()) Products.Add(p);
+            if (_initial?.TargetProductId is not null) SelectedProduct = Products.FirstOrDefault(p => p.Id == _initial.TargetProductId);
         }
-        catch (Exception ex)
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+    }
+    [RelayCommand] private void Cancel() => RequestClose?.Invoke();
+    [RelayCommand]
+    private async Task SaveAsync()
+    {
+        if (_saving || _saved) return;
+        _saving = true;
+        try
         {
-            Log.Error(ex, "Error saving promotion");
-            ErrorMessage = "Error interno al guardar la promoción. Verifique los datos ingresados.";
+            if (!AllProducts && SelectedProduct is null && string.IsNullOrWhiteSpace(TargetCategory))
+                throw new InvalidOperationException("Seleccione un producto, una categoría o Todos los productos.");
+            if (!DateTime.TryParseExact(StartDateText, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var start)
+                || !DateTime.TryParseExact(EndDateText, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var end) || end < start)
+                throw new InvalidOperationException("Revise la vigencia.");
+            decimal value = 0m;
+            if (SelectedTypeIndex != 2 && (!decimal.TryParse(DiscountValueText, out value) || value <= 0))
+                throw new InvalidOperationException("Indique un descuento positivo.");
+            if (SelectedTypeIndex is < 0 or > 4 || MinimumQuantity <= 0 || (SelectedTypeIndex == 2 && FreeQuantity <= 0))
+                throw new InvalidOperationException("Revise el tipo y las cantidades de la regla.");
+            var type = (PromotionType)SelectedTypeIndex;
+            var dto = new PromotionDto(_id, Name, value, IsActive, type,
+                AllProducts ? null : SelectedProduct?.Id, AllProducts ? "" : TargetCategory.Trim(),
+                MinQuantity: (double)MinimumQuantity, FreeQuantity: SelectedTypeIndex == 2 ? (double)FreeQuantity : 0,
+                StartDate: start.Date, EndDate: end.Date.AddDays(1).AddTicks(-1), Priority: Priority);
+            await _service.SaveAsync(dto);
+            _saved = true; RequestClose?.Invoke();
         }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { _saving = false; }
     }
 }

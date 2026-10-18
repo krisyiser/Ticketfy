@@ -11,3 +11,23 @@
 
 Escalar P1 por duplicado, cobro autorizado sin venta o diario incoherente; P2 por una
 diferencia explicable pendiente de autorización.
+
+## Causas que muestra Control
+
+En **Control → Conciliación**, consultar el día y revisar el texto de cada turno.
+La pantalla distingue turno abierto, conteo ausente, atribución desconocida,
+pagos/documentos incoherentes, movimientos de efectivo sin respaldo, saldo
+almacenado diferente, cobros/transferencias pendientes y evidencia de cierre
+incompleta. También muestra turnos con fecha inválida, sin atribuirlos al día
+seleccionado.
+
+Si el saldo almacenado difiere de la suma de movimientos, no registrar una entrada
+o retiro ficticio ni intentar cerrar para que el programa lo corrija. Conservar
+respaldo y diagnóstico, detener la caja afectada y escalar para determinar la
+causa. La reparación de datos dañados requiere un procedimiento autorizado;
+la consulta de conciliación no modifica registros.
+
+Una diferencia entre efectivo contado y esperado sí puede conservarse en un
+cierre válido: se registra como diferencia, no como un movimiento que la oculta.
+Ese turno seguirá requiriendo revisión. «CONCILIADO INTERNO» no sustituye el
+conteo físico, el estado del banco ni la revisión de existencias y cuentas.

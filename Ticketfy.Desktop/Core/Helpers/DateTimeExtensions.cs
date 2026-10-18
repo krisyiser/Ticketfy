@@ -65,7 +65,14 @@ public static class DateTimeExtensions
         }
 
         if (startDate.HasValue && localDt < startDate.Value) return false;
-        if (endDate.HasValue && localDt > endDate.Value) return false;
+        if (endDate.HasValue)
+        {
+            if (endDate.Value.TimeOfDay == TimeSpan.Zero)
+            {
+                if (localDt >= endDate.Value.Date.AddDays(1)) return false;
+            }
+            else if (localDt > endDate.Value) return false;
+        }
 
         return true;
     }

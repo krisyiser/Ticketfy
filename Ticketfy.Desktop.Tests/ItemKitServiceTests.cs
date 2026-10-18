@@ -25,8 +25,8 @@ public sealed class ItemKitServiceTests : IDisposable
 
         _context = new AppDbContext(options);
         _context.Database.EnsureCreated();
-        _service = new ItemKitService(_context);
-        _productService = new ProductService(_context);
+        _service = new ItemKitService(_context, CommercialTestSession.Create(_context));
+        _productService = new ProductService(_context, CommercialTestSession.Create(_context));
     }
 
     [Fact]

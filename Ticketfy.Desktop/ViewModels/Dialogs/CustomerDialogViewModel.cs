@@ -10,6 +10,10 @@ namespace Ticketfy.ViewModels.Dialogs;
 
 public partial class CustomerDialogViewModel : ObservableObject
 {
+    private readonly string _newId = Guid.NewGuid().ToString("N");
+    private bool _saving;
+    private bool _saved;
+    private double _existingPoints;
     private readonly ICustomerService _customerService;
 
     [ObservableProperty]
@@ -51,6 +55,7 @@ public partial class CustomerDialogViewModel : ObservableObject
 
     public void LoadForEdit(CustomerDto customer)
     {
+        _existingPoints = customer.PuntosSaldo;
         _editingCustomerId = customer.Id;
         Name = customer.Name;
         Phone = customer.Phone;
@@ -64,6 +69,8 @@ public partial class CustomerDialogViewModel : ObservableObject
     [RelayCommand]
     private async Task SaveAsync()
     {
+        if (_saving || _saved) return;
+        _saving = true;
         try
         {
             if (string.IsNullOrWhiteSpace(Name))
@@ -81,13 +88,14 @@ public partial class CustomerDialogViewModel : ObservableObject
             }
 
             var dto = new CustomerDto(
-                Id: _editingCustomerId ?? Guid.NewGuid().ToString(),
+                Id: _editingCustomerId ?? _newId,
                 Nombre: Name.Trim(),
                 Telefono: cleanPhone,
                 Email: Email.Trim(),
                 Rfc: Rfc.Trim(),
                 LimiteCredito: CreditLimit ?? 0,
                 Deuda: _existingDebt,
+                PuntosSaldo: _existingPoints,
                 CustomerCode: CustomerCode.Trim()
             );
 
@@ -99,6 +107,7 @@ public partial class CustomerDialogViewModel : ObservableObject
             {
                 await _customerService.AddAsync(dto);
             }
+            _saved = true;
             RequestClose?.Invoke();
         }
         catch (Exception ex)
@@ -106,5 +115,6 @@ public partial class CustomerDialogViewModel : ObservableObject
             Log.Error(ex, "Error saving customer");
             ErrorMessage = ex.Message;
         }
+        finally { _saving = false; }
     }
 }

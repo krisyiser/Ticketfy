@@ -20,7 +20,7 @@ public partial class HistoryViewModel : ObservableObject
 {
     private readonly ISaleService _saleService;
     private readonly IEscPosPrinterService _printerService;
-    private readonly Ticketfy.Data.AppDbContext _db;
+    private readonly IShiftService? _shiftService;
     private readonly ISettingsService? _settingsService;
 
     private const string CommissionKey = "HistoryCommissionPercentage";
@@ -68,11 +68,11 @@ public partial class HistoryViewModel : ObservableObject
     public event Action<SaleDto>? OpenReturnRequested;
     public event Action<string, Action<bool>>? OpenSupervisorPinRequested;
 
-    public HistoryViewModel(ISaleService saleService, IEscPosPrinterService printerService, Ticketfy.Data.AppDbContext db, ISettingsService? settingsService = null)
+    public HistoryViewModel(ISaleService saleService, IEscPosPrinterService printerService, Ticketfy.Data.AppDbContext db, ISettingsService? settingsService = null, IShiftService? shiftService = null)
     {
         _saleService = saleService;
         _printerService = printerService;
-        _db = db;
+        _shiftService = shiftService;
         _settingsService = settingsService;
 
         _saleService.SaleSaved += OnSaleSaved;
@@ -132,47 +132,8 @@ public partial class HistoryViewModel : ObservableObject
             DateTime queryEnd = EndDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.Today.AddDays(1).AddTicks(-1);
 
             var salesList = await _saleService.GetSalesByDateRangeAsync(queryStart, queryEnd);
-            if (salesList.Count == 0 && StartDate == DateTime.Today && EndDate == DateTime.Today)
-            {
-                salesList = await _saleService.GetHistoryAsync(500);
-            }
-
-            List<Ticketfy.Data.Entities.CashupEntity> cashupsQuery = [];
-            try
-            {
-                var allCashups = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(_db.Cashups);
-                cashupsQuery = allCashups
-                    .Where(c =>
-                    {
-                        if (TryParseCashupDate(c.Timestamp, out var dt))
-                        {
-                            return dt >= queryStart && dt <= queryEnd;
-                        }
-                        return true;
-                    })
-                    .OrderByDescending(c =>
-                    {
-                        TryParseCashupDate(c.Timestamp, out var dt);
-                        return dt;
-                    })
-                    .ToList();
-
-                if (cashupsQuery.Count == 0 && StartDate == DateTime.Today && EndDate == DateTime.Today)
-                {
-                    cashupsQuery = allCashups
-                        .OrderByDescending(c =>
-                        {
-                            TryParseCashupDate(c.Timestamp, out var dt);
-                            return dt;
-                        })
-                        .Take(500)
-                        .ToList();
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "Could not fetch cashups list in HistoryViewModel");
-            }
+            var cashupsQuery = _shiftService is null ? new List<Ticketfy.Data.Entities.CashupEntity>()
+                : await _shiftService.GetCashupsAsync(queryStart, queryEnd);
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
@@ -225,7 +186,8 @@ public partial class HistoryViewModel : ObservableObject
     private void CalculateHourlyReport(List<SaleDto> salesList)
     {
         HourlyReport.Clear();
-        var validSales = salesList.Where(s => !s.IsCancelled).ToList();
+        // Ticket issuance volume, not cash flow: compensations are reported separately in financial reports.
+        var validSales = salesList.ToList();
         TotalDayRevenue = validSales.Sum(s => s.Total);
 
         var groups = validSales
@@ -246,6 +208,8 @@ public partial class HistoryViewModel : ObservableObject
 
         decimal maxRev = 0m;
         int peakHour = -1;
+        PeakHourLabel = "Ninguna";
+        PeakHourRevenue = 0m;
 
         foreach (var g in groups)
         {
@@ -287,8 +251,8 @@ public partial class HistoryViewModel : ObservableObject
 
         try
         {
-            var success = await _printerService.PrintTicketAsync(sale, "COM1");
-            FeedbackMessage = success ? "¡Ticket enviado a la impresora térmica ESC/POS!" : "Error enviando a la impresora";
+            var success = await _printerService.PrintTicketAsync(sale);
+            FeedbackMessage = success ? "Ticket enviado al controlador; compruebe la salida física." : "Envío no confirmado. Revise la impresora antes de reintentar.";
         }
         catch (Exception ex)
         {
@@ -393,13 +357,13 @@ public partial class HistoryViewModel : ObservableObject
             {
                 Folio = $"CORTE-{cashup.Id.Substring(0, Math.Min(8, cashup.Id.Length)).ToUpper()}",
                 Timestamp = DateTime.TryParse(cashup.Timestamp, out var dt) ? dt : DateTime.Now,
-                CashierName = "CAJERO / SUPERVISOR",
+                CashierName = cashup.CashierName,
                 MovementTypeLabel = "REPORTE DE CORTE DE CAJA Y TURNO",
-                Description = $"Fondo Inicial: ${cashup.OpenCashAmount:N2}\nVentas: ${cashup.TotalSales:N2}\nTotal Físico: ${cashup.ClosedCashAmount:N2}\nDiferencia: ${cashup.Difference:N2}\nNotas: {cashup.Notes}",
+                Description = $"Fondo Inicial: ${cashup.OpenCashAmount:N2}\nVentas en efectivo: {cashup.TotalSales?.ToString("C2") ?? "Sin desglose histórico"}\nEgresos de efectivo: {cashup.TotalExpenses?.ToString("C2") ?? "Sin desglose histórico"}\nTotal Físico: ${cashup.ClosedCashAmount:N2}\nDiferencia: ${cashup.Difference:N2}\nNotas: {cashup.Notes}",
                 Amount = cashup.ClosedCashAmount
             };
-            await _printerService.PrintNonSaleCashMovementSlipAsync(slipModel, "ImpresoraTickets");
-            FeedbackMessage = "Reporte de corte enviado a impresora.";
+            bool sent = await _printerService.PrintNonSaleCashMovementSlipAsync(slipModel);
+            FeedbackMessage = sent ? "Reporte enviado al controlador; compruebe el papel." : "No se confirmó el envío del corte; revise la impresora.";
         }
         catch (Exception ex)
         {

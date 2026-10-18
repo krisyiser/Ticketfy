@@ -1,18 +1,20 @@
 # Ticketfy Desktop POS
 
-Current operations status: [Stage 5 — Operations and support](docs/STAGE_5_OPERATIONS_SUPPORT.md).
+Current status: [Stage 6 internal beta and commercial readiness](docs/PRODUCT_READINESS.md).
 
-Ticketfy is a high-performance, industrial-grade Point of Sale (POS) and ERP system built on **Protocol Valcore v4.0**.
+Ticketfy is a desktop Point of Sale (POS) in development, with local encrypted storage and an automated commercial regression suite.
 
 ![Valcore Badge](https://img.shields.io/badge/Architecture-Valcore_v4.0-blue?style=flat-square)
 ![Avalonia UI](https://img.shields.io/badge/UI-Avalonia-purple?style=flat-square)
-![.NET 9](https://img.shields.io/badge/Runtime-.NET_9-512BD4?style=flat-square)
+![.NET 10 LTS](https://img.shields.io/badge/Runtime-.NET_10_LTS-512BD4?style=flat-square)
 
 ## Overview
 Ticketfy is designed to provide zero-network local resilience, utilizing an offline-first encrypted SQLite database and direct hardware integration for high-speed retail checkout operations. It strictly enforces the MVVM pattern via `CommunityToolkit.Mvvm` and features an ultra-dense, keyboard-first industrial user interface.
 
 ## Documentation
 Please refer to the `docs/` folder for comprehensive architectural guidelines:
+
+- [.NET 10 migration and validation](docs/NET10_MIGRATION.md)
 - [Architecture & Structure](docs/ARCHITECTURE.md)
 - [Development Guide & Mandates](docs/DEVELOPMENT_GUIDE.md)
 - [Security & Release Operations](docs/SECURITY_AND_RELEASES.md)
@@ -29,12 +31,15 @@ Please refer to the `docs/` folder for comprehensive architectural guidelines:
 - [Windows and Hardware Compatibility](docs/WINDOWS_HARDWARE_COMPATIBILITY.md)
 
 ## Requirements
-- .NET 9.0 SDK
+
+- .NET SDK 10.0.402 (pinned in `global.json`), PowerShell 7 for `eng/` scripts
 - Windows 10/11 (for full hardware POS compatibility)
 
 ## Build Instructions
 For development:
+
 ```bash
+dotnet tool restore
 dotnet build Ticketfy.Desktop
 ```
 

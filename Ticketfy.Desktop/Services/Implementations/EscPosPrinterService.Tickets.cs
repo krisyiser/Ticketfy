@@ -13,7 +13,7 @@ namespace Ticketfy.Services.Implementations;
 /// </summary>
 public partial class EscPosPrinterService
 {
-    public Task<bool> PrintTicketAsync(SaleDto sale, string printerPortOrName = "COM1")
+    public Task<bool> PrintTicketAsync(SaleDto sale, string printerPortOrName = "")
     {
         try
         {
@@ -85,7 +85,7 @@ public partial class EscPosPrinterService
         }
     }
 
-    public Task<bool> PrintNonSaleCashMovementSlipAsync(ShiftMovementSlipModel model, string printerPortOrName = "COM1")
+    public Task<bool> PrintNonSaleCashMovementSlipAsync(ShiftMovementSlipModel model, string printerPortOrName = "")
     {
         try
         {
@@ -131,7 +131,7 @@ public partial class EscPosPrinterService
         }
     }
 
-    public Task<bool> PrintTestPageAsync(string printerPortOrName = "COM1")
+    public Task<bool> PrintTestPageAsync(string printerPortOrName = "")
     {
         try
         {

@@ -15,42 +15,60 @@ namespace Ticketfy.Services.Implementations;
 public class SettingsService : ISettingsService
 {
     private const string AppSettingsJsonKey = "SystemGlobalAppSettings_V4";
-    private readonly AppDbContext _context;
+    private readonly IDbContextFactory<AppDbContext> _factory;
+    private readonly CommercialOperationContext? _operations;
 
-    public SettingsService(AppDbContext context)
-    {
-        _context = context;
-    }
+    public SettingsService(AppDbContext context, CommercialOperationContext? operations = null)
+        : this(new AppDbContextFactoryImpl<AppDbContext>(context.Options), operations) { }
+    public SettingsService(IDbContextFactory<AppDbContext> factory, CommercialOperationContext? operations = null)
+    { _factory = factory; _operations = operations; }
 
     public async Task<string?> GetAsync(string key)
     {
+        await using var _context = await _factory.CreateDbContextAsync();
         var setting = await _context.Settings.FindAsync(key);
         return setting?.Value;
     }
 
     public async Task SetAsync(string key, string value)
     {
-        var setting = await _context.Settings.FindAsync(key);
-        if (setting == null)
+        await using var _context = await _factory.CreateDbContextAsync();
+        string permission = key.StartsWith("RolePermissions_", StringComparison.Ordinal) || key == "CustomRolesList"
+            ? Ticketfy.Core.Security.PermissionCatalog.UsersRoles
+            : key.StartsWith("Tutorial.", StringComparison.Ordinal) ? Ticketfy.Core.Security.PermissionCatalog.PosCheckout
+            : Ticketfy.Core.Security.PermissionCatalog.SettingsBusiness;
+        var actor = await (_operations ?? throw new UnauthorizedAccessException("Sesión requerida para cambiar la configuración."))
+            .RequireAsync(_context, permission, false);
+        if ((key is "PaymentApiToken" or "FacturamaApiPassword" or "FacturamaApiUser") && value.Length > 0)
+            throw new InvalidOperationException("Las credenciales deben almacenarse en el almacén protegido de Windows.");
+        if (key.StartsWith("RolePermissions_", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(value))
         {
-            setting = new SettingEntity { Key = key, Value = value };
-            _context.Settings.Add(setting);
+            var policy = JsonSerializer.Deserialize<Dictionary<string, bool>>(value)
+                ?? throw new InvalidOperationException("Política inválida.");
+            if (policy.Keys.Any(k => !Ticketfy.Core.Security.PermissionCatalog.IsKnown(k))) throw new InvalidOperationException("La política contiene permisos desconocidos.");
         }
-        else
-        {
-            setting.Value = value;
-        }
+        await SetValueAsync(_context, key, value);
+        CommercialLedger.Journal(_context, actor, Guid.NewGuid().ToString("N"), "SETTING_CHANGED", key, 0, "Cambio de configuración; valores omitidos por privacidad");
         await _context.SaveChangesAsync();
+    }
+
+    private static async Task SetValueAsync(AppDbContext db, string key, string value)
+    {
+        var setting = await db.Settings.FindAsync(key);
+        if (setting is null) db.Settings.Add(new SettingEntity { Key = key, Value = value });
+        else setting.Value = value;
     }
 
     public async Task<Dictionary<string, string>> GetAllAsync()
     {
+        await using var _context = await _factory.CreateDbContextAsync();
         var list = await _context.Settings.AsNoTracking().ToListAsync();
         return list.ToDictionary(s => s.Key, s => s.Value);
     }
 
     public async Task<AppSettings> GetAppSettingsAsync()
     {
+        await using var _context = await _factory.CreateDbContextAsync();
         AppSettings settings = new();
         try
         {
@@ -93,48 +111,30 @@ public class SettingsService : ISettingsService
 
     public async Task SaveAppSettingsAsync(AppSettings settings)
     {
-        if (settings == null) return;
-        try
+        ArgumentNullException.ThrowIfNull(settings);
+        await using var db = await _factory.CreateDbContextAsync();
+        await using var tx = await db.Database.BeginTransactionAsync();
+        var actor = await (_operations ?? throw new UnauthorizedAccessException("Sesión requerida."))
+            .RequireAsync(db, Ticketfy.Core.Security.PermissionCatalog.SettingsBusiness, false);
+        var values = new Dictionary<string, string>
         {
-            var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-            await SetAsync(AppSettingsJsonKey, json);
-
-            // Synchronize legacy and individual keys for 100% full integration
-            await SetAsync("CurrentTheme", settings.Visual.ThemeName);
-            await SetAsync("AccentColor", settings.Visual.PrimaryColor);
-            await SetAsync("AppFont", settings.Visual.FontFamily);
-            await SetAsync("SidebarPosition", settings.Visual.SidebarPosition);
-
-            if (!string.IsNullOrWhiteSpace(settings.Company.CommercialName))
-            {
-                await SetAsync("EmpresaNombreComercial", settings.Company.CommercialName);
-                await SetAsync("BusinessName", settings.Company.CommercialName);
-            }
-            if (!string.IsNullOrWhiteSpace(settings.Company.Email))
-            {
-                await SetAsync("EmpresaEmailContacto", settings.Company.Email);
-                await SetAsync("BusinessEmail", settings.Company.Email);
-            }
-            if (!string.IsNullOrWhiteSpace(settings.Company.Phone))
-            {
-                await SetAsync("EmpresaTelefonoFijo", settings.Company.Phone);
-                await SetAsync("BusinessPhone", settings.Company.Phone);
-            }
-            if (!string.IsNullOrWhiteSpace(settings.Company.Address))
-            {
-                await SetAsync("EmpresaCalleYNumero", settings.Company.Address);
-                await SetAsync("BusinessAddress", settings.Company.Address);
-            }
-            if (!string.IsNullOrWhiteSpace(settings.Company.Rfc))
-            {
-                await SetAsync("EmpresaRfc", settings.Company.Rfc);
-            }
-
-            Log.Information("AppSettings saved atomically to local SQLite storage");
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Failed serializing and saving AppSettings");
-        }
+            [AppSettingsJsonKey] = JsonSerializer.Serialize(settings),
+            ["CurrentTheme"] = settings.Visual.ThemeName,
+            ["AccentColor"] = settings.Visual.PrimaryColor,
+            ["AppFont"] = settings.Visual.FontFamily,
+            ["SidebarPosition"] = settings.Visual.SidebarPosition,
+            ["EmpresaNombreComercial"] = settings.Company.CommercialName,
+            ["BusinessName"] = settings.Company.CommercialName,
+            ["EmpresaEmailContacto"] = settings.Company.Email,
+            ["BusinessEmail"] = settings.Company.Email,
+            ["EmpresaTelefonoFijo"] = settings.Company.Phone,
+            ["BusinessPhone"] = settings.Company.Phone,
+            ["EmpresaCalleYNumero"] = settings.Company.Address,
+            ["BusinessAddress"] = settings.Company.Address,
+            ["EmpresaRfc"] = settings.Company.Rfc
+        };
+        foreach (var pair in values) await SetValueAsync(db, pair.Key, pair.Value ?? "");
+        CommercialLedger.Journal(db, actor, Guid.NewGuid().ToString("N"), "APP_SETTINGS_UPDATED", AppSettingsJsonKey, 0, "Configuración actualizada atómicamente");
+        await db.SaveChangesAsync(); await tx.CommitAsync();
     }
 }

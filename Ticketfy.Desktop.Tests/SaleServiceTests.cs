@@ -59,10 +59,11 @@ public sealed class SaleServiceTests : IDisposable
     private readonly TestDbContextFactory _factory;
     private readonly SaleService _saleService;
     private readonly SpyAuditService _auditSpy;
+    private readonly Ticketfy.Services.CommercialOperationContext _actor;
 
     private AppDbContext CreateContext() => new AppDbContext(_options);
-    private ProductService ProductService => new ProductService(CreateContext());
-    private CustomerService CustomerService => new CustomerService(CreateContext());
+    private ProductService ProductService => new ProductService(CreateContext(), _actor);
+    private CustomerService CustomerService => new CustomerService(CreateContext(), operations: _actor);
 
     public SaleServiceTests()
     {
@@ -78,10 +79,11 @@ public sealed class SaleServiceTests : IDisposable
             initCtx.Database.EnsureCreated();
         }
 
+        _actor = CommercialTestSession.Create(_options);
         _auditSpy = new SpyAuditService();
         _factory = new TestDbContextFactory(_options);
 
-        _saleService = new SaleService(_factory, new CoOccurrenceQueue(), _auditSpy);
+        _saleService = new SaleService(_factory, new CoOccurrenceQueue(), _auditSpy, _actor);
     }
 
     [Fact]
@@ -263,15 +265,17 @@ public sealed class SaleServiceTests : IDisposable
         Assert.Equal(9.0, ing2AfterSale!.Stock);
 
         // 3. Process return of 1x Combo using savedSale.Id
-        var success = await _saleService.ProcessPartialReturnAsync(savedSale.Id, "KIT-01", 1.0, "Devolucion", "Efectivo");
+        var success = await _saleService.ProcessPartialReturnAsync(savedSale.Id, "KIT-01", 1.0, "Devolucion", "Efectivo", operationId: "RETURN-KIT");
         Assert.True(success);
 
-        // 4. Verify parent SKU is still 0 stock, ingredient 1 has 10 stock, ingredient 2 has 10 stock
+        // Catalog exposes kit availability (5), while physical parent stock remains zero.
         var parent = await ProductService.GetByIdAsync("KIT-01");
         var restoredIng1 = await ProductService.GetByIdAsync("ING-01");
         var restoredIng2 = await ProductService.GetByIdAsync("ING-02");
 
-        Assert.Equal(0.0, parent!.Stock);
+        Assert.Equal(5.0, parent!.Stock);
+        using var verifyKit = new AppDbContext(_options);
+        Assert.Equal(0.0, (await verifyKit.Products.SingleAsync(p => p.Id == "KIT-01")).Stock);
         Assert.Equal(10.0, restoredIng1!.Stock);
         Assert.Equal(10.0, restoredIng2!.Stock);
     }
@@ -306,7 +310,7 @@ public sealed class SaleServiceTests : IDisposable
             SerieFolio: null
         );
 
-        var savedSale = await _saleService.SaveAsync(saleDto);
+        var savedSale = await _saleService.SaveAsync(saleDto with { GlobalDiscountAmount = 30m });
         Assert.NotNull(savedSale);
 
         var savedItems = savedSale.Items;
@@ -352,19 +356,19 @@ public sealed class SaleServiceTests : IDisposable
 
         var savedSale = await _saleService.SaveAsync(saleDto);
 
-        var success = await _saleService.ProcessPartialReturnAsync(savedSale.Id, "PROD-X", 1.0, "Reason");
+        var success = await _saleService.ProcessPartialReturnAsync(savedSale.Id, "PROD-X", 1.0, "Reason", operationId: "RETURN-ONE");
         Assert.True(success);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
         {
-            await _saleService.ProcessPartialReturnAsync(savedSale.Id, "PROD-X", 2.0, "Reason");
+            await _saleService.ProcessPartialReturnAsync(savedSale.Id, "PROD-X", 2.0, "Reason", operationId: "RETURN-EXCESS");
         });
     }
 
     [Fact]
     public async Task RegisterPurchaseAsync_ShouldBlockNonPositiveCosts()
     {
-        var purchaseService = new PurchaseService(CreateContext());
+        var purchaseService = new PurchaseService(CreateContext(), _actor);
 
         var items = new List<PurchaseItemDto>
         {
@@ -410,7 +414,7 @@ public sealed class SaleServiceTests : IDisposable
         context.Products.Add(prod);
         await context.SaveChangesAsync();
 
-        var purchaseService = new PurchaseService(context);
+        var purchaseService = new PurchaseService(context, _actor);
 
         var items = new List<PurchaseItemDto>
         {
@@ -430,7 +434,7 @@ public sealed class SaleServiceTests : IDisposable
 
         var result = await purchaseService.RegisterPurchaseAsync(purchaseDto);
 
-        var updatedProd = await context.Products.FindAsync("PROD-COST-TEST");
+        var updatedProd = await context.Products.AsNoTracking().SingleAsync(p => p.Id == "PROD-COST-TEST");
         Assert.NotNull(updatedProd);
         Assert.Equal(18m, updatedProd.Cost);
         Assert.Equal(15.0, updatedProd.Stock);
@@ -471,7 +475,7 @@ public sealed class SaleServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SaveAsync_ShouldDistributeLostPennyDiscountRemainderToLastItem()
+    public async Task SaveAsync_ShouldProrateCumulativeDiscountWithoutLosingCents()
     {
         var p1 = new ProductDto("P1", "1", "Item 1", 5.0, 10.0, 0, 0, 10, "General", "Pza", 0, null);
         var p2 = new ProductDto("P2", "2", "Item 2", 5.0, 10.0, 0, 0, 10, "General", "Pza", 0, null);
@@ -503,7 +507,7 @@ public sealed class SaleServiceTests : IDisposable
             SerieFolio: null
         );
 
-        var savedSale = await _saleService.SaveAsync(saleDto);
+        var savedSale = await _saleService.SaveAsync(saleDto with { GlobalDiscountAmount = saleDto.Items.Sum(i => i.TotalPrice) - saleDto.Total });
         var items = savedSale.Items;
         Assert.Equal(3, items.Count);
 
@@ -512,8 +516,8 @@ public sealed class SaleServiceTests : IDisposable
         var saved3 = items.First(i => i.ProductId == "P3");
 
         Assert.Equal(3.33m, saved1.ProratedGlobalDiscountAmount);
-        Assert.Equal(3.33m, saved2.ProratedGlobalDiscountAmount);
-        Assert.Equal(3.34m, saved3.ProratedGlobalDiscountAmount);
+        Assert.Equal(3.34m, saved2.ProratedGlobalDiscountAmount);
+        Assert.Equal(3.33m, saved3.ProratedGlobalDiscountAmount);
 
         decimal sumDiscounts = items.Sum(i => i.ProratedGlobalDiscountAmount);
         Assert.Equal(10.00m, sumDiscounts);
@@ -653,7 +657,8 @@ public sealed class SaleServiceTests : IDisposable
             1.0,
             "Rotura",
             "Efectivo",
-            isProductInGoodCondition: false
+            isProductInGoodCondition: false,
+            operationId: "RETURN-DAMAGED"
         );
 
         Assert.True(result);
@@ -662,19 +667,21 @@ public sealed class SaleServiceTests : IDisposable
         var prodAfterReturn = await ProductService.GetByIdAsync("SHRINK-PROD");
         Assert.Equal(8.0, prodAfterReturn!.Stock);
 
-        // 5. Verify SpyAuditService captured the shrinkage log
-        var shrinkageLog = _auditSpy.CapturedLogs
-            .FirstOrDefault(l => l.EntityId == "SHRINK-PROD" && l.Reason.Contains("Devolución de producto dañado/mermado"));
-        Assert.NotNull(shrinkageLog);
-        Assert.Equal(4m, shrinkageLog.FinancialImpact); // Cost = 4.0 * Qty = 1.0 => 4.0
+        // Damaged units remain out of inventory; loss is retained in the immutable return line.
+        await using var verify = CreateContext();
+        var line = await verify.ReturnLines.SingleAsync();
+        Assert.False(line.Restocked);
+        Assert.Equal(0m, line.CostReversed);
+        Assert.Contains(await verify.TransactionJournal.ToListAsync(), j => j.EventType == "RETURN_COMPLETED" && j.OperationId == "RETURN-DAMAGED");
     }
 
     [Fact]
-    public async Task CloseAsync_ShouldCreateShiftMovementForShortage_WhenActualBalanceIsLowerThanExpected()
+    public async Task CloseAsync_ShouldPreserveShortageAsEvidenceWithoutInventingCashMovement()
     {
-        var shiftService = new ShiftService(CreateContext());
+        var shiftService = new ShiftService(CreateContext(), _actor);
 
         // 1. Open shift
+        await shiftService.CloseAsync("SHIFT-1", 0m);
         var activeShift = await shiftService.OpenAsync(100m); // opening balance = 100
 
         // 2. Perform cash sale
@@ -715,38 +722,23 @@ public sealed class SaleServiceTests : IDisposable
         {
             var movements = await ctx.ShiftMovements.ToListAsync();
             var shortageMovement = movements.FirstOrDefault(m => m.ShiftId == activeShift.Id && m.Description.Contains("Faltante de Caja"));
-            Assert.NotNull(shortageMovement);
-            Assert.Equal(20m, shortageMovement.Amount);
-            Assert.True(shortageMovement.IsOutflow);
+            Assert.Null(shortageMovement);
+            Assert.Equal(-20m, (await ctx.Cashups.SingleAsync(c => c.ShiftId == activeShift.Id)).Difference);
         }
     }
 
     [Fact]
     public async Task RechargeAsync_ShouldIncreaseGiftcardBalanceAndRecordShiftMovement()
     {
-        var giftcardService = new GiftcardService(CreateContext());
+        var giftcardService = new GiftcardService(CreateContext(), _actor);
 
         // 1. Create card
         await giftcardService.CreateCardAsync("GIFT-999", 50m, null);
         var card = await giftcardService.GetByCardNumberAsync("GIFT-999");
         Assert.NotNull(card);
 
-        // Add active shift to prevent foreign key failure
-        using (var ctx = CreateContext())
-        {
-            var shift = new ShiftEntity
-            {
-                Id = "SHIFT-TEST-01",
-                OpeningBalance = 100m,
-                IsOpen = 1,
-                StartTime = DateTimeOffset.UtcNow.ToString("o")
-            };
-            ctx.Shifts.Add(shift);
-            await ctx.SaveChangesAsync();
-        }
-
         // 2. Recharge card with 150.0 cash under active shift
-        await giftcardService.RechargeAsync(card.Id, 150.0m, Ticketfy.Core.Enums.PaymentMethod.Efectivo, "SHIFT-TEST-01");
+        await giftcardService.RechargeAsync(card.Id, 150.0m, Ticketfy.Core.Enums.PaymentMethod.Efectivo, "SHIFT-1", "WALLET-RECHARGE");
 
         // 3. Verify balance (50 + 150 = 200)
         var updatedCard = await giftcardService.GetByCardNumberAsync("GIFT-999");
@@ -757,7 +749,7 @@ public sealed class SaleServiceTests : IDisposable
         using (var ctx = CreateContext())
         {
             var movements = await ctx.ShiftMovements.ToListAsync();
-            var rechargeMovement = movements.FirstOrDefault(m => m.ShiftId == "SHIFT-TEST-01" && m.Description.Contains("Recarga Monedero"));
+            var rechargeMovement = movements.FirstOrDefault(m => m.OperationId == "WALLET-RECHARGE");
             Assert.NotNull(rechargeMovement);
             Assert.Equal(150m, rechargeMovement.Amount);
             Assert.False(rechargeMovement.IsOutflow);
@@ -796,6 +788,7 @@ public sealed class SaleServiceTests : IDisposable
         string backupDirectory = Path.Combine(testRoot, "Backups");
         Directory.CreateDirectory(databaseDirectory);
         string dbPath = Path.Combine(databaseDirectory, "ticketfy.db");
+        string testKey = Guid.NewGuid().ToString("N");
 
         try
         {
@@ -803,7 +796,7 @@ public sealed class SaleServiceTests : IDisposable
             {
                 DataSource = dbPath,
                 Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadWriteCreate,
-                Password = Ticketfy.Services.Security.SecurityManager.GetMasterKey(),
+                Password = testKey,
                 Pooling = false
             };
             await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(connectionBuilder.ConnectionString))
@@ -815,7 +808,8 @@ public sealed class SaleServiceTests : IDisposable
                 await connection.CloseAsync();
             }
 
-            var backupService = new Ticketfy.Services.Implementations.BackupService(dbPath, backupDirectory);
+            var backupService = new Ticketfy.Services.Implementations.BackupService(dbPath, backupDirectory,
+                passwordProvider: () => testKey);
             var result = await backupService.CreateZCutBackupAsync("SHIFT-TEST");
 
             Assert.True(result);
@@ -826,7 +820,7 @@ public sealed class SaleServiceTests : IDisposable
             {
                 DataSource = backupFile,
                 Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadOnly,
-                Password = Ticketfy.Services.Security.SecurityManager.GetMasterKey(),
+                Password = testKey,
                 Pooling = false
             };
             await using (var backupConnection = new Microsoft.Data.Sqlite.SqliteConnection(backupBuilder.ConnectionString))
@@ -936,8 +930,8 @@ public sealed class SaleServiceTests : IDisposable
             SerieFolio: null
         );
 
-        await _saleService.SaveAsync(saleInside);
-        await _saleService.SaveAsync(saleOutside);
+        await new SaleService(_factory, new CoOccurrenceQueue(), _auditSpy, _actor, new FixedTestClock(dateInside)).SaveAsync(saleInside);
+        await new SaleService(_factory, new CoOccurrenceQueue(), _auditSpy, _actor, new FixedTestClock(dateOutside)).SaveAsync(saleOutside);
 
         // 4. Query performance report with date range [2026-08-10 to 2026-08-20]
         var startFilter = new DateTime(2026, 8, 10, 0, 0, 0, DateTimeKind.Utc);
@@ -949,7 +943,7 @@ public sealed class SaleServiceTests : IDisposable
         Assert.Single(report);
 
         var cashierMetrics = report[0];
-        Assert.Equal("Carlos Cajero", cashierMetrics.CashierName);
+        Assert.Equal("Operador de prueba", cashierMetrics.CashierName);
         Assert.Equal(1, cashierMetrics.TicketCount);
         Assert.Equal(20m, cashierMetrics.TotalRevenue);
         Assert.Equal(20m, cashierMetrics.AverageTicketValue);

@@ -17,6 +17,61 @@ namespace Ticketfy.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.2");
 
+            modelBuilder.Entity("Ticketfy.Data.Entities.AccountEntryEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AccountId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AccountKind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CashierUserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAtUtc")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DocumentId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DueDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EntryType")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OperationId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RegisterId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ShiftId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountKind", "AccountId", "CreatedAtUtc");
+
+                    b.HasIndex("OperationId", "AccountKind", "AccountId", "DocumentId", "EntryType")
+                        .IsUnique();
+
+                    b.ToTable("account_entries");
+                });
+
             modelBuilder.Entity("Ticketfy.Data.Entities.AttendanceEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -71,6 +126,9 @@ namespace Ticketfy.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT")
                         .HasColumnName("cashier_role");
+
+                    b.Property<string>("CashierUserId")
+                        .HasColumnType("TEXT");
 
                     b.Property<long>("ClosedCashAmount")
                         .HasColumnType("INTEGER")
@@ -133,6 +191,12 @@ namespace Ticketfy.Migrations
                         .HasColumnType("INTEGER")
                         .HasColumnName("open_cash_amount");
 
+                    b.Property<string>("OperationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RegisterId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ShiftId")
                         .HasColumnType("TEXT")
                         .HasColumnName("shift_id");
@@ -152,6 +216,9 @@ namespace Ticketfy.Migrations
                         .HasColumnName("type");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OperationId")
+                        .IsUnique();
 
                     b.ToTable("cashups");
                 });
@@ -182,6 +249,9 @@ namespace Ticketfy.Migrations
                         .HasColumnType("INTEGER")
                         .HasColumnName("amount");
 
+                    b.Property<string>("CashierUserId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("CreatedAtUtc")
                         .IsRequired()
                         .HasColumnType("TEXT")
@@ -190,6 +260,12 @@ namespace Ticketfy.Migrations
                     b.Property<string>("FailureReason")
                         .HasColumnType("TEXT")
                         .HasColumnName("failure_reason");
+
+                    b.Property<string>("FiscalIdempotencyKey")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FiscalPayload")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("PaymentMethod")
                         .IsRequired()
@@ -200,6 +276,9 @@ namespace Ticketfy.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("payment_reference");
 
+                    b.Property<string>("RegisterId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("SaleId")
                         .HasColumnType("TEXT")
                         .HasColumnName("sale_id");
@@ -208,6 +287,9 @@ namespace Ticketfy.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT")
                         .HasColumnName("sale_payload");
+
+                    b.Property<string>("ShiftId")
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("State")
                         .HasColumnType("INTEGER")
@@ -242,6 +324,35 @@ namespace Ticketfy.Migrations
                     b.ToTable("co_ocurrencia");
                 });
 
+            modelBuilder.Entity("Ticketfy.Data.Entities.CommandReceiptEntity", b =>
+                {
+                    b.Property<string>("OperationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CashierUserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Command")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RegisterId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ShiftId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("OperationId");
+
+                    b.ToTable("command_receipts");
+                });
+
             modelBuilder.Entity("Ticketfy.Data.Entities.CustomerEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -271,6 +382,9 @@ namespace Ticketfy.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("email");
 
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsCreditBlocked")
                         .HasColumnType("INTEGER")
                         .HasColumnName("is_credit_blocked");
@@ -296,6 +410,10 @@ namespace Ticketfy.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CustomerCode")
+                        .IsUnique()
+                        .HasFilter("\"customer_code\" <> ''");
+
                     b.ToTable("customers");
                 });
 
@@ -308,6 +426,9 @@ namespace Ticketfy.Migrations
                     b.Property<long>("Amount")
                         .HasColumnType("INTEGER")
                         .HasColumnName("amount");
+
+                    b.Property<string>("CashierUserId")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("CustomerId")
                         .IsRequired()
@@ -333,6 +454,9 @@ namespace Ticketfy.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT")
                         .HasColumnName("operation_id");
+
+                    b.Property<string>("RegisterId")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("ShiftId")
                         .HasColumnType("TEXT")
@@ -362,6 +486,12 @@ namespace Ticketfy.Migrations
                     b.Property<long>("Amount")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("CancellationReason")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CancelledAtUtc")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Category")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -374,15 +504,33 @@ namespace Ticketfy.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsCancelled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("OperationId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("PaymentMethod")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reference")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RegisterId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RegisteredByUser")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ShiftId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("OperationId")
+                        .IsUnique();
 
                     b.ToTable("Expenses");
                 });
@@ -571,7 +719,164 @@ namespace Ticketfy.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CardNumber")
+                        .IsUnique();
+
                     b.ToTable("giftcards");
+                });
+
+            modelBuilder.Entity("Ticketfy.Data.Entities.HistoricalBalanceReconciliationEntity", b =>
+                {
+                    b.Property<string>("OperationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AccountId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Adjustment")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("CachedBefore")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CashierUserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ConfirmedBalance")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CreatedAtUtc")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EvidenceReference")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("LedgerBefore")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RegisterId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Scope")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SourceFingerprint")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("OperationId");
+
+                    b.HasIndex("Scope", "TargetId");
+
+                    b.ToTable("historical_balance_reconciliations");
+                });
+
+            modelBuilder.Entity("Ticketfy.Data.Entities.IncomingTransferIntentEntity", b =>
+                {
+                    b.Property<string>("OperationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CashierUserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAtUtc")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DestinationId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Notes")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RegisterId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ShiftId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("OperationId");
+
+                    b.ToTable("incoming_transfer_intents");
+                });
+
+            modelBuilder.Entity("Ticketfy.Data.Entities.IncomingTransferReceiptEntity", b =>
+                {
+                    b.Property<string>("OperationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CashierUserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAtUtc")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DocumentId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExternalReference")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Outcome")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RefundReference")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RegisterId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ShiftId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("OperationId");
+
+                    b.HasIndex("ExternalReference")
+                        .IsUnique();
+
+                    b.HasIndex("RefundReference")
+                        .IsUnique()
+                        .HasFilter("\"RefundReference\" IS NOT NULL");
+
+                    b.ToTable("incoming_transfer_receipts");
                 });
 
             modelBuilder.Entity("Ticketfy.Data.Entities.IntegrationWebhookEventEntity", b =>
@@ -619,6 +924,64 @@ namespace Ticketfy.Migrations
                         .IsUnique();
 
                     b.ToTable("integration_webhook_events");
+                });
+
+            modelBuilder.Entity("Ticketfy.Data.Entities.InventoryMovementEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CashierUserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAtUtc")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DocumentId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OperationId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProductId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Quantity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RegisterId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SaleLineId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ShiftId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("StockAfter")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("StockBefore")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("UnitCost")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId", "CreatedAtUtc");
+
+                    b.ToTable("inventory_movements");
                 });
 
             modelBuilder.Entity("Ticketfy.Data.Entities.InventorySnapshotEntity", b =>
@@ -773,6 +1136,61 @@ namespace Ticketfy.Migrations
                     b.ToTable("parked_orders");
                 });
 
+            modelBuilder.Entity("Ticketfy.Data.Entities.PaymentRefundEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CashierUserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAtUtc")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExternalReference")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("OperationId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PaymentId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RegisterId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReturnId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ShiftId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("State")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PaymentId");
+
+                    b.HasIndex("OperationId", "PaymentId")
+                        .IsUnique();
+
+                    b.ToTable("payment_refunds");
+                });
+
             modelBuilder.Entity("Ticketfy.Data.Entities.PaymentTerminalOperationEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -924,6 +1342,9 @@ namespace Ticketfy.Migrations
                         .HasColumnType("INTEGER")
                         .HasColumnName("expiresSoon");
 
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsBulk")
                         .HasColumnType("INTEGER")
                         .HasColumnName("is_bulk");
@@ -936,6 +1357,9 @@ namespace Ticketfy.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT")
                         .HasColumnName("location_rack");
+
+                    b.Property<double>("MaxStock")
+                        .HasColumnType("REAL");
 
                     b.Property<double>("MinStock")
                         .HasColumnType("REAL")
@@ -978,6 +1402,9 @@ namespace Ticketfy.Migrations
                         .HasColumnType("INTEGER")
                         .HasColumnName("stock_version");
 
+                    b.Property<long>("TaxRate")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Unit")
                         .IsRequired()
                         .HasColumnType("TEXT")
@@ -992,6 +1419,10 @@ namespace Ticketfy.Migrations
                         .HasColumnName("wholesaleThreshold");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Barcode")
+                        .IsUnique()
+                        .HasFilter("\"barcode\" IS NOT NULL AND \"barcode\" <> ''");
 
                     b.HasIndex("DefaultSupplierId");
 
@@ -1083,16 +1514,34 @@ namespace Ticketfy.Migrations
                     b.Property<string>("Id")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("CashierUserId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Date")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DueDate")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("InvoiceNumber")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("LedgerVersion")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Notes")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OperationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RegisterId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ShiftId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("SupplierId")
@@ -1107,6 +1556,13 @@ namespace Ticketfy.Migrations
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OperationId")
+                        .IsUnique();
+
+                    b.HasIndex("SupplierId", "InvoiceNumber")
+                        .IsUnique()
+                        .HasFilter("\"InvoiceNumber\" <> '' AND \"LedgerVersion\" > 0");
 
                     b.ToTable("Purchases");
                 });
@@ -1140,6 +1596,49 @@ namespace Ticketfy.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("PurchaseItems");
+                });
+
+            modelBuilder.Entity("Ticketfy.Data.Entities.RefundSettlementEntity", b =>
+                {
+                    b.Property<string>("RefundId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CashierUserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAtUtc")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExternalReference")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OperationId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RegisterId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ShiftId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("RefundId");
+
+                    b.HasIndex("ExternalReference")
+                        .IsUnique();
+
+                    b.HasIndex("OperationId")
+                        .IsUnique();
+
+                    b.ToTable("refund_settlements");
                 });
 
             modelBuilder.Entity("Ticketfy.Data.Entities.ReturnEntity", b =>
@@ -1181,6 +1680,12 @@ namespace Ticketfy.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("refund_method");
 
+                    b.Property<string>("RegisterId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ShiftId")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("Status")
                         .HasColumnType("INTEGER")
                         .HasColumnName("status");
@@ -1197,6 +1702,44 @@ namespace Ticketfy.Migrations
                     b.HasIndex("OriginalSaleId");
 
                     b.ToTable("returns");
+                });
+
+            modelBuilder.Entity("Ticketfy.Data.Entities.ReturnLineEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CostReversed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ProductId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Quantity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Restocked")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ReturnId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SaleLineId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReturnId");
+
+                    b.HasIndex("SaleLineId");
+
+                    b.ToTable("return_lines");
                 });
 
             modelBuilder.Entity("Ticketfy.Data.Entities.SaleEntity", b =>
@@ -1224,6 +1767,12 @@ namespace Ticketfy.Migrations
                     b.Property<long>("CashAmount")
                         .HasColumnType("INTEGER")
                         .HasColumnName("cashAmount");
+
+                    b.Property<string>("CashierName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CashierUserId")
+                        .HasColumnType("TEXT");
 
                     b.Property<long>("ChangeAmount")
                         .HasColumnType("INTEGER")
@@ -1276,6 +1825,9 @@ namespace Ticketfy.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("items");
 
+                    b.Property<int>("LedgerVersion")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("OperationId")
                         .IsRequired()
                         .HasColumnType("TEXT")
@@ -1294,9 +1846,15 @@ namespace Ticketfy.Migrations
                         .HasColumnType("INTEGER")
                         .HasColumnName("profit");
 
+                    b.Property<string>("RegisterId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("SerieFolio")
                         .HasColumnType("TEXT")
                         .HasColumnName("serie_folio");
+
+                    b.Property<string>("ShiftId")
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("Status")
                         .HasColumnType("INTEGER")
@@ -1320,6 +1878,120 @@ namespace Ticketfy.Migrations
                         .IsUnique();
 
                     b.ToTable("sales");
+                });
+
+            modelBuilder.Entity("Ticketfy.Data.Entities.SaleLineEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CostTotal")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("Discount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("LineNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProductId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PromotionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Quantity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SaleId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Tax")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("Total")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("UnitCost")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("UnitPrice")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SaleId", "LineNumber")
+                        .IsUnique();
+
+                    b.ToTable("sale_lines");
+                });
+
+            modelBuilder.Entity("Ticketfy.Data.Entities.SalePaymentEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AccountId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CashierUserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAtUtc")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExternalReference")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("OperationId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RegisterId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SaleId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ShiftId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("State")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExternalReference")
+                        .IsUnique()
+                        .HasFilter("\"ExternalReference\" IS NOT NULL");
+
+                    b.HasIndex("SaleId");
+
+                    b.HasIndex("OperationId", "Kind")
+                        .IsUnique();
+
+                    b.ToTable("sale_payments");
                 });
 
             modelBuilder.Entity("Ticketfy.Data.Entities.SettingEntity", b =>
@@ -1348,6 +2020,12 @@ namespace Ticketfy.Migrations
                         .HasColumnType("INTEGER")
                         .HasColumnName("actualBalance");
 
+                    b.Property<string>("CashierUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CloseOperationId")
+                        .HasColumnType("TEXT");
+
                     b.Property<long?>("Diff")
                         .HasColumnType("INTEGER")
                         .HasColumnName("diff");
@@ -1364,9 +2042,15 @@ namespace Ticketfy.Migrations
                         .HasColumnType("INTEGER")
                         .HasColumnName("isOpen");
 
+                    b.Property<string>("OpenOperationId")
+                        .HasColumnType("TEXT");
+
                     b.Property<long>("OpeningBalance")
                         .HasColumnType("INTEGER")
                         .HasColumnName("openingBalance");
+
+                    b.Property<string>("RegisterId")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("StartTime")
                         .IsRequired()
@@ -1381,7 +2065,18 @@ namespace Ticketfy.Migrations
                         .HasColumnType("INTEGER")
                         .HasColumnName("totalCreditSales");
 
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("OpenOperationId")
+                        .IsUnique();
+
+                    b.HasIndex("RegisterId")
+                        .IsUnique()
+                        .HasFilter("\"isOpen\" = 1 AND \"RegisterId\" IS NOT NULL");
 
                     b.ToTable("shifts");
                 });
@@ -1396,6 +2091,9 @@ namespace Ticketfy.Migrations
                         .HasColumnType("INTEGER")
                         .HasColumnName("amount");
 
+                    b.Property<string>("CashierUserId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasColumnType("TEXT")
@@ -1409,10 +2107,16 @@ namespace Ticketfy.Migrations
                         .HasColumnType("INTEGER")
                         .HasColumnName("movement_type");
 
+                    b.Property<string>("OperationId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ReferenceId")
                         .IsRequired()
                         .HasColumnType("TEXT")
                         .HasColumnName("reference_id");
+
+                    b.Property<string>("RegisterId")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("ShiftId")
                         .IsRequired()
@@ -1503,6 +2207,111 @@ namespace Ticketfy.Migrations
                     b.ToTable("Suppliers");
                 });
 
+            modelBuilder.Entity("Ticketfy.Data.Entities.SupplierPaymentEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CashierUserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAtUtc")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("OperationId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PurchaseId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reference")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RegisterId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ShiftId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SupplierId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperationId")
+                        .IsUnique();
+
+                    b.ToTable("supplier_payments");
+                });
+
+            modelBuilder.Entity("Ticketfy.Data.Entities.SupplierReturnEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CashierUserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAtUtc")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OperationId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PurchaseId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PurchaseItemId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Quantity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RegisterId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ShiftId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SupplierId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperationId")
+                        .IsUnique();
+
+                    b.ToTable("supplier_returns");
+                });
+
             modelBuilder.Entity("Ticketfy.Data.Entities.SystemAlertEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -1545,6 +2354,49 @@ namespace Ticketfy.Migrations
                     b.ToTable("system_alerts");
                 });
 
+            modelBuilder.Entity("Ticketfy.Data.Entities.TenderConfirmationEntity", b =>
+                {
+                    b.Property<string>("OperationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CashierUserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAtUtc")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExternalReference")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RegisterId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ShiftId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("OperationId");
+
+                    b.HasIndex("Kind", "ExternalReference")
+                        .IsUnique();
+
+                    b.ToTable("tender_confirmations");
+                });
+
             modelBuilder.Entity("Ticketfy.Data.Entities.TransactionJournalEntryEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -1554,6 +2406,9 @@ namespace Ticketfy.Migrations
                     b.Property<long>("Amount")
                         .HasColumnType("INTEGER")
                         .HasColumnName("amount");
+
+                    b.Property<string>("CashierUserId")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("CreatedAtUtc")
                         .IsRequired()
@@ -1579,6 +2434,12 @@ namespace Ticketfy.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT")
                         .HasColumnName("operation_id");
+
+                    b.Property<string>("RegisterId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ShiftId")
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
@@ -1726,6 +2587,15 @@ namespace Ticketfy.Migrations
                     b.Navigation("ItemKit");
                 });
 
+            modelBuilder.Entity("Ticketfy.Data.Entities.PaymentRefundEntity", b =>
+                {
+                    b.HasOne("Ticketfy.Data.Entities.SalePaymentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("PaymentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Ticketfy.Data.Entities.ProductEntity", b =>
                 {
                     b.HasOne("Ticketfy.Data.Entities.SupplierEntity", "DefaultSupplier")
@@ -1733,6 +2603,15 @@ namespace Ticketfy.Migrations
                         .HasForeignKey("DefaultSupplierId");
 
                     b.Navigation("DefaultSupplier");
+                });
+
+            modelBuilder.Entity("Ticketfy.Data.Entities.RefundSettlementEntity", b =>
+                {
+                    b.HasOne("Ticketfy.Data.Entities.PaymentRefundEntity", null)
+                        .WithMany()
+                        .HasForeignKey("RefundId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Ticketfy.Data.Entities.ReturnEntity", b =>
@@ -1744,6 +2623,39 @@ namespace Ticketfy.Migrations
                         .IsRequired();
 
                     b.Navigation("OriginalSale");
+                });
+
+            modelBuilder.Entity("Ticketfy.Data.Entities.ReturnLineEntity", b =>
+                {
+                    b.HasOne("Ticketfy.Data.Entities.ReturnEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ReturnId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ticketfy.Data.Entities.SaleLineEntity", null)
+                        .WithMany()
+                        .HasForeignKey("SaleLineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Ticketfy.Data.Entities.SaleLineEntity", b =>
+                {
+                    b.HasOne("Ticketfy.Data.Entities.SaleEntity", null)
+                        .WithMany()
+                        .HasForeignKey("SaleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Ticketfy.Data.Entities.SalePaymentEntity", b =>
+                {
+                    b.HasOne("Ticketfy.Data.Entities.SaleEntity", null)
+                        .WithMany()
+                        .HasForeignKey("SaleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Ticketfy.Data.Entities.ShiftMovementEntity", b =>

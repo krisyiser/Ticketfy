@@ -24,7 +24,7 @@ public sealed class ProductServiceTests : IDisposable
 
         _context = new AppDbContext(options);
         _context.Database.EnsureCreated();
-        _service = new ProductService(_context);
+        _service = new ProductService(_context, CommercialTestSession.Create(_context));
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public sealed class ProductServiceTests : IDisposable
         var dto = new ProductDto("PROD-TEST-002", "7509998887776", "Original Name", 5.0, 10.0, 8.0, 5, 20, "Abarrotes", "Pza", 0, null);
         await _service.AddAsync(dto);
 
-        var updatedDto = dto with { Name = "Updated Name", Price = 12.5m, Stock = 30 };
+        var updatedDto = (await _service.GetByIdAsync(dto.Id))! with { Name = "Updated Name", Price = 12.5m, Stock = 30, StockAdjustmentReason = "Conteo físico" };
         await _service.UpdateAsync(updatedDto);
 
         var retrieved = await _service.GetByIdAsync("PROD-TEST-002");
@@ -71,7 +71,7 @@ public sealed class ProductServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task DeleteProduct_ShouldRemoveFromDatabase()
+    public async Task DeleteProduct_ShouldInactivateAndPreserveStockAndHistory()
     {
         var dto = new ProductDto("PROD-TEST-003", "7500000000001", "To Delete", 5.0, 10.0, 0, 0, 10, "Abarrotes", "Pza", 0, null);
         await _service.AddAsync(dto);
@@ -79,7 +79,10 @@ public sealed class ProductServiceTests : IDisposable
         await _service.DeleteAsync("PROD-TEST-003");
 
         var retrieved = await _service.GetByIdAsync("PROD-TEST-003");
-        Assert.Null(retrieved);
+        Assert.NotNull(retrieved);
+        Assert.False(retrieved.IsActive);
+        Assert.Equal(10d, retrieved.Stock);
+        Assert.Null(await _service.GetByBarcodeAsync("7500000000001"));
     }
 
     [Fact]

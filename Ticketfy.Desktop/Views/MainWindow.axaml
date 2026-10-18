@@ -23,6 +23,7 @@
         <DataTemplate DataType="vm:CustomersViewModel"><v:CustomersView /></DataTemplate>
         <DataTemplate DataType="vm:SuppliersViewModel"><v:SuppliersView /></DataTemplate>
         <DataTemplate DataType="vm:ExpensesViewModel"><v:ExpensesView /></DataTemplate>
+        <DataTemplate DataType="vm:CommercialControlViewModel"><v:CommercialControlView /></DataTemplate>
         <DataTemplate DataType="vm:HistoryViewModel"><v:HistoryView /></DataTemplate>
         <DataTemplate DataType="vm:PromotionsViewModel"><v:PromotionsView /></DataTemplate>
         <DataTemplate DataType="vm:FiscalViewModel"><v:FiscalView /></DataTemplate>
@@ -88,6 +89,7 @@
         </Border>
 
         <DockPanel LastChildFill="True" Margin="0,36,0,0">
+            <controls:HardwareStatusControl DockPanel.Dock="Bottom" DataContext="{Binding Hardware}" />
             <!-- ═══ SIDEBAR NAVIGATION ═══ -->
             <controls:SidebarNavigationControl />
 

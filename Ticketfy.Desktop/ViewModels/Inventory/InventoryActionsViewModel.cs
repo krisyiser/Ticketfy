@@ -154,7 +154,7 @@ public partial class InventoryActionsViewModel : ObservableObject
             {
                 if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop && desktop.MainWindow != null)
                 {
-                    var vm = new InventorySnapshotsViewModel();
+                    var vm = new InventorySnapshotsViewModel(_printerService);
                     var win = new Ticketfy.Views.InventorySnapshotsWindow
                     {
                         DataContext = vm

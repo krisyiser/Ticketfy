@@ -5,6 +5,9 @@ param (
 $ErrorActionPreference = "Stop"
 $ProjectPath = Join-Path $PSScriptRoot "Ticketfy.Desktop.csproj"
 $ReleaseDir = Join-Path $PSScriptRoot "Output\Releases"
+[xml]$ProjectXml = Get-Content $ProjectPath
+$TargetFramework = [string](($ProjectXml.Project.PropertyGroup | Where-Object TargetFramework | Select-Object -First 1).TargetFramework)
+if ([string]::IsNullOrWhiteSpace($TargetFramework)) { throw "TargetFramework is required." }
 if ([string]::IsNullOrWhiteSpace($Version)) {
     [xml]$ProjectXml = Get-Content $ProjectPath
     $Version = [string](($ProjectXml.Project.PropertyGroup | Where-Object Version | Select-Object -First 1).Version)
@@ -38,7 +41,7 @@ Write-Host "==========================================================" -Foregro
 
 # 1. Publicar versión 64-bit (win-x64)
 Write-Host "[1/2] Publicando versión 64-bit (win-x64)..." -ForegroundColor Yellow
-$PublishDir64 = Join-Path $PSScriptRoot "bin\Release\net9.0\win-x64\publish"
+$PublishDir64 = Join-Path $PSScriptRoot "bin\Release\$TargetFramework\win-x64\publish"
 dotnet publish $ProjectPath -c Release -r win-x64 --self-contained -p:Version=$Version -p:AssemblyVersion=$Version.0 -p:FileVersion=$Version.0 /p:EnableSourceLink=false /p:EnableSourceControlManagerQueries=false /p:PublishRepositoryUrl=false
 
 if ($LASTEXITCODE -ne 0) {
@@ -50,7 +53,7 @@ Invoke-RequiredCodeSigning (Join-Path $PublishDir64 "Ticketfy.Desktop.exe")
 
 # 2. Publicar versión 32-bit (win-x86)
 Write-Host "[2/2] Publicando versión 32-bit (win-x86)..." -ForegroundColor Yellow
-$PublishDir86 = Join-Path $PSScriptRoot "bin\Release\net9.0\win-x86\publish"
+$PublishDir86 = Join-Path $PSScriptRoot "bin\Release\$TargetFramework\win-x86\publish"
 dotnet publish $ProjectPath -c Release -r win-x86 --self-contained -p:Version=$Version -p:AssemblyVersion=$Version.0 -p:FileVersion=$Version.0 /p:EnableSourceLink=false /p:EnableSourceControlManagerQueries=false /p:PublishRepositoryUrl=false
 
 if ($LASTEXITCODE -ne 0) {
@@ -120,12 +123,7 @@ foreach ($p in $IsccPaths) {
 if ($IsccExe) {
     $issFile = Join-Path $PSScriptRoot "ticketfy_setup.iss"
     if (Test-Path $issFile) {
-        $issContent = Get-Content $issFile -Raw
-        $issContent = $issContent -replace '#define MyAppVersion "[^"]+"', "#define MyAppVersion `"$Version`""
-        $issContent = $issContent -replace 'OutputBaseFilename=Ticketfy-Setup-v[^\r\n]+', "OutputBaseFilename=Ticketfy-Setup-v$Version-x64"
-        Set-Content -Path $issFile -Value $issContent -Encoding UTF8
-
-        & $IsccExe $issFile
+        & $IsccExe "/DMyAppVersion=$Version" "/DMySourceDir=$PublishDir64" "/DMyOutputDir=$ReleaseDir" $issFile
         if ($LASTEXITCODE -eq 0 -and (Test-Path "$ReleaseDir\Ticketfy-Setup-v$Version-x64.exe")) {
             Copy-Item -Path "$ReleaseDir\Ticketfy-Setup-v$Version-x64.exe" -Destination "$ReleaseDir\Ticketfy-Setup-v$Version.exe" -Force
             

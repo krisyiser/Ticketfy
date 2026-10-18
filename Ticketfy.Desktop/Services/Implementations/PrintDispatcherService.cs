@@ -36,21 +36,28 @@ public class PrintDispatcherService : IPrintDispatcherService
         // 1. Imprimir y esperar confirmación del controlador; encolar no equivale
         // a haber escrito correctamente en el dispositivo.
         var appSettings = await _settings.GetAppSettingsAsync();
-        string printerTarget = string.IsNullOrWhiteSpace(appSettings.Hardware.PrinterPort)
-            ? "ImpresoraTickets"
-            : appSettings.Hardware.PrinterPort.Trim();
+        string printerTarget = appSettings.Hardware.PrinterPort.Trim();
+        bool drawerFailed = false;
         if (sale.CashAmount > 0m && appSettings.Hardware.EnableCashDrawerTrigger)
         {
-            bool drawerOpened = await _thermalPrinter.OpenCashDrawerAsync(printerTarget, appSettings.Hardware.CashDrawerPin);
+            bool drawerOpened = !string.IsNullOrWhiteSpace(printerTarget) && await _thermalPrinter.OpenCashDrawerAsync(printerTarget, appSettings.Hardware.CashDrawerPin);
+            drawerFailed = !drawerOpened;
             if (!drawerOpened)
                 Log.Error("Cash drawer pulse for sale {SaleId} failed on {PrinterTarget}", sale.Id, printerTarget);
         }
+        bool receiptFailed = false;
         if (printReceipt)
         {
-            bool ticketPrinted = await _thermalPrinter.PrintTicketAsync(sale, printerTarget);
+            bool ticketPrinted = !string.IsNullOrWhiteSpace(printerTarget) && await _thermalPrinter.PrintTicketAsync(sale, printerTarget);
+            receiptFailed = !ticketPrinted;
             if (!ticketPrinted)
                 Log.Error("Receipt {SaleId} could not be written to configured printer {PrinterTarget}", sale.Id, printerTarget);
         }
+        string receiptStatus = !printReceipt ? "Impresión del ticket no solicitada."
+            : receiptFailed ? "No se confirmó el envío del ticket. Revise conexión y configuración; reimprima desde Historial si es necesario."
+            : "Ticket enviado al controlador. Compruebe la salida física del papel.";
+        Ticketfy.Core.Messages.HardwareFeedbackMessage.Report($"Venta {sale.Id} registrada. {receiptStatus}" +
+            (drawerFailed ? " No se confirmó el pulso del cajón; compruebe su apertura." : ""), receiptFailed || drawerFailed);
 
         // 2. Analizar el carrito en busca de items Premium
         // Load attributes from DB for the products in the sale
@@ -88,6 +95,7 @@ public class PrintDispatcherService : IPrintDispatcherService
             catch (Exception ex)
             {
                 Log.Error(ex, $"Fallo al imprimir certificado para {item.Name}");
+                Ticketfy.Core.Messages.HardwareFeedbackMessage.Report($"Venta {sale.Id} registrada, pero falló el envío del certificado. No vuelva a cobrar.", true);
             }
         }
     }

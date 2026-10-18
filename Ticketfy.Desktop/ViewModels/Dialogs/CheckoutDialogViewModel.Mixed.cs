@@ -10,13 +10,13 @@ public partial class CheckoutDialogViewModel
         if (decimal.TryParse(value, out var parsed))
         {
             ReceivedAmount = parsed;
-            PaidAmount = parsed;
-            ChangeAmount = Math.Max(0m, parsed - TotalToPay);
+            PaidAmount = parsed + TotalApplied;
+            ChangeAmount = Math.Max(0m, PaidAmount - TotalToPay);
         }
         else
         {
             ReceivedAmount = 0m;
-            PaidAmount = 0m;
+            PaidAmount = TotalApplied;
             ChangeAmount = 0m;
         }
 
@@ -33,7 +33,7 @@ public partial class CheckoutDialogViewModel
         if (decimal.TryParse(amountArg, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out decimal addValue))
         {
             ReceivedAmount += addValue;
-            PaidAmount = ReceivedAmount;
+            PaidAmount = ReceivedAmount + TotalApplied;
             ReceivedAmountInput = ReceivedAmount.ToString("0.##");
         }
     }
@@ -41,15 +41,15 @@ public partial class CheckoutDialogViewModel
     [RelayCommand]
     private void SetExactCash()
     {
-        ReceivedAmount = TotalToPay;
-        PaidAmount = ReceivedAmount;
+        ReceivedAmount = TotalToPay - TotalApplied;
+        PaidAmount = ReceivedAmount + TotalApplied;
         ReceivedAmountInput = ReceivedAmount.ToString("0.##");
     }
 
     partial void OnReceivedAmountChanged(decimal value)
     {
-        PaidAmount = value;
-        ChangeAmount = Math.Max(0m, value - TotalToPay);
+        PaidAmount = value + TotalApplied;
+        ChangeAmount = Math.Max(0m, PaidAmount - TotalToPay);
         OnPropertyChanged(nameof(IsSufficientAmount));
         OnPropertyChanged(nameof(ChangeOrShortageText));
         OnPropertyChanged(nameof(ChangeTextColor));
@@ -89,12 +89,18 @@ public partial class CheckoutDialogViewModel
 
     partial void OnPaymentMethodChanged(string value)
     {
+        AppliedTenders.Clear();
+        NotifyTenderChanges();
         // WIPE GHOST STATE
         CashAmount = 0m;
         CardAmount = 0m;
         WalletAmount = 0m;
         ChangeAmount = 0m;
         ErrorMessage = string.Empty;
+
+        BankReference = string.Empty;
+        BankPaymentVerified = false;
+        OnPropertyChanged(nameof(IsBankTransfer));
 
         if (value != "Efectivo" && value != "Mixto")
         {

@@ -18,17 +18,7 @@ public partial class CheckoutDialogViewModel
     [RelayCommand]
     private void AddTender(string method)
     {
-        decimal amountToAdd = RemainingBalance > 0 ? RemainingBalance : ReceivedAmount;
-        if (amountToAdd <= 0) return;
-
-        AppliedTenders.Add(new TenderEntryModel
-        {
-            MethodName = method,
-            AmountPaid = amountToAdd,
-            ReferenceOrFolio = DateTime.Now.ToString("HH:mm:ss")
-        });
-
-        NotifyTenderChanges();
+        ErrorMessage = "Use los campos de pago mixto; los pagos bancarios requieren confirmación real.";
     }
 
     [RelayCommand]
@@ -43,7 +33,9 @@ public partial class CheckoutDialogViewModel
     private void RedeemLoyaltyPoints()
     {
         if (SelectedCustomer == null || CustomerPointsBalance <= 0) return;
-        decimal amountToCover = Math.Min(RemainingBalance, (decimal)CustomerPointsBalance);
+        if (AppliedTenders.Count > 0) return;
+        PaymentMethod = "Efectivo";
+        decimal amountToCover = Math.Round(Math.Min(TotalToPay, (decimal)CustomerPointsBalance), 2);
         if (amountToCover <= 0) return;
 
         AppliedTenders.Add(new TenderEntryModel
@@ -53,12 +45,13 @@ public partial class CheckoutDialogViewModel
             ReferenceOrFolio = $"Canje: {amountToCover:N0} pts"
         });
 
-        CustomerPointsBalance -= (double)amountToCover;
         NotifyTenderChanges();
     }
 
     private void NotifyTenderChanges()
     {
+        PaidAmount = ReceivedAmount + TotalApplied;
+        ChangeAmount = Math.Max(0m, PaidAmount - TotalToPay);
         OnPropertyChanged(nameof(TotalApplied));
         OnPropertyChanged(nameof(RemainingBalance));
         OnPropertyChanged(nameof(IsFullyPaid));
@@ -101,6 +94,7 @@ public partial class CheckoutDialogViewModel
     [RelayCommand(CanExecute = nameof(CanConfirmPayment))]
     private async Task ConfirmPaymentAsync()
     {
+        if (IsProcessing || _committed) return;
         bool checkoutStarted = false;
         bool paymentAuthorized = false;
         try
@@ -135,7 +129,7 @@ public partial class CheckoutDialogViewModel
                 return;
             }
 
-            if (PaymentMethod == "Monedero / Tarjeta de Regalo")
+            if (PaymentMethod == "Monedero / Tarjeta de Regalo" || (PaymentMethod == "Mixto" && WalletAmount > 0))
             {
                 if (_giftcardService == null || string.IsNullOrWhiteSpace(GiftcardNumber))
                 {
@@ -144,21 +138,21 @@ public partial class CheckoutDialogViewModel
                 }
 
                 var validation = await _giftcardService.ValidateCardAsync(GiftcardNumber.Trim());
-                if (!validation.IsValid || validation.Balance < TotalToPay)
+                if (!validation.IsValid || validation.Balance < (PaymentMethod == "Mixto" ? WalletAmount : TotalToPay))
                 {
                     ErrorMessage = validation.IsValid
                         ? $"Saldo insuficiente en el monedero. Disponible: ${validation.Balance:N2}."
                         : validation.Error;
                     return;
                 }
-                finalPaid = TotalToPay;
+                if (PaymentMethod != "Mixto") finalPaid = TotalToPay;
             }
 
             var snapshots = _cartItems.Select(i => new SaleItemSnapshotDto(
                 ProductId: i.Id,
                 Name: i.Name,
                 UnitPrice: i.UnitPrice,
-                Cost: i.UnitPrice * 0.6m,
+                Cost: i.Cost,
                 Quantity: i.Quantity,
                 Unit: i.Unit,
                 Category: i.Category ?? "General",
@@ -187,7 +181,7 @@ public partial class CheckoutDialogViewModel
             }
             else if (PaymentMethod == "Efectivo" || PaymentMethod == "Cash")
             {
-                cashPortion = TotalToPay;
+                cashPortion = TotalToPay - TotalApplied;
                 cardPortion = 0m;
             }
             else if (PaymentMethod == "Tarjeta Débito/Crédito" || PaymentMethod == "Tarjeta" || PaymentMethod == "Card")
@@ -197,7 +191,7 @@ public partial class CheckoutDialogViewModel
             }
 
             var saleDto = new SaleDto(
-                Id: Guid.NewGuid().ToString(),
+                Id: _checkoutOperationId,
                 Date: DateTimeOffset.Now.ToString("o"),
                 Items: snapshots,
                 Total: TotalToPay,
@@ -206,7 +200,7 @@ public partial class CheckoutDialogViewModel
                 PaidAmount: finalPaid,
                 ChangeAmount: ChangeAmount,
                 PaymentMethod: PaymentMethod,
-                CustomerId: SelectedCustomer?.Id,
+                CustomerId: string.IsNullOrWhiteSpace(SelectedCustomer?.Id) ? null : SelectedCustomer.Id,
                 IsCredit: isCredit,
                 IsCancelled: false,
                 CancelledAt: null,
@@ -214,8 +208,12 @@ public partial class CheckoutDialogViewModel
                 CashAmount: cashPortion,
                 CardAmount: cardPortion,
                 OperationId: _checkoutOperationId,
-                GiftcardNumber: PaymentMethod == "Monedero / Tarjeta de Regalo" ? GiftcardNumber.Trim() : null,
-                GiftcardAmount: PaymentMethod == "Monedero / Tarjeta de Regalo" ? TotalToPay : 0m
+                GiftcardNumber: PaymentMethod == "Monedero / Tarjeta de Regalo" || WalletAmount > 0 ? GiftcardNumber.Trim() : null,
+                GiftcardAmount: PaymentMethod == "Monedero / Tarjeta de Regalo" ? TotalToPay : PaymentMethod == "Mixto" ? WalletAmount : 0m,
+                GlobalDiscountAmount: snapshots.Sum(i => i.TotalPrice) - TotalToPay,
+                Payments: TotalApplied > 0 ? (cashPortion > 0
+                    ? new System.Collections.Generic.List<SaleTenderDto> { new(TenderKind.Cash, cashPortion), new(TenderKind.Loyalty, TotalApplied, AccountId: SelectedCustomer?.Id) }
+                    : new System.Collections.Generic.List<SaleTenderDto> { new(TenderKind.Loyalty, TotalApplied, AccountId: SelectedCustomer?.Id) }) : null
             );
 
             FiscalOutboxRequest? fiscalOutbox = null;
@@ -233,16 +231,23 @@ public partial class CheckoutDialogViewModel
                 saleDto = saleDto with { EstadoFiscal = "EN COLA" };
             }
 
-            await _saleService.BeginCheckoutAsync(saleDto);
+            await _saleService.BeginCheckoutAsync(saleDto, fiscalOutbox);
             checkoutStarted = true;
 
-            if (PaymentMethod == "Tarjeta Débito/Crédito" || PaymentMethod == "Tarjeta")
+            if (IsBankTransfer)
+            {
+                if (!BankPaymentVerified || _reconciliation is null) throw new InvalidOperationException("Verifique el depósito en la cuenta bancaria y confirme la referencia.");
+                await _reconciliation.ConfirmTransferAsync(_checkoutOperationId, TotalToPay, BankReference);
+                paymentAuthorized = true;
+            }
+
+            if (cardPortion > 0)
             {
                 IsWaitingForTerminal = true;
                 TerminalStatusMessage = "Por favor, pase la tarjeta por la terminal...";
                 _paymentCts = new CancellationTokenSource();
 
-                var terminalResult = await _terminalService.ProcessPaymentAsync(TotalToPay, _checkoutOperationId, _paymentCts.Token);
+                var terminalResult = await _terminalService.ProcessPaymentAsync(cardPortion, _checkoutOperationId, _paymentCts.Token);
                 IsWaitingForTerminal = false;
 
                 if (!terminalResult.IsSuccess || terminalResult.Data == null)
@@ -260,9 +265,15 @@ public partial class CheckoutDialogViewModel
             }
 
             var savedSale = await _saleService.SaveAsync(saleDto, fiscalOutbox);
+            _committed = true;
             Log.Information("Sale saved successfully with ID: {SaleId}", savedSale.Id);
 
-            await _printDispatcher.DispatchSaleDocumentsAsync(savedSale, ShouldPrintReceipt);
+            try { await _printDispatcher.DispatchSaleDocumentsAsync(savedSale, ShouldPrintReceipt); }
+            catch (Exception printError)
+            {
+                Log.Error(printError, "Sale {SaleId} is committed; receipt can be reprinted from history", savedSale.Id);
+                Ticketfy.Core.Messages.HardwareFeedbackMessage.Report($"Venta {savedSale.Id} registrada. Falló el envío a impresión; revise el historial antes de reimprimir. No vuelva a cobrar.", true);
+            }
 
             if (_onSuccessCallback != null)
             {
@@ -274,6 +285,12 @@ public partial class CheckoutDialogViewModel
         catch (Exception ex)
         {
             Log.Error(ex, "Error processing payment in CheckoutDialogViewModel");
+            if (_committed)
+            {
+                ErrorMessage = "Venta registrada. Consulte el historial; no vuelva a cobrar este ticket.";
+                RequestClose?.Invoke();
+                return;
+            }
             ErrorMessage = ex.Message;
             if (checkoutStarted)
             {
@@ -305,7 +322,8 @@ public partial class CheckoutDialogViewModel
 
     public async Task<bool> ApplyManualDiscountAsync(double requestedDiscountPercentage, string reason, ISecurityInterceptionService? securityService = null, IAuditService? auditService = null, UserModel? currentUser = null)
     {
-        double maxAllowed = currentUser?.Role == SystemRole.CAJERO ? 5.0 : 100.0;
+        if (currentUser is null || !double.IsFinite(requestedDiscountPercentage) || requestedDiscountPercentage < 0 || requestedDiscountPercentage > 100 || string.IsNullOrWhiteSpace(reason)) return false;
+        double maxAllowed = currentUser.Role == SystemRole.CAJERO ? 5.0 : 100.0;
         string? supervisorId = null;
 
         if (requestedDiscountPercentage > maxAllowed)
@@ -333,7 +351,7 @@ public partial class CheckoutDialogViewModel
         {
             await auditService.LogAsync(new AuditLogEntity
             {
-                UserId = currentUser?.Id.ToString() ?? "cajero_matriz",
+                UserId = currentUser.Id.ToString(),
                 AuthorizedBySupervisorId = supervisorId,
                 ActionType = Ticketfy.Core.Enums.AuditActionType.ManualDiscountExceeded,
                 RiskLevel = Ticketfy.Core.Enums.RiskLevel.HighRisk,

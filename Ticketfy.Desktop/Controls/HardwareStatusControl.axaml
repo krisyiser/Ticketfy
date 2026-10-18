@@ -1,0 +1,40 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Ticketfy.ViewModels.Shell" xmlns:hardware="using:Ticketfy.Services.Implementations"
+             x:Class="Ticketfy.Controls.HardwareStatusControl" x:DataType="vm:HardwareStatusViewModel">
+    <Border Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="10,6">
+        <StackPanel Spacing="5">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Button Content="{Binding Summary}" Command="{Binding ToggleDetailsCommand}" Padding="8,4" />
+                <TextBlock Grid.Column="1" Text="{Binding LastPrintMessage}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="12,0" FontSize="12" Foreground="{DynamicResource TextPrimaryBrush}" />
+                <TextBlock Grid.Column="2" Text="ATENCIÓN" IsVisible="{Binding IsPrintError}" Foreground="{DynamicResource AccentDangerBrush}" VerticalAlignment="Center" />
+            </Grid>
+            <StackPanel IsVisible="{Binding IsExpanded}" Spacing="6">
+                <TextBlock Text="{Binding LastChange}" TextWrapping="Wrap" />
+                <ScrollViewer MaxHeight="220">
+                    <ItemsControl ItemsSource="{Binding Devices}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="hardware:PeripheralStatus">
+                                <Grid ColumnDefinitions="85,210,*" Margin="0,3">
+                                    <TextBlock Text="{Binding Device}" FontWeight="Bold" />
+                                    <TextBlock Grid.Column="1" Text="{Binding State}" TextWrapping="Wrap" />
+                                    <TextBlock Grid.Column="2" Text="{Binding Detail}" TextWrapping="Wrap" FontSize="12" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+                <Grid ColumnDefinitions="220,Auto,*">
+                    <TextBox Text="{Binding ScannerInput}" MaxLength="128" Watermark="Prueba del lector (sin venta)">
+                        <TextBox.KeyBindings><KeyBinding Gesture="Enter" Command="{Binding ConfirmScannerInputCommand}" /></TextBox.KeyBindings>
+                    </TextBox>
+                    <Button Grid.Column="1" Content="Verificar entrada" Command="{Binding ConfirmScannerInputCommand}" Margin="6,0" />
+                    <TextBlock Grid.Column="2" Text="{Binding ScannerResult}" TextWrapping="Wrap" FontSize="12" />
+                </Grid>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Actualizar detección" Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsRefreshing}" />
+                    <TextBlock Text="{Binding LastChecked}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="11" />
+                </StackPanel>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

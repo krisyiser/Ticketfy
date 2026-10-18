@@ -156,15 +156,24 @@ public partial class CashupDialogViewModel : ObservableObject
         }
     }
 
+    private readonly string _cashupOperationId = Guid.NewGuid().ToString("N");
+    private bool _savingCashup;
+    private bool _cashupCommitted;
+
+    private bool CanSaveCashup() => !_savingCashup && !_cashupCommitted;
+
     [RelayCommand]
     private async Task SaveCashupAsync()
     {
+        if (!CanSaveCashup()) return;
+        _savingCashup = true;
         bool dbSavedSuccessfully = false;
         try
         {
             var entity = new CashupEntity
             {
-                Id = Guid.NewGuid().ToString(),
+                Id = _cashupOperationId,
+                OperationId = _cashupOperationId,
                 OpenCashAmount = OpenCashAmount,
                 ClosedCashAmount = TotalPhysicalCash,
                 Count1000 = int.TryParse(Count1000, out int i1000) ? i1000 : 0,
@@ -187,8 +196,10 @@ public partial class CashupDialogViewModel : ObservableObject
                 Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
             };
 
-            _db.Cashups.Add(entity);
-            await _db.SaveChangesAsync();
+            var activeShift = _activeShift ?? (_shiftService != null ? await _shiftService.GetActiveAsync() : null);
+            if (activeShift is null || _shiftService is null) throw new InvalidOperationException("No hay turno activo para registrar el arqueo.");
+            await _shiftService.RecordCountAsync(activeShift.Id, entity);
+            _cashupCommitted = true;
             dbSavedSuccessfully = true;
 
             WeakReferenceMessenger.Default.Send(new Ticketfy.Core.Messages.CashupSavedMessage());
@@ -203,7 +214,7 @@ public partial class CashupDialogViewModel : ObservableObject
             {
                 try
                 {
-                    await _printerService.PrintNonSaleCashMovementSlipAsync(new Ticketfy.Core.Models.ShiftMovementSlipModel
+                    bool sent = await _printerService.PrintNonSaleCashMovementSlipAsync(new Ticketfy.Core.Models.ShiftMovementSlipModel
                     {
                         Folio = entity.Id.Length >= 8 ? entity.Id.Substring(0, 8).ToUpper() : entity.Id.ToUpper(),
                         MovementTypeLabel = IsFinalZCut ? "CORTE FINAL Z" : "ARQUEO PARCIAL DE CAJA",
@@ -212,46 +223,18 @@ public partial class CashupDialogViewModel : ObservableObject
                         CashierName = _sessionManager?.CurrentCashier?.FullName ?? "CAJERO EN TURNO",
                         Timestamp = DateTime.Now
                     });
+                    if (!sent) FeedbackMessage += " No se confirmó la impresión; consulte el historial antes de reintentar.";
                 }
                 catch (Exception exPrint)
                 {
                     Log.Warning(exPrint, "Aviso imprimiendo ticket de arqueo de caja");
+                    Ticketfy.Core.Messages.HardwareFeedbackMessage.Report("Arqueo registrado, pero falló la impresión. No repita el cierre.", true);
                 }
             }
 
             if (IsFinalZCut)
             {
-                var activeShift = _activeShift ?? (_shiftService != null ? await _shiftService.GetActiveAsync() : null);
-                string? shiftId = activeShift?.Id;
-
-                if (string.IsNullOrEmpty(shiftId))
-                {
-                    var openEntity = await _db.Shifts.AsNoTracking().FirstOrDefaultAsync(s => s.IsOpen == 1);
-                    shiftId = openEntity?.Id;
-                }
-
-                if (_shiftService != null)
-                {
-                    try
-                    {
-                        if (!string.IsNullOrEmpty(shiftId))
-                        {
-                            await _shiftService.CloseAsync(shiftId, TotalPhysicalCash);
-                            Log.Information("ShiftService: Closed shift {ShiftId} with physical cash ${Amount:N2}", shiftId, TotalPhysicalCash);
-                        }
-                        else
-                        {
-                            var newClosedShift = await _shiftService.OpenAsync(OpenCashAmount);
-                            await _shiftService.CloseAsync(newClosedShift.Id, TotalPhysicalCash);
-                            shiftId = newClosedShift.Id;
-                            Log.Information("ShiftService: Created and closed placeholder shift {ShiftId}", newClosedShift.Id);
-                        }
-                    }
-                    catch (Exception exShift)
-                    {
-                        Log.Warning(exShift, "Aviso cerrando el turno en ShiftService");
-                    }
-                }
+                string shiftId = activeShift.Id;
 
                 try
                 {
@@ -312,9 +295,10 @@ public partial class CashupDialogViewModel : ObservableObject
             else
             {
                 IsFeedbackError = true;
-                FeedbackMessage = "Error al guardar el registro del arqueo en la base de datos.";
+                FeedbackMessage = ex.Message;
             }
         }
+        finally { _savingCashup = false; }
     }
 
     private async Task LoadActiveShiftDetailsAsync()
@@ -322,101 +306,21 @@ public partial class CashupDialogViewModel : ObservableObject
         try
         {
             var shift = _shiftService != null ? await _shiftService.GetActiveAsync() : null;
-            DateTime? shiftStart = null;
-            decimal openingBalance = 0m;
-            string? shiftId = null;
-
-            if (shift != null)
-            {
-                _activeShift = shift;
-                openingBalance = shift.OpeningBalance;
-                shiftId = shift.Id;
-                if (DateTime.TryParse(shift.StartTime, out var parsedStart))
-                {
-                    shiftStart = parsedStart;
-                }
-            }
-            else
-            {
-                // Fallback to start of current calendar day if no active shift entity found
-                shiftStart = DateTime.Today;
-            }
-
-            // Drawer reconciliation includes the original inflow even when a sale
-            // was later cancelled/refunded; the matching cash return movement is
-            // subtracted below. Excluding that sale would count the refund twice.
-            var query = _db.Sales.AsNoTracking();
-
-            if (shiftStart.HasValue)
-            {
-                string startIso = shiftStart.Value.ToString("yyyy-MM-dd");
-                query = query.Where(s => string.Compare(s.Date, startIso) >= 0);
-            }
-
-            var allSales = await query.ToListAsync();
-
-            var shiftSales = allSales
-                .Where(s => s.Date.IsInDateRange(shiftStart, null))
-                .ToList();
-
-            var cashSales = shiftSales
-                .Sum(s => s.CashAmount > 0 ? s.CashAmount :
-                    (s.PaymentMethod != null && (s.PaymentMethod.Equals("Cash", StringComparison.OrdinalIgnoreCase) || s.PaymentMethod.Equals("Efectivo", StringComparison.OrdinalIgnoreCase)) ? s.Total : 0m));
-
-            decimal customerAbonosCash = 0m;
-            decimal cashExpenses = 0m;
-            decimal cashPurchases = 0m;
-            decimal cashReturns = 0m;
-            decimal cashWithdrawals = 0m;
-
-            if (!string.IsNullOrEmpty(shiftId))
-            {
-                customerAbonosCash = await _db.ShiftMovements
-                    .AsNoTracking()
-                    .Where(m => m.ShiftId == shiftId && m.MovementType == Ticketfy.Core.Enums.MovementType.AbonoCliente)
-                    .SumAsync(m => m.Amount);
-
-                cashExpenses = await _db.ShiftMovements
-                    .AsNoTracking()
-                    .Where(m => m.ShiftId == shiftId && m.MovementType == Ticketfy.Core.Enums.MovementType.GastoOperativo)
-                    .SumAsync(m => m.Amount);
-
-                cashPurchases = await _db.ShiftMovements
-                    .AsNoTracking()
-                    .Where(m => m.ShiftId == shiftId && m.MovementType == Ticketfy.Core.Enums.MovementType.CompraEfectivo)
-                    .SumAsync(m => m.Amount);
-
-                cashReturns = await _db.ShiftMovements
-                    .AsNoTracking()
-                    .Where(m => m.ShiftId == shiftId && m.MovementType == Ticketfy.Core.Enums.MovementType.DevolucionCliente)
-                    .SumAsync(m => m.Amount);
-
-                cashWithdrawals = await _db.ShiftMovements
-                    .AsNoTracking()
-                    .Where(m => m.ShiftId == shiftId && m.MovementType == Ticketfy.Core.Enums.MovementType.RetiroEfectivo)
-                    .SumAsync(m => m.Amount);
-            }
-
-            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                OpenCashAmount = openingBalance;
-                TotalIngresosShift = cashSales + customerAbonosCash;
-                TotalEgresosShift = cashExpenses + cashPurchases + cashReturns + cashWithdrawals;
-                TheoreticalCash = OpenCashAmount + TotalIngresosShift - TotalEgresosShift;
-
-                decimal allSalesTotal = shiftSales.Sum(s => s.Total);
-                decimal allSalesCogs = shiftSales.Sum(s => s.TotalCost);
-                decimal allExpensesTotal = cashExpenses;
-
-                GrossProfit = Math.Max(0m, allSalesTotal - allSalesCogs);
-                NetProfit = GrossProfit - allExpensesTotal;
-
-                RecalculatePhysicalTotal();
-            });
+            if (shift is null) { IsFeedbackError = true; FeedbackMessage = "No hay turno activo."; return; }
+            _activeShift = shift;
+            await using var db = new AppDbContext(_db.Options);
+            var movements = await db.ShiftMovements.AsNoTracking().Where(m => m.ShiftId == shift.Id).ToListAsync();
+            var sales = await db.Sales.AsNoTracking().Where(s => s.ShiftId == shift.Id).ToListAsync();
+            var returns = await db.Returns.AsNoTracking().Where(r => r.ShiftId == shift.Id).ToListAsync();
+            var expenses = await db.Expenses.AsNoTracking().Where(e => e.ShiftId == shift.Id && !e.IsCancelled).ToListAsync();
+            OpenCashAmount = shift.OpeningBalance;
+            TotalIngresosShift = movements.Where(m => !m.IsOutflow).Sum(m => m.Amount);
+            TotalEgresosShift = movements.Where(m => m.IsOutflow).Sum(m => m.Amount);
+            TheoreticalCash = OpenCashAmount + TotalIngresosShift - TotalEgresosShift;
+            GrossProfit = sales.Sum(s => s.Total - s.TotalCost) - returns.Sum(r => r.TotalRefunded - r.CogsReversed);
+            NetProfit = GrossProfit - expenses.Sum(e => e.Amount);
+            RecalculatePhysicalTotal();
         }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error loading active shift details for cashup dialog");
-        }
+        catch (Exception ex) { IsFeedbackError = true; FeedbackMessage = ex.Message; }
     }
 }

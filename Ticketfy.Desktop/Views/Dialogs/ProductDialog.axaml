@@ -120,6 +120,11 @@
                     <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14" Background="{DynamicResource BgTertiaryBrush}">
                         <StackPanel Spacing="10">
                             <TextBlock Text="Control de Inventario y SAT" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" Margin="0,0,0,6"/>
+                            <TextBox Text="{Binding StockAdjustmentReason}" Watermark="Motivo obligatorio al ajustar existencias" />
+                            <Grid ColumnDefinitions="*,*">
+                                <StackPanel><TextBlock Text="Existencia máxima (0 = sin límite)" /><NumericUpDown Value="{Binding MaxStock}" Minimum="0" /></StackPanel>
+                                <StackPanel Grid.Column="1"><TextBlock Text="Tasa de IVA (0.16 = 16%)" /><NumericUpDown Value="{Binding TaxRate}" Minimum="0" Maximum="1" Increment="0.01" /></StackPanel>
+                            </Grid>
                             
                             <Grid ColumnDefinitions="*,*">
                                 <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,6,0">

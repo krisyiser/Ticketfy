@@ -36,44 +36,75 @@ public partial class EscPosPrinterService : IEscPosPrinterService, IDisposable, 
     private readonly Channel<PrintJob> _printerQueue;
     private readonly CancellationTokenSource _cts;
     private readonly Task _processingTask;
+    private readonly ISettingsService? _settings;
 
-    public EscPosPrinterService()
+    public EscPosPrinterService(ISettingsService? settings = null)
     {
+        _settings = settings;
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         _printerQueue = Channel.CreateUnbounded<PrintJob>();
         _cts = new CancellationTokenSource();
         _processingTask = ProcessPrintQueueAsync(_cts.Token);
     }
 
-    public Task<bool> OpenCashDrawerAsync(string printerPortOrName = "COM1", int drawerPin = 0)
+    public async Task<bool> OpenCashDrawerAsync(string printerPortOrName = "", int drawerPin = 0)
     {
         try
         {
+            if (string.IsNullOrWhiteSpace(printerPortOrName) && _settings is not null)
+            {
+                var hardware = (await _settings.GetAppSettingsAsync()).Hardware;
+                if (!hardware.EnableCashDrawerTrigger) return false;
+                printerPortOrName = hardware.PrinterPort;
+                drawerPin = hardware.CashDrawerPin;
+            }
+            if (drawerPin is not (0 or 1)) return false;
             byte[] command = drawerPin == 1 ? DrawerPin5Command : DrawerPin2Command;
             using var ms = new MemoryStream();
             ms.Write(EscInit, 0, EscInit.Length);
             ms.Write(command, 0, command.Length);
 
-            return EnqueuePrintJobAsync(printerPortOrName, ms.ToArray());
+            return await EnqueuePrintJobAsync(printerPortOrName, ms.ToArray(), true);
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error preparing open cash drawer pulse on pin {Pin}", drawerPin);
-            return Task.FromResult(false);
+            return false;
         }
     }
 
     public Task<bool> IsPrinterOnlineAsync()
     {
-        return EnqueuePrintJobAsync("ImpresoraTickets", EscInit);
+        // Kept for interface compatibility. A write cannot establish physical readiness.
+        return Task.FromResult(false);
     }
 
-    private Task<bool> EnqueuePrintJobAsync(string portOrName, byte[] payload)
+    private async Task<bool> EnqueuePrintJobAsync(string portOrName, byte[] payload, bool drawer = false)
     {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(portOrName) && _settings != null)
+                portOrName = (await _settings.GetAppSettingsAsync()).Hardware.PrinterPort.Trim();
+            if (!Ticketfy.Core.Hardware.HardwareCompatibility.TryValidatePrinterTarget(portOrName, out _))
+            {
+                Ticketfy.Core.Messages.HardwareFeedbackMessage.Report("No hay un destino de impresión válido. Configure Hardware & Tickets; la operación registrada no se repite.", true);
+                return false;
+            }
+        }
+        catch
+        {
+            Ticketfy.Core.Messages.HardwareFeedbackMessage.Report("No se pudo leer la configuración de impresión. No se envió el trabajo.", true);
+            return false;
+        }
         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!_printerQueue.Writer.TryWrite(new PrintJob(portOrName, payload, completion)))
             completion.TrySetResult(false);
-        return completion.Task;
+        bool accepted = await completion.Task;
+        string label = drawer ? "Pulso del cajón" : "Impresión";
+        Ticketfy.Core.Messages.HardwareFeedbackMessage.Report(accepted
+            ? $"{label}: enviado al controlador. Compruebe el resultado físico; no hay confirmación del dispositivo."
+            : $"{label}: envío no confirmado. Revise conexión, papel y configuración antes de reintentar; el resultado físico puede ser incierto.", !accepted);
+        return accepted;
     }
 
     private async Task ProcessPrintQueueAsync(CancellationToken cancellationToken)
@@ -126,8 +157,6 @@ public partial class EscPosPrinterService : IEscPosPrinterService, IDisposable, 
             }
             return await Task.Run(() =>
             {
-                if (string.IsNullOrEmpty(portOrName)) portOrName = "ImpresoraTickets";
-
                 if (portOrName.StartsWith("COM", StringComparison.OrdinalIgnoreCase))
                 {
                     try
@@ -138,6 +167,7 @@ public partial class EscPosPrinterService : IEscPosPrinterService, IDisposable, 
                             : 9600;
                         if (baudRate is < 1200 or > 115200) return false;
                         using var serial = new SerialPort(serialParts[0], baudRate, Parity.None, 8, StopBits.One);
+                        serial.WriteTimeout = 2500;
                         serial.Open();
                         serial.Write(bytes, 0, bytes.Length);
                         serial.Close();
@@ -145,8 +175,8 @@ public partial class EscPosPrinterService : IEscPosPrinterService, IDisposable, 
                     }
                     catch (Exception ex)
                     {
-                        Log.Warning("COM Serial Port {Port} not reachable directly, fallback spooler simulation: {Message}", portOrName, ex.Message);
-                        return RawPrinterHelper.SendBytesToPrinter("ImpresoraTickets", bytes);
+                        Log.Warning("Configured serial printer {Port} is not reachable: {Message}", portOrName, ex.Message);
+                        return false;
                     }
                 }
                 bool success = RawPrinterHelper.SendBytesToPrinter(portOrName, bytes);

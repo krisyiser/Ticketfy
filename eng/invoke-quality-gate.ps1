@@ -9,12 +9,17 @@ $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Push-Location $repoRoot
 try {
+    $expectedSdk = (Get-Content (Join-Path $repoRoot "global.json") -Raw | ConvertFrom-Json).sdk.version
+    $actualSdk = (& dotnet --version).Trim()
+    if ($LASTEXITCODE -ne 0 -or $actualSdk -ne $expectedSdk) {
+        throw "Se requiere SDK $expectedSdk; SDK seleccionado: $actualSdk."
+    }
     if ($RequireClean -and (git status --porcelain)) {
         throw "La canalización reproducible requiere un checkout limpio."
     }
 
     $locked = if ($LockedRestore) { "--locked-mode" } else { $null }
-    $restoreArgs = @("restore", "Ticketfy.Desktop.Tests/Ticketfy.Desktop.Tests.csproj", "-p:RuntimeIdentifier=win-x64")
+    $restoreArgs = @("restore", "Ticketfy.Desktop.Tests/Ticketfy.Desktop.Tests.csproj", "-p:RuntimeIdentifier=win-x64", "-p:Configuration=Release")
     if ($locked) { $restoreArgs += $locked }
     & dotnet @restoreArgs
     if ($LASTEXITCODE -ne 0) { throw "Falló restore de la solución de pruebas." }
@@ -23,6 +28,9 @@ try {
     if ($locked) { $keygenRestore += $locked }
     & dotnet @keygenRestore
     if ($LASTEXITCODE -ne 0) { throw "Falló restore de Keygen." }
+
+    dotnet tool restore
+    if ($LASTEXITCODE -ne 0) { throw "Falló restore de las herramientas locales." }
 
     dotnet format Ticketfy.sln --verify-no-changes --no-restore --severity error
     if ($LASTEXITCODE -ne 0) { throw "Falló la verificación de formato." }
@@ -34,14 +42,23 @@ try {
     dotnet build Ticketfy.Keygen/Ticketfy.Keygen.csproj --configuration Release --no-restore
     if ($LASTEXITCODE -ne 0) { throw "Falló el build Release de Keygen." }
 
-    $results = Join-Path $repoRoot "artifacts/TestResults"
+    foreach ($context in @("AppDbContext", "AuditDbContext")) {
+        # Design-time factories use scratch paths, never the operational database.
+        dotnet tool run dotnet-ef migrations has-pending-model-changes `
+            --project Ticketfy.Desktop --context $context --configuration Release --no-build
+        if ($LASTEXITCODE -ne 0) { throw "Modelo sin migración versionada: $context." }
+    }
+
+    $runDirectory = "artifacts/quality-$([Guid]::NewGuid().ToString('N'))"
+    $results = Join-Path $repoRoot "$runDirectory/TestResults"
     dotnet test Ticketfy.Desktop.Tests/Ticketfy.Desktop.Tests.csproj `
         --configuration Release --no-build --no-restore `
         -p:RuntimeIdentifier=win-x64 `
         --settings coverage.runsettings `
         --collect:"XPlat Code Coverage" `
         --results-directory $results `
-        --logger "console;verbosity=minimal"
+        --logger "console;verbosity=minimal" `
+        --logger "trx;LogFileName=quality.trx"
     if ($LASTEXITCODE -ne 0) { throw "Falló la suite automatizada." }
 
     $coverage = Get-ChildItem -LiteralPath $results -Filter "coverage.cobertura.xml" -Recurse |
@@ -56,17 +73,27 @@ try {
         "Ticketfy.Keygen/Ticketfy.Keygen.csproj"
     )
     foreach ($auditProject in $auditProjects) {
-        $auditOutput = (& dotnet list $auditProject package --vulnerable --include-transitive 2>&1 | Out-String)
+        # .NET 10 package list restores implicitly unless disabled. Audit the exact
+        # Release graph already tested, without replacing assets with a Debug graph.
+        $auditOutput = (& dotnet package list --project $auditProject --no-restore --vulnerable --include-transitive --format json --output-version 1 | Out-String)
         if ($LASTEXITCODE -ne 0) { throw "Falló la auditoría NuGet de $auditProject.`n$auditOutput" }
         Write-Host $auditOutput
-        if ($auditOutput -match "has the following vulnerable packages|tiene los siguientes paquetes vulnerables") {
+        $audit = $auditOutput | ConvertFrom-Json
+        $auditFile = Join-Path $results "$([IO.Path]::GetFileNameWithoutExtension($auditProject))-dependencies.json"
+        [IO.File]::WriteAllText($auditFile, $auditOutput, [Text.UTF8Encoding]::new($false))
+        if ($audit.problems.Count -gt 0) { throw "La auditoría NuGet reportó problemas: $auditOutput" }
+        $vulnerable = @($audit.projects.frameworks | ForEach-Object {
+            @($_.topLevelPackages) + @($_.transitivePackages) |
+                Where-Object { $_.vulnerabilities.Count -gt 0 }
+        })
+        if ($vulnerable.Count -gt 0) {
             throw "Se detectaron dependencias vulnerables en $auditProject."
         }
     }
 
-    $first = & (Join-Path $PSScriptRoot "package-ci.ps1") -OutputDirectory "artifacts/package-a" -NoRestore
+    $first = & (Join-Path $PSScriptRoot "package-ci.ps1") -OutputDirectory "$runDirectory/package-a" -NoRestore
     if ($VerifyReproducible) {
-        $second = & (Join-Path $PSScriptRoot "package-ci.ps1") -OutputDirectory "artifacts/package-b" -NoRestore
+        $second = & (Join-Path $PSScriptRoot "package-ci.ps1") -OutputDirectory "$runDirectory/package-b" -NoRestore
         if ($first.Sha256 -ne $second.Sha256) {
             throw "El paquete no es reproducible: $($first.Sha256) != $($second.Sha256)."
         }

@@ -71,8 +71,9 @@ public partial class PurchaseHistoryViewModel : ObservableObject
 
         try
         {
-            await _printerService.PrintPurchaseOrderAsync(purchase, "ImpresoraTickets");
-            FeedbackMessage = $"Ticket de compra {purchase.InvoiceNumber} enviado a impresora.";
+            bool sent = await _printerService.PrintPurchaseOrderAsync(purchase);
+            FeedbackMessage = sent ? $"Ticket de compra {purchase.InvoiceNumber} enviado al controlador; compruebe el papel."
+                : "No se confirmó el envío del ticket de compra; revise la impresora.";
         }
         catch (Exception ex)
         {

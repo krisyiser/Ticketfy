@@ -46,15 +46,11 @@ public sealed partial class AuthService : ObservableObject
             return new AuthenticateResult(false);
         }
 
-        var hash = await _userService.GetPasswordHashAsync(user.Id);
-        if (hash is null || !SecurityManager.VerifyPassword(password, hash))
+        if (!await _userService.VerifyCredentialAsync(user.Id, password))
         {
             Log.Warning("Authentication failed: invalid credentials for user {UserReference}", LogSanitizer.Pseudonymize(username));
             return new AuthenticateResult(false);
         }
-
-        if (SecurityManager.NeedsRehash(hash))
-            await _userService.UpdatePasswordHashAsync(user.Id, SecurityManager.HashPassword(password));
 
         var userModel = _permissionEngine.MapDtoToModel(user);
 
@@ -72,20 +68,14 @@ public sealed partial class AuthService : ObservableObject
 
     public async Task<bool> VerifyManagerPinAsync(string userId, string pin)
     {
-        var storedPin = await _userService.GetPinHashAsync(userId);
-        if (storedPin is null || !SecurityManager.VerifyPin(pin, storedPin)) return false;
-        if (SecurityManager.PinNeedsRehash(storedPin))
-            await _userService.UpdatePinHashAsync(userId, SecurityManager.HashPin(pin));
-        return true;
+        var user = (await _userService.GetManagersAsync()).SingleOrDefault(u => u.Id == userId && u.IsActive);
+        return user is not null && await _userService.VerifyCredentialAsync(userId, pin, true);
     }
 
     public async Task<bool> VerifyManagerPasswordAsync(string userId, string password)
     {
-        var hash = await _userService.GetPasswordHashAsync(userId);
-        if (hash is null || !SecurityManager.VerifyPassword(password, hash)) return false;
-        if (SecurityManager.NeedsRehash(hash))
-            await _userService.UpdatePasswordHashAsync(userId, SecurityManager.HashPassword(password));
-        return true;
+        var user = (await _userService.GetManagersAsync()).SingleOrDefault(u => u.Id == userId && u.IsActive);
+        return user is not null && await _userService.VerifyCredentialAsync(userId, password);
     }
 
     public void Logout()

@@ -12,6 +12,8 @@ namespace Ticketfy.Data.Entities;
 [Table("customer_payments")]
 public class CustomerPaymentEntity
 {
+    public string? RegisterId { get; set; }
+    public string? CashierUserId { get; set; }
     [Key]
     [Column("id")]
     public string Id { get; set; } = Guid.NewGuid().ToString();

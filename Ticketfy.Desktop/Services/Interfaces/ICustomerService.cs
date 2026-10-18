@@ -9,6 +9,7 @@ namespace Ticketfy.Services.Interfaces;
 /// </summary>
 public interface ICustomerService
 {
+    Task<AccountStatementDto> GetStatementAsync(string customerId) => throw new System.NotSupportedException();
     Task<List<CustomerDto>> GetAllAsync();
     Task<CustomerDto?> GetByIdAsync(string id);
     Task AddAsync(CustomerDto customer);

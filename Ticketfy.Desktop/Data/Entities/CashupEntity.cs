@@ -6,6 +6,9 @@ namespace Ticketfy.Data.Entities;
 [Table("cashups")]
 public class CashupEntity
 {
+    public string? OperationId { get; set; }
+    public string? RegisterId { get; set; }
+    public string? CashierUserId { get; set; }
     [Key]
     [Column("id")]
     public string Id { get; set; } = string.Empty;
@@ -74,8 +77,8 @@ public class CashupEntity
     public string Timestamp { get; set; } = string.Empty;
 
     [NotMapped]
-    public decimal TotalSales => Math.Max(0m, TheoreticalCash - OpenCashAmount);
+    public decimal? TotalSales { get; set; }
 
     [NotMapped]
-    public decimal TotalExpenses => Math.Max(0m, OpenCashAmount + TotalSales - TheoreticalCash);
+    public decimal? TotalExpenses { get; set; }
 }

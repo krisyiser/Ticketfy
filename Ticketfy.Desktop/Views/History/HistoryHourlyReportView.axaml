@@ -19,7 +19,7 @@
                     <TextBlock Text="{Binding PeakHourRevenue, StringFormat='Venta en Hora Pico: ${0:N2}'}" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
-                    <TextBlock Text="Total del Día" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" HorizontalAlignment="Right" />
+                    <TextBlock Text="Emisión bruta del periodo (antes de devoluciones)" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" HorizontalAlignment="Right" />
                     <TextBlock Text="{Binding TotalDayRevenue, StringFormat='${0:N2}'}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource AccentSuccessBrush}" HorizontalAlignment="Right" />
                 </StackPanel>
             </Grid>

@@ -10,6 +10,9 @@ public enum MovementType
     DevolucionCliente = 5, // Cash Outflow: Cash refunds to customers
     RetiroEfectivo = 6,    // Manual drop / safe deposit
     CierreCaja = 7,
+    IngresoExtraordinario = 8,
+    RecargaMonedero = 9,
+    CancelacionGasto = 10,
 
     // Backward compatibility aliases
     Venta = 1,

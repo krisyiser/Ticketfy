@@ -4,8 +4,10 @@ Fecha de corte: 18 de octubre de 2026.
 
 ## Estado
 
-La implementación local está completa y la puerta integral pasa. La canalización
-obligatoria está registrada para GitHub Actions en `.github/workflows/quality.yml`.
+La canalización está registrada para GitHub Actions en `.github/workflows/quality.yml`.
+La plataforma actual es .NET 10 LTS; su validación se detalla en
+[Migración a .NET 10](NET10_MIGRATION.md). La ejecución remota y el requisito de
+checkout limpio deben verificarse para cada candidato.
 La definición equivalente de Forgejo queda conservada, pero inactiva hasta recuperar
 el servidor.
 
@@ -17,12 +19,15 @@ proveedor controlado para validar la cola y sus fallos sin emitir comprobantes r
 
 `eng/invoke-quality-gate.ps1` ejecuta, en orden:
 
-1. restauración NuGet con archivos `packages.lock.json` y opción `--locked-mode`;
+1. comprobación del SDK fijado, restauración Release NuGet con archivos
+   `packages.lock.json`, opción `--locked-mode` y herramientas locales fijadas;
 2. verificación de formato de Desktop, pruebas y Keygen;
 3. compilación Release con advertencias como errores y analizadores del SDK;
-4. suite xUnit con pruebas Avalonia Headless;
+4. detección de modelos sin migración en ambos contextos y suite xUnit/VSTest con
+   pruebas Avalonia Headless;
 5. cobertura Cobertura y umbral crítico agregado de 75%;
-6. auditoría de vulnerabilidades directas y transitivas;
+6. auditoría JSON de vulnerabilidades directas y transitivas, sin restaurar otra
+   configuración sobre los assets probados;
 7. publicación self-contained `win-x64` y ZIP determinista;
 8. segunda publicación opcional y comparación exacta de SHA-256;
 9. comprobación opcional de que el checkout empezó y terminó limpio.
@@ -31,6 +36,11 @@ La CI usa exactamente este script. No existe una segunda definición de los paso
 pueda divergir de la validación local.
 
 ## Cobertura
+
+Las cifras de este documento corresponden a la validación de la Etapa 4. Para el
+árbol de trabajo actual, consultar la evidencia de [Etapa 6](STAGE_6_COMMERCIAL_FOUNDATION.md).
+Su gate amplía el núcleo evaluado y exige también 70% por servicio, excepto el
+inicializador de base, que conserva la evaluación agregada.
 
 La cobertura global de la aplicación Avalonia es informativa: incluye vistas,
 adaptadores de hardware y rutas que requieren laboratorio. El criterio bloqueante es

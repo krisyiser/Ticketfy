@@ -23,13 +23,22 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Instalar .NET 9
+      - name: Instalar .NET 10 LTS fijado en global.json
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
+          global-json-file: global.json
           cache: true
           cache-dependency-path: "**/packages.lock.json"
 
       - name: Build, pruebas, cobertura, análisis, dependencias y paquete reproducible
         shell: pwsh
         run: ./eng/invoke-quality-gate.ps1 -LockedRestore -RequireClean -VerifyReproducible
+
+      - name: Conservar resultados de pruebas y cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-evidence
+          path: artifacts/quality-*/TestResults/
+          if-no-files-found: warn
+          retention-days: 14

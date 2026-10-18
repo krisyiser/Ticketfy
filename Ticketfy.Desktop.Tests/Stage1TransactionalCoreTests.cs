@@ -132,6 +132,7 @@ public sealed class Stage1TransactionalCoreTests
         var sale = CreateSale("recover-authorized", 1, 10m) with { PaymentMethod = "Tarjeta", CashAmount = 0m, CardAmount = 10m };
 
         await fixture.Service.BeginCheckoutAsync(sale);
+        using (var bankProof = fixture.CreateContext()) CommercialTestSession.ConfirmCard(bankProof, sale.OperationId!, 10m, "terminal-authorization-1");
         await fixture.Service.MarkPaymentAuthorizedAsync(sale.OperationId!, "terminal-authorization-1");
 
         var restartedService = Service(fixture.Options);
@@ -178,7 +179,7 @@ public sealed class Stage1TransactionalCoreTests
 
         var saved = await fixture.Service.SaveAsync(sale);
         Assert.True(await fixture.Service.CancelSaleAsync(saved.Id, "Prueba de cancelación"));
-        Assert.False(await fixture.Service.CancelSaleAsync(saved.Id, "Repetición"));
+        Assert.False(await fixture.Service.CancelSaleAsync(saved.Id, "Prueba de cancelación"));
 
         await using var verify = fixture.CreateContext();
         Assert.Equal(10d, (await verify.Products.SingleAsync()).Stock);
@@ -186,7 +187,7 @@ public sealed class Stage1TransactionalCoreTests
         Assert.Equal(2, await verify.ShiftMovements.CountAsync());
         Assert.Equal(2, await verify.TransactionJournal.CountAsync());
 
-        var shiftService = new ShiftService(verify);
+        var shiftService = new ShiftService(verify, CommercialTestSession.Create(fixture.Options));
         var closed = await shiftService.CloseAsync("SHIFT-1", 100m);
         Assert.Equal(100m, closed.ExpectedBalance);
         Assert.Equal(0m, closed.Diff);
@@ -203,7 +204,8 @@ public sealed class Stage1TransactionalCoreTests
             await setup.SaveChangesAsync();
         }
 
-        var service = new CustomerService(fixture.CreateContext());
+        using (var baseline = fixture.CreateContext()) CommercialTestSession.OpeningDebt(baseline, "CUSTOMER-1", 100m);
+        var service = new CustomerService(fixture.CreateContext(), operations: CommercialTestSession.Create(fixture.Options));
         Assert.True(await service.RegisterCustomerPaymentAsync("CUSTOMER-1", 40m, "Efectivo", "Prueba", "payment-once"));
         Assert.True(await service.RegisterCustomerPaymentAsync("CUSTOMER-1", 40m, "Efectivo", "Prueba", "payment-once"));
 
@@ -225,7 +227,7 @@ public sealed class Stage1TransactionalCoreTests
             await setup.SaveChangesAsync();
         }
 
-        var service = new CustomerService(fixture.CreateContext());
+        var service = new CustomerService(fixture.CreateContext(), operations: CommercialTestSession.Create(fixture.Options));
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.RegisterCustomerPaymentAsync("CUSTOMER-2", 40m, "Efectivo", "Exceso", "payment-too-large"));
 
@@ -300,7 +302,7 @@ public sealed class Stage1TransactionalCoreTests
     }
 
     private static SaleService Service(DbContextOptions<AppDbContext> options) =>
-        new(new TestDbContextFactory(options), new CoOccurrenceQueue(), new SpyAuditService());
+        new(new TestDbContextFactory(options), new CoOccurrenceQueue(), new SpyAuditService(), CommercialTestSession.Create(options));
 
     private static ProductEntity Product(double stock) => new()
     {
@@ -366,14 +368,9 @@ public sealed class Stage1TransactionalCoreTests
         public async Task AddOpenShiftAsync()
         {
             await using var context = CreateContext();
-            context.Shifts.Add(new ShiftEntity
-            {
-                Id = "SHIFT-1",
-                StartTime = DateTimeOffset.UtcNow.ToString("O"),
-                OpeningBalance = 100m,
-                ExpectedBalance = 100m,
-                IsOpen = 1
-            });
+            var shift = await context.Shifts.SingleAsync(s => s.Id == "SHIFT-1");
+            shift.OpeningBalance = 100m;
+            shift.ExpectedBalance = 100m;
             await context.SaveChangesAsync();
         }
 

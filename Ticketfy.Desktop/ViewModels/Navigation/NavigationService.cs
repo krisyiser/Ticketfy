@@ -12,6 +12,9 @@ namespace Ticketfy.ViewModels.Navigation;
 /// </summary>
 public partial class NavigationService : ObservableObject
 {
+    private readonly Ticketfy.Services.CommercialOperationContext? _operations;
+    private readonly Microsoft.EntityFrameworkCore.IDbContextFactory<Ticketfy.Data.AppDbContext>? _factory;
+    [ObservableProperty] private string _authorizationError = string.Empty;
     private readonly PosViewModel _posVm;
     private readonly InventoryViewModel _inventoryVm;
     private readonly CustomersViewModel _customersVm;
@@ -40,9 +43,13 @@ public partial class NavigationService : ObservableObject
         SettingsViewModel settingsVm,
         SuppliersViewModel suppliersVm,
         ExpensesViewModel expensesVm,
-        CashierPerformanceViewModel cashierPerformanceVm)
+        CashierPerformanceViewModel cashierPerformanceVm,
+        Ticketfy.Services.CommercialOperationContext? operations = null,
+        Microsoft.EntityFrameworkCore.IDbContextFactory<Ticketfy.Data.AppDbContext>? factory = null)
     {
         _loginVm = loginVm;
+        _operations = operations;
+        _factory = factory;
         _posVm = posVm;
         _inventoryVm = inventoryVm;
         _customersVm = customersVm;
@@ -64,6 +71,7 @@ public partial class NavigationService : ObservableObject
     public HistoryViewModel HistoryVm => _historyVm;
     public PromotionsViewModel PromotionsVm => _promotionsVm;
     public SettingsViewModel SettingsVm => _settingsVm;
+    public CommercialControlViewModel? CommercialControl { get; set; }
     public SuppliersViewModel SuppliersVm => _suppliersVm;
     public LoginViewModel LoginVm => _loginVm;
 
@@ -92,6 +100,26 @@ public partial class NavigationService : ObservableObject
             return;
         }
 
+        string permission = target.ToLowerInvariant() switch
+        {
+            "pos" or "commercial" => "pos.checkout",
+            "inventory" => "inventory.view",
+            "customers" => "customers.view",
+            "suppliers" or "proveedores" => "suppliers.manage",
+            "expenses" or "gastos" => "expenses.manage",
+            "promotions" => "promotions.manage",
+            "settings" => "settings.business",
+            _ => "reports.view"
+        };
+        try
+        {
+            if (_factory is null || _operations is null) throw new UnauthorizedAccessException("Sesión requerida.");
+            using var db = await _factory.CreateDbContextAsync();
+            await _operations.RequireAsync(db, permission, false);
+            AuthorizationError = string.Empty;
+        }
+        catch (UnauthorizedAccessException ex) { AuthorizationError = ex.Message; return; }
+
         ActiveViewModel = target.ToLower() switch
         {
             "pos" => _posVm,
@@ -101,6 +129,7 @@ public partial class NavigationService : ObservableObject
             "proveedores" => _suppliersVm,
             "expenses" => _expensesVm,
             "gastos" => _expensesVm,
+            "commercial" => CommercialControl ?? (ObservableObject)_expensesVm,
             "history" => _historyVm,
             "promotions" => _promotionsVm,
             "fiscal" => _fiscalVm,
@@ -112,6 +141,7 @@ public partial class NavigationService : ObservableObject
         };
 
         await ActivateCurrentModuleAsync();
+        if (ActiveViewModel == CommercialControl && CommercialControl is not null) await CommercialControl.RefreshAsync();
     }
 
     private async Task ActivateCurrentModuleAsync()

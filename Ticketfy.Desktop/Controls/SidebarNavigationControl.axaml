@@ -24,6 +24,9 @@
                 </Border>
 
                 <!-- Nav: POS (F2) -->
+                <Button Classes="nav-item" Command="{Binding NavigateToCommand}" CommandParameter="commercial" ToolTip.Tip="Kardex, cuentas, caja y conciliación">
+                    <TextBlock Text="Control" FontSize="10" FontWeight="Bold" />
+                </Button>
                 <Button x:Name="NavPosBtn" Classes="nav-item"
                         Command="{Binding NavigateToCommand}" CommandParameter="pos"
                         ToolTip.Tip="Punto de Venta">

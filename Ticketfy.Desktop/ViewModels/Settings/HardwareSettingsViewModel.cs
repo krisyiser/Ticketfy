@@ -48,7 +48,7 @@ public partial class HardwareSettingsViewModel : ObservableObject
         if (_settingsService == null) return;
         try
         {
-            if (!HardwareCompatibility.TryValidatePrinterTarget(State.Hardware.PrinterPort, out string error))
+            if (!string.IsNullOrWhiteSpace(State.Hardware.PrinterPort) && !HardwareCompatibility.TryValidatePrinterTarget(State.Hardware.PrinterPort, out string error))
             {
                 ValidationMessage = error;
                 return;
@@ -59,11 +59,12 @@ public partial class HardwareSettingsViewModel : ObservableObject
                 return;
             }
             await _settingsService.SaveAppSettingsAsync(State);
-            ValidationMessage = string.Empty;
+            ValidationMessage = "Configuración guardada. Revise el panel Periféricos; guardar no confirma el funcionamiento físico.";
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Failed saving AppSettings in HardwareSettingsViewModel");
+            ValidationMessage = "No se pudo guardar la configuración. Revise sus permisos y los datos ingresados.";
         }
     }
 }

@@ -41,6 +41,8 @@ public static class DatabaseInitializer
 
             await using (var context = new AppDbContext(options))
             {
+                if (System.IO.File.Exists(AppDataPaths.DatabaseFile) && (await context.Database.GetPendingMigrationsAsync()).Any())
+                    await new BackupService(passwordProvider: () => securePassword).CreateBackupAsync("BeforeSchemaUpgrade");
                 await context.Database.MigrateAsync();
                 await context.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
                 await SeedCategoriesAsync(context);

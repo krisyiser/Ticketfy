@@ -1,227 +1,79 @@
-using System;
 using System.Collections.ObjectModel;
-using System.Linq;
-using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.EntityFrameworkCore;
-using Ticketfy.Data;
-using Ticketfy.Data.Entities;
+using Ticketfy.Services.Implementations;
 
 namespace Ticketfy.ViewModels.Dialogs;
 
 public class CategoryItemViewModel
 {
-    public string Id { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
     public int ProductCount { get; set; }
-    public string ProductCountText => ProductCount == 1 ? "(1 producto)" : $"({ProductCount} productos)";
-    public bool IsNotGeneral => Name.ToLower() != "general";
+    public string ProductCountText => $"({ProductCount} productos)";
+    public bool IsNotGeneral => !Name.Equals("General", StringComparison.OrdinalIgnoreCase);
 }
 
 public partial class ManageCategoriesDialogViewModel : ObservableObject
 {
-    private readonly AppDbContext _db;
-
+    private readonly CategoryService _service;
+    private CategoryItemViewModel? _editingCategory;
+    private string _newId = Guid.NewGuid().ToString("N");
+    private bool _saving;
     public ObservableCollection<CategoryItemViewModel> Categories { get; } = [];
-
-    [ObservableProperty] private string _newCategoryName = string.Empty;
-    [ObservableProperty] private string _errorMessage = string.Empty;
+    [ObservableProperty] private string _newCategoryName = "";
+    [ObservableProperty] private string _errorMessage = "";
     [ObservableProperty] private string _inputHeader = "Nueva Categoría";
     [ObservableProperty] private string _saveButtonText = "Agregar";
-    [ObservableProperty] private bool _isEditing = false;
-
-    private CategoryItemViewModel? _editingCategory = null;
-
+    [ObservableProperty] private bool _isEditing;
     public event Action? RequestClose;
     public event Action? CategoriesUpdated;
-
-    public ManageCategoriesDialogViewModel(AppDbContext db)
-    {
-        _db = db;
-        _ = LoadCategoriesAsync();
-    }
-
+    public ManageCategoriesDialogViewModel(CategoryService service) { _service = service; _ = LoadCategoriesAsync(); }
     public async Task LoadCategoriesAsync()
     {
         try
         {
-            // Load categories and count products in each category
-            var categoriesList = await _db.Categories
-                .AsNoTracking()
-                .OrderBy(c => c.Name)
-                .ToListAsync();
-
-            var productsList = await _db.Products
-                .AsNoTracking()
-                .Select(p => p.Category)
-                .ToListAsync();
-
+            var categories = await _service.GetAllAsync();
             Categories.Clear();
-            foreach (var cat in categoriesList)
-            {
-                int count = productsList.Count(c => c != null && c.ToLower() == cat.Name.ToLower());
-                Categories.Add(new CategoryItemViewModel
-                {
-                    Id = cat.Id,
-                    Name = cat.Name,
-                    ProductCount = count
-                });
-            }
+            foreach (var c in categories) Categories.Add(new() { Id = c.Id, Name = c.Name, ProductCount = c.ProductCount });
         }
-        catch (Exception ex)
-        {
-            ErrorMessage = "Error al cargar categorías: " + ex.Message;
-        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
     }
-
     [RelayCommand]
     private async Task SaveCategoryAsync()
     {
-        if (string.IsNullOrWhiteSpace(NewCategoryName))
-        {
-            ErrorMessage = "El nombre de la categoría no puede estar vacío.";
-            return;
-        }
-
-        string trimmedName = NewCategoryName.Trim();
-
+        if (_saving) return;
+        _saving = true;
         try
         {
-            if (IsEditing && _editingCategory != null)
-            {
-                // Renaming
-                if (_editingCategory.Name.ToLower() == trimmedName.ToLower())
-                {
-                    CancelEdit();
-                    return;
-                }
-
-                bool exists = await _db.Categories.AnyAsync(c => c.Name.ToLower() == trimmedName.ToLower() && c.Id != _editingCategory.Id);
-                if (exists)
-                {
-                    ErrorMessage = "Esta categoría ya existe.";
-                    return;
-                }
-
-                var entity = await _db.Categories.FindAsync(_editingCategory.Id);
-                if (entity != null)
-                {
-                    string oldName = entity.Name;
-                    entity.Name = trimmedName;
-
-                    // Migrate products in database to the new name
-                    var productsToUpdate = await _db.Products
-                        .Where(p => p.Category.ToLower() == oldName.ToLower())
-                        .ToListAsync();
-                    foreach (var p in productsToUpdate)
-                    {
-                        p.Category = trimmedName;
-                    }
-
-                    await _db.SaveChangesAsync();
-                }
-
-                CancelEdit();
-            }
-            else
-            {
-                // Adding new category
-                bool exists = await _db.Categories.AnyAsync(c => c.Name.ToLower() == trimmedName.ToLower());
-                if (exists)
-                {
-                    ErrorMessage = "Esta categoría ya existe.";
-                    return;
-                }
-
-                var entity = new CategoryEntity
-                {
-                    Id = Guid.NewGuid().ToString(),
-                    Name = trimmedName
-                };
-
-                _db.Categories.Add(entity);
-                await _db.SaveChangesAsync();
-
-                NewCategoryName = string.Empty;
-                ErrorMessage = string.Empty;
-            }
-
-            await LoadCategoriesAsync();
-            CategoriesUpdated?.Invoke();
+            await _service.SaveAsync(_editingCategory?.Id ?? _newId, NewCategoryName);
+            _newId = Guid.NewGuid().ToString("N");
+            CancelEdit(); await LoadCategoriesAsync(); CategoriesUpdated?.Invoke();
         }
-        catch (Exception ex)
-        {
-            ErrorMessage = "Error al guardar categoría: " + ex.Message;
-        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { _saving = false; }
     }
-
     [RelayCommand]
     public void StartEdit(CategoryItemViewModel item)
     {
-        if (item == null || !item.IsNotGeneral) return;
-
-        _editingCategory = item;
-        NewCategoryName = item.Name;
-        InputHeader = "Editar Categoría";
-        SaveButtonText = "Guardar";
-        IsEditing = true;
-        ErrorMessage = string.Empty;
+        if (!item.IsNotGeneral) return;
+        _editingCategory = item; NewCategoryName = item.Name; InputHeader = "Editar Categoría";
+        SaveButtonText = "Guardar"; IsEditing = true; ErrorMessage = "";
     }
-
     [RelayCommand]
     public void CancelEdit()
     {
-        _editingCategory = null;
-        NewCategoryName = string.Empty;
-        InputHeader = "Nueva Categoría";
-        SaveButtonText = "Agregar";
-        IsEditing = false;
-        ErrorMessage = string.Empty;
+        _editingCategory = null; NewCategoryName = ""; InputHeader = "Nueva Categoría";
+        SaveButtonText = "Agregar"; IsEditing = false; ErrorMessage = "";
     }
-
     [RelayCommand]
     private async Task DeleteCategoryAsync(CategoryItemViewModel item)
     {
-        if (item == null || !item.IsNotGeneral) return;
-
-        try
-        {
-            var entity = await _db.Categories.FindAsync(item.Id);
-            if (entity != null)
-            {
-                // Migrate all products in this category to "General"
-                var productsToUpdate = await _db.Products
-                    .Where(p => p.Category.ToLower() == item.Name.ToLower())
-                    .ToListAsync();
-                foreach (var p in productsToUpdate)
-                {
-                    p.Category = "General";
-                }
-
-                _db.Categories.Remove(entity);
-                await _db.SaveChangesAsync();
-
-                // If currently editing the deleted category, cancel the edit
-                if (_editingCategory?.Id == item.Id)
-                {
-                    CancelEdit();
-                }
-
-                ErrorMessage = string.Empty;
-                await LoadCategoriesAsync();
-                CategoriesUpdated?.Invoke();
-            }
-        }
-        catch (Exception ex)
-        {
-            ErrorMessage = "Error al eliminar categoría: " + ex.Message;
-        }
+        if (_saving) return;
+        _saving = true;
+        try { await _service.DeleteAsync(item.Id); CancelEdit(); await LoadCategoriesAsync(); CategoriesUpdated?.Invoke(); }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { _saving = false; }
     }
-
-    [RelayCommand]
-    private void Close()
-    {
-        RequestClose?.Invoke();
-    }
+    [RelayCommand] private void Close() => RequestClose?.Invoke();
 }

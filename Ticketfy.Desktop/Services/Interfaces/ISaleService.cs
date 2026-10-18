@@ -15,9 +15,12 @@ public interface ISaleService
     event System.Action<SaleDto>? SaleSaved;
     Task<SaleDto> SaveAsync(SaleDto sale, FiscalOutboxRequest? fiscalOutbox = null);
     Task BeginCheckoutAsync(SaleDto sale);
+    Task BeginCheckoutAsync(SaleDto sale, FiscalOutboxRequest? fiscalOutbox) => BeginCheckoutAsync(sale);
     Task MarkPaymentAuthorizedAsync(string operationId, string paymentReference);
     Task MarkCheckoutFailedAsync(string operationId, string reason, bool requiresReconciliation);
     Task<int> RecoverInterruptedCheckoutsAsync();
+    Task ResolveInterruptedCheckoutAsync(string operationId, bool complete, bool fundsVerified, string reason) => throw new NotSupportedException();
+    Task<List<PendingCheckoutDto>> GetInterruptedCheckoutsAsync() => throw new NotSupportedException();
     Task<SaleResultModel> ProcessSaleAsync(SaleCreationDto dto);
     Task<SaleDto?> GetByIdAsync(string saleId);
     Task<List<SaleDto>> GetHistoryAsync(int limit = 500);

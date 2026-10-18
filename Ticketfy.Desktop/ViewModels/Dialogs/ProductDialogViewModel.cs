@@ -100,7 +100,7 @@ public partial class ProductDialogViewModel : ObservableObject
 
     private readonly ISessionManager? _sessionManager;
     private readonly IAuditService? _auditService;
-    private readonly AppDbContext _db;
+    private readonly IDbContextFactory<AppDbContext> _factory;
 
     [ObservableProperty]
     private SupplierDto? _selectedSupplier;
@@ -113,7 +113,7 @@ public partial class ProductDialogViewModel : ObservableObject
     public ProductDialogViewModel(IProductService productService, AppDbContext db, ISessionManager? sessionManager = null, IAuditService? auditService = null)
     {
         _productService = productService;
-        _db = db;
+        _factory = new AppDbContextFactoryImpl<AppDbContext>(db.Options);
         _sessionManager = sessionManager;
         _auditService = auditService;
         _ = LoadCategoriesAndSuppliersAsync();
@@ -121,6 +121,7 @@ public partial class ProductDialogViewModel : ObservableObject
 
     public async Task LoadCategoriesAndSuppliersAsync()
     {
+        await using var _db = await _factory.CreateDbContextAsync();
         try
         {
             var list = await _db.Categories
@@ -186,6 +187,7 @@ public partial class ProductDialogViewModel : ObservableObject
 
     public void LoadProductForEdit(ProductDto product)
     {
+        _loadedProduct = product;
         _editingProductId = product.Id;
         Title = "Editar Producto";
         Barcode = product.Barcode ?? string.Empty;
@@ -209,6 +211,8 @@ public partial class ProductDialogViewModel : ObservableObject
         SatProductCode = product.SatProductCode;
         SatUnitCode = product.SatUnitCode;
         MinStock = product.MinStock;
+        MaxStock = product.MaxStock;
+        TaxRate = product.TaxRate;
 
         if (!string.IsNullOrEmpty(product.DefaultSupplierId))
         {
@@ -278,7 +282,7 @@ public partial class ProductDialogViewModel : ObservableObject
     [RelayCommand]
     private void GenerateBarcode()
     {
-        Barcode = new Random().Next(10000000, 99999999).ToString();
+        Barcode = "TF" + Guid.NewGuid().ToString("N")[..16].ToUpperInvariant();
     }
 
     [RelayCommand]
@@ -287,9 +291,19 @@ public partial class ProductDialogViewModel : ObservableObject
         RequestClose?.Invoke();
     }
 
+    private readonly string _newProductId = Guid.NewGuid().ToString("N");
+    private ProductDto? _loadedProduct;
+    [ObservableProperty] private string _stockAdjustmentReason = string.Empty;
+    [ObservableProperty] private double _maxStock;
+    [ObservableProperty] private decimal _taxRate = 0.16m;
+    private bool _saving;
+    private bool _saved;
+
     [RelayCommand]
     private async Task SaveAsync()
     {
+        if (_saving || _saved) return;
+        _saving = true;
         try
         {
             if (string.IsNullOrWhiteSpace(Name) || string.IsNullOrWhiteSpace(Barcode))
@@ -299,7 +313,8 @@ public partial class ProductDialogViewModel : ObservableObject
             }
 
             var dto = new ProductDto(
-                _editingProductId ?? Guid.NewGuid().ToString(), Barcode, Name, CostPrice ?? 0, RetailPrice ?? 0,
+                _editingProductId ?? _newProductId, Barcode, Name, CostPrice ?? 0, RetailPrice ?? 0,
+                WholesalePrice: _loadedProduct?.WholesalePrice ?? 0m, WholesaleThreshold: _loadedProduct?.WholesaleThreshold ?? 0,
                 Stock: Stock ?? 0, Category: Category, Unit: Unit,
                 PointsRewarded: PointsRewarded ?? 0.0,
                 ReorderQuantity: ReorderQuantity ?? 10.0,
@@ -308,49 +323,26 @@ public partial class ProductDialogViewModel : ObservableObject
                 SatUnitCode: SatUnitCode,
                 MinStock: MinStock ?? 5.0,
                 DefaultSupplierId: SelectedSupplier?.Id,
-                IsBulk: IsBulk
+                IsBulk: IsBulk, IsKit: _loadedProduct?.IsKit ?? false, MaxStock: MaxStock, TaxRate: TaxRate, StockAdjustmentReason: StockAdjustmentReason,
+                ExpectedStockVersion: _loadedProduct?.ExpectedStockVersion
             );
 
             if (_editingProductId != null)
             {
                 await _productService.UpdateAsync(dto);
 
-                // INJECT SILENT AUDIT FOR MANUAL ADJUSTMENTS
-                if (Math.Abs(_originalStockSnapshot - (Stock ?? 0)) > 0.0001)
-                {
-                    double difference = (Stock ?? 0) - _originalStockSnapshot;
-                    string verb = difference > 0 ? "Incremento" : "Disminución";
-                    var currentUserId = _sessionManager?.CurrentCashier?.Id.ToString() ?? "cajero_matriz";
-
-                    if (_auditService != null)
-                    {
-                        var auditEntry = new AuditLogEntity
-                        {
-                            UserId = currentUserId,
-                            ActionType = Ticketfy.Core.Enums.AuditActionType.InventoryStockAdjustment,
-                            RiskLevel = Math.Abs(difference) > 10.0 ? Ticketfy.Core.Enums.RiskLevel.HighRisk : Ticketfy.Core.Enums.RiskLevel.Warning,
-                            EntityName = "ProductEntity",
-                            EntityId = dto.Id,
-                            OldValue = $"Stock: {_originalStockSnapshot:N2}",
-                            NewValue = $"Stock: {Stock ?? 0:N2}",
-                            FinancialImpact = (decimal)Math.Abs(difference) * (CostPrice ?? 0m),
-                            Reason = $"Ajuste Manual: {Name} | {verb} de {Math.Abs(difference):N2} unidades. (Anterior: {_originalStockSnapshot:N2}, Nuevo: {Stock ?? 0:N2})"
-                        };
-                        await _auditService.LogAsync(auditEntry);
-                    }
-                }
             }
             else
             {
                 await _productService.AddAsync(dto);
             }
 
+            _saved = true;
             RequestClose?.Invoke();
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error saving product");
-            _db.ChangeTracker.Clear();
             var baseMsg = ex.GetBaseException().Message;
             if (baseMsg.Contains("UNIQUE constraint failed: products.barcode", StringComparison.OrdinalIgnoreCase))
             {
@@ -361,5 +353,6 @@ public partial class ProductDialogViewModel : ObservableObject
                 ErrorMessage = baseMsg;
             }
         }
+        finally { _saving = false; }
     }
 }

@@ -167,9 +167,17 @@ public partial class PurchaseOrderViewModel : ObservableObject
 
     [RelayCommand] private void RemoveItemFromPurchaseDraft(PurchaseItemDto item) => RemoveItemFromDraft(item);
 
+    private string _purchaseOperationId = Guid.NewGuid().ToString("N");
+    [ObservableProperty] private string _purchasePaymentMethod = "Crédito";
+    [ObservableProperty] private decimal _purchasePaidAmount;
+    [ObservableProperty] private string _purchasePaymentReference = string.Empty;
+    [ObservableProperty] private string _purchaseDueDate = string.Empty;
+    public string[] PurchasePaymentMethods { get; } = ["Crédito", "Efectivo", "Tarjeta", "Transferencia"];
+
     [RelayCommand]
     private async Task ConfirmPurchaseAsync()
     {
+        if (IsSubmitting) return;
         if (SelectedSupplier == null)
         {
             IsFeedbackError = true;
@@ -188,17 +196,20 @@ public partial class PurchaseOrderViewModel : ObservableObject
         {
             IsSubmitting = true;
             var purchaseDto = new PurchaseDto(
-                Guid.NewGuid().ToString(),
+                _purchaseOperationId,
                 SelectedSupplier.Id,
                 SelectedSupplier.Name,
-                string.IsNullOrWhiteSpace(InvoiceNumber) ? $"FAC-{DateTime.Now:fff}" : InvoiceNumber,
+                InvoiceNumber.Trim(),
                 DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
                 TotalPurchaseCost,
                 "Entrada directa de inventario",
-                DraftPurchaseItems.ToList()
+                DraftPurchaseItems.ToList(), OperationId: _purchaseOperationId, PaymentMethod: PurchasePaymentMethod,
+                PaidAmount: PurchasePaymentMethod == "Crédito" ? 0m : PurchasePaidAmount,
+                PaymentReference: PurchasePaymentReference, DueDate: PurchaseDueDate
             );
 
             var registered = await _purchaseService.RegisterPurchaseAsync(purchaseDto);
+            _purchaseOperationId = Guid.NewGuid().ToString("N");
 
             // COMPLETE FORM RESET UPON SAVE
             DraftPurchaseItems.Clear();
@@ -217,7 +228,7 @@ public partial class PurchaseOrderViewModel : ObservableObject
         {
             Log.Error(ex, "PurchaseOrderViewModel: error registering purchase order");
             IsFeedbackError = true;
-            FeedbackMessage = "Error al procesar la entrada de mercancía";
+            FeedbackMessage = ex.Message;
         }
         finally
         {

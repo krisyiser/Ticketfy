@@ -34,6 +34,12 @@ public interface IUserService
     Task UpdatePasswordHashAsync(string userId, string passwordHash);
     Task UpdatePinHashAsync(string userId, string pinHash);
     Task<string?> GetPasswordHintAsync(string username);
+    async Task<bool> VerifyCredentialAsync(string userId, string secret, bool pin = false)
+    {
+        string? hash = pin ? await GetPinHashAsync(userId) : await GetPasswordHashAsync(userId);
+        return hash is not null && (pin ? Ticketfy.Services.Security.SecurityManager.VerifyPin(secret, hash)
+            : Ticketfy.Services.Security.SecurityManager.VerifyPassword(secret, hash));
+    }
 }
 
 /// <summary>Key-value settings persistence.</summary>

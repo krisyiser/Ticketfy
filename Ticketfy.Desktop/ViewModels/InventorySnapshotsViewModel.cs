@@ -11,6 +11,7 @@ namespace Ticketfy.ViewModels;
 public partial class InventorySnapshotsViewModel : ObservableObject
 {
     private readonly InventorySnapshotService _snapshotService;
+    private readonly Ticketfy.Services.Interfaces.IEscPosPrinterService? _printerService;
 
     [ObservableProperty]
     private ObservableCollection<InventorySnapshotEntity> _snapshots = new();
@@ -60,8 +61,9 @@ public partial class InventorySnapshotsViewModel : ObservableObject
         }
     }
 
-    public InventorySnapshotsViewModel()
+    public InventorySnapshotsViewModel(Ticketfy.Services.Interfaces.IEscPosPrinterService? printerService = null)
     {
+        _printerService = printerService;
         _snapshotService = new InventorySnapshotService();
         _ = LoadSnapshotsAsync();
     }
@@ -106,8 +108,8 @@ public partial class InventorySnapshotsViewModel : ObservableObject
         var confirmed = await win.ShowDialog<bool>(ownerWin);
         if (!confirmed) return;
 
-        var printerSvc = new Ticketfy.Services.Implementations.EscPosPrinterService();
-        bool printed = await printerSvc.PrintSnapshotChecklistAsync(SelectedSnapshot);
+        if (_printerService is null) { StatusMessage = "No hay servicio de impresión configurado."; return; }
+        bool printed = await _printerService.PrintSnapshotChecklistAsync(SelectedSnapshot);
         if (printed)
         {
             StatusMessage = "¡Reporte de captura física enviado a la impresora térmica con éxito!";

@@ -192,6 +192,11 @@
                         </ComboBox>
                     </StackPanel>
 
+                    <StackPanel IsVisible="{Binding IsBankTransfer}" Spacing="6">
+                        <TextBox Text="{Binding BankReference}" Watermark="Referencia bancaria única" />
+                        <CheckBox IsChecked="{Binding BankPaymentVerified}" Content="Verifiqué el abono en el banco (requiere permiso)" />
+                        <TextBlock Text="No confirme con una captura de pantalla del cliente." TextWrapping="Wrap" />
+                    </StackPanel>
                     <!-- ══ CRÉDITO DE CLIENTE — visible solo cuando se elige "Crédito de Cliente" ══ -->
                     <Border IsVisible="{Binding IsCreditPayment}"
                             CornerRadius="8" Padding="14,12" BorderThickness="1"

@@ -421,7 +421,16 @@ public partial class UsuariosSettingsViewModel : ObservableObject
         // ── Módulo 8: Ajustes & Configuración ──
         new() { Key = "settings.business", Category = "8. Ajustes Globales & Sistema", Title = "Configurar Empresa & Datos Fiscales", Description = "Permite editar la razón social, RFC y logotipo comercial" },
         new() { Key = "settings.hardware", Category = "8. Ajustes Globales & Sistema", Title = "Configurar Impresoras & Periféricos", Description = "Permite ajustar puertos POS, impresoras térmicas y básculas" },
-        new() { Key = "settings.security", Category = "8. Ajustes Globales & Sistema", Title = "Configuración de Seguridad & Respaldos", Description = "Permite realizar backups de base de datos y llaves de encriptación" }
+        new() { Key = "settings.security", Category = "8. Ajustes Globales & Sistema", Title = "Configuración de Seguridad & Respaldos", Description = "Permite realizar backups de base de datos y llaves de encriptación" },
+
+        // Every backend permission must be represented, including commercial reconciliation.
+        new() { Key = PermissionCatalog.PurchasesManage, Category = "9. Operaciones comerciales", Title = "Gestionar compras y pagos", Description = "Permite registrar compras, pagos y devoluciones a proveedor" },
+        new() { Key = PermissionCatalog.SuppliersManage, Category = "9. Operaciones comerciales", Title = "Gestionar proveedores", Description = "Permite consultar y mantener el catálogo de proveedores" },
+        new() { Key = PermissionCatalog.ExpensesManage, Category = "9. Operaciones comerciales", Title = "Gestionar gastos", Description = "Permite registrar y cancelar gastos con evidencia de recuperación" },
+        new() { Key = PermissionCatalog.PromotionsManage, Category = "9. Operaciones comerciales", Title = "Gestionar promociones", Description = "Permite crear, modificar e inactivar promociones" },
+        new() { Key = PermissionCatalog.WalletManage, Category = "9. Operaciones comerciales", Title = "Gestionar monederos", Description = "Permite crear, recargar y consultar monederos" },
+        new() { Key = PermissionCatalog.PaymentsReconcile, Category = "9. Operaciones comerciales", Title = "Conciliar pagos externos", Description = "Permite verificar transferencias y reembolsos bancarios, y resolver cobros pendientes" },
+        new() { Key = PermissionCatalog.HistoryReconcile, Category = "9. Operaciones comerciales", Title = "Conciliar saldos históricos", Description = "Permite ajustar saldos actuales con evidencia, sin modificar documentos originales ni efectivo" }
     ];
 
     private static Dictionary<string, bool> GetDefaultRolePreset(string role)

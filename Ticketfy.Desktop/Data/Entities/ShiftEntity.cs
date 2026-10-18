@@ -11,6 +11,11 @@ namespace Ticketfy.Data.Entities;
 [Table("shifts")]
 public class ShiftEntity
 {
+    public string? RegisterId { get; set; }
+    public string? CashierUserId { get; set; }
+    public string? OpenOperationId { get; set; }
+    public string? CloseOperationId { get; set; }
+    [ConcurrencyCheck] public long Version { get; set; }
     [Key]
     [Column("id")]
     public string Id { get; set; } = string.Empty;

@@ -31,8 +31,8 @@ public sealed class CustomerAndAuthServiceTests : IDisposable
         _context = new AppDbContext(options);
         _context.Database.EnsureCreated();
 
-        _customerService = new CustomerService(_context);
-        _userService = new UserService(_context);
+        _customerService = new CustomerService(_context, operations: CommercialTestSession.Create(_context));
+        _userService = new UserService(_context, operations: CommercialTestSession.Create(_context));
         _authService = new AuthService(_userService);
     }
 
@@ -40,8 +40,9 @@ public sealed class CustomerAndAuthServiceTests : IDisposable
     public async Task AddPaymentAsync_ShouldReduceDebtAtomically()
     {
         // Customer initial debt = 500
-        var customer = new CustomerDto("CUST-PAY-1", "Carlos M.", "5553334444", "carlos@carlos.com", "RFC123", 1000.0, 500.0);
+        var customer = new CustomerDto("CUST-PAY-1", "Carlos M.", "5553334444", "carlos@carlos.com", "RFC123", 1000.0, 0.0);
         await _customerService.AddAsync(customer);
+        CommercialTestSession.OpeningDebt(_context, customer.Id, 500m);
 
         // Make payment of 200
         var payment = new CustomerPaymentDto("PAY-1", "CUST-PAY-1", DateTimeOffset.UtcNow.ToString("o"), 200.0);
@@ -107,8 +108,8 @@ public sealed class CustomerAndAuthServiceTests : IDisposable
     public async Task AuthService_VerifyManagerPin_ShouldReturnTrueForValidPin()
     {
         var guidId = "00000000-0000-0000-0000-000000000003";
-        // Plaintext PIN code stored for VerifyManagerPinAsync direct string comparison
-        await _userService.SaveAsync(guidId, "Manager", "GERENTE_01", "Gerente", null, "9999");
+        // Both credentials are hashed on write; PIN verification requires an active manager.
+        await _userService.SaveAsync(guidId, "Manager", "GERENTE_01", "Gerente", "manager-test-password", "9999");
 
         var valid = await _authService.VerifyManagerPinAsync(guidId, "9999");
         Assert.True(valid);

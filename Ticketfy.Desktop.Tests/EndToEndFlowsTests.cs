@@ -24,13 +24,14 @@ public sealed class EndToEndFlowsTests : IDisposable
     private readonly DbContextOptions<AppDbContext> _options;
     private readonly TestDbContextFactory _factory;
     private readonly SpyAuditService _auditSpy;
+    private readonly Ticketfy.Services.CommercialOperationContext _actor;
     private readonly SaleService _saleService;
 
     private AppDbContext CreateContext() => new AppDbContext(_options);
-    private ProductService ProductService => new ProductService(CreateContext());
-    private SupplierService SupplierService => new SupplierService(CreateContext());
-    private CustomerService CustomerService => new CustomerService(CreateContext());
-    private ShiftService ShiftService => new ShiftService(CreateContext());
+    private ProductService ProductService => new ProductService(CreateContext(), _actor);
+    private SupplierService SupplierService => new SupplierService(CreateContext(), _actor);
+    private CustomerService CustomerService => new CustomerService(CreateContext(), operations: _actor);
+    private ShiftService ShiftService => new ShiftService(CreateContext(), _actor);
 
     public EndToEndFlowsTests()
     {
@@ -46,9 +47,10 @@ public sealed class EndToEndFlowsTests : IDisposable
             initCtx.Database.EnsureCreated();
         }
 
+        _actor = CommercialTestSession.Create(_options);
         _auditSpy = new SpyAuditService();
         _factory = new TestDbContextFactory(_options);
-        _saleService = new SaleService(_factory, new CoOccurrenceQueue(), _auditSpy);
+        _saleService = new SaleService(_factory, new CoOccurrenceQueue(), _auditSpy, _actor);
     }
 
     [Fact]
@@ -222,6 +224,7 @@ public sealed class EndToEndFlowsTests : IDisposable
         );
 
         // 3. Execute Sale
+        using (var bankProof = CreateContext()) CommercialTestSession.ConfirmCard(bankProof, mixedSaleDto.Id, mixedSaleDto.CardAmount);
         var savedSale = await _saleService.SaveAsync(mixedSaleDto);
 
         // 4. Verify Payment Split persistence
@@ -281,7 +284,7 @@ public sealed class EndToEndFlowsTests : IDisposable
         Assert.Equal(1300.00m, custAfterSale.AvailableCredit);
 
         // 4. Process Customer Payment (Abono de $400)
-        var paymentResult = await CustomerService.RegisterCustomerPaymentAsync("CUST-CREDIT-01", 400.00m, "Efectivo", "Abono a cuenta folio SALE-CREDIT-DONJOSE");
+        var paymentResult = await CustomerService.RegisterCustomerPaymentAsync("CUST-CREDIT-01", 400.00m, "Efectivo", "Abono a cuenta folio SALE-CREDIT-DONJOSE", "ABONO-400");
         Assert.True(paymentResult);
 
         // 5. Verify Debt reduced to $300, Available Credit restored to $1,700
@@ -295,6 +298,7 @@ public sealed class EndToEndFlowsTests : IDisposable
     public async Task Flow6_FullShiftLifecycle_OpenRegisterSalesAndFinalZCutClosure()
     {
         // 1. Open shift with $500.00 initial float
+        await ShiftService.CloseAsync("SHIFT-1", 0m);
         var activeShift = await ShiftService.OpenAsync(500.00m);
         Assert.NotNull(activeShift);
         Assert.Equal(500.00m, activeShift.OpeningBalance);

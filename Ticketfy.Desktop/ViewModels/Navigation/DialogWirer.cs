@@ -37,6 +37,8 @@ public sealed class DialogWirer
     private readonly MercadoPagoTerminalService _terminalService;
     private readonly ItemKitService _kitService;
     private readonly ShiftNoteService _shiftNoteService;
+    private readonly CommercialReconciliationService _reconciliation;
+    private readonly CategoryService _categories;
 
     public DialogWirer(
         DialogCoordinator dialogs,
@@ -55,9 +57,12 @@ public sealed class DialogWirer
         IAuditService auditService,
         MercadoPagoTerminalService terminalService,
         ItemKitService kitService,
-        ShiftNoteService shiftNoteService)
+        ShiftNoteService shiftNoteService,
+        CommercialReconciliationService reconciliation, CategoryService categories)
     {
         _dialogs = dialogs;
+        _reconciliation = reconciliation;
+        _categories = categories;
         _productService = productService;
         _customerService = customerService;
         _saleService = saleService;
@@ -92,7 +97,7 @@ public sealed class DialogWirer
                     await historyVm.LoadCashierPerformanceAsync();
                 },
                 _giftcardService,
-                preselectedCustomer: posVm.Cart.SelectedCustomer);
+                preselectedCustomer: posVm.Cart.SelectedCustomer, reconciliation: _reconciliation);
 
             dialog.RequestClose += () =>
             {
@@ -247,7 +252,7 @@ public sealed class DialogWirer
 
         inventoryVm.OpenManageCategoriesRequested += () =>
         {
-            var dialog = new ManageCategoriesDialogViewModel(_db);
+            var dialog = new ManageCategoriesDialogViewModel(_categories);
             dialog.CategoriesUpdated += () =>
             {
                 _ = inventoryVm.LoadProductsAsync();
@@ -296,7 +301,7 @@ public sealed class DialogWirer
 
         customersVm.OpenStatementRequested += (customer) =>
         {
-            var dialog = new CustomerStatementDialogViewModel(_db, customer.Id, customer.Name, customer.Rfc, customer.Debt);
+            var dialog = new CustomerStatementDialogViewModel(_customerService, customer.Id, customer.Name, customer.Rfc, customer.Debt);
             dialog.RequestClose += _dialogs.CloseDialog;
             _dialogs.ShowDialog(dialog);
         };
@@ -336,8 +341,20 @@ public sealed class DialogWirer
         };
     }
 
-    public void WirePromotionsVm(PromotionsViewModel promotionsVm, PosViewModel posVm)
+    public void WirePromotionsVm(PromotionsViewModel promotionsVm, PosViewModel posVm, IPromotionService promotionService)
     {
+        promotionsVm.OpenEditPromotionRequested += promotion =>
+        {
+            var dialog = new PromotionDialogViewModel(promotionService, _productService, promotion);
+            dialog.RequestClose += () => { _dialogs.CloseDialog(); _ = promotionsVm.LoadPromotionsAsync(); };
+            _dialogs.ShowDialog(dialog);
+        };
+        promotionsVm.OpenCreatePromotionRequested += () =>
+        {
+            var dialog = new PromotionDialogViewModel(promotionService, _productService);
+            dialog.RequestClose += () => { _dialogs.CloseDialog(); _ = promotionsVm.LoadPromotionsAsync(); };
+            _dialogs.ShowDialog(dialog);
+        };
         promotionsVm.OpenCreateItemKitRequested += () =>
         {
             var dialog = new ItemKitDialogViewModel(_kitService, _productService);

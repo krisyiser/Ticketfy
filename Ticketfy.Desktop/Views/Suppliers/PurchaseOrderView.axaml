@@ -51,7 +51,7 @@
 
                     <StackPanel Grid.Column="1" Margin="2,0" Spacing="4">
                         <TextBlock Text="Costo Unid." FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                        <TextBox Text="{Binding PurchaseUnitPrice, Mode=TwoWay}" IsReadOnly="True" Watermark="$ Costo" Padding="8" Background="{DynamicResource BgTertiaryBrush}" />
+                        <TextBox Text="{Binding PurchaseUnitPrice, Mode=TwoWay}" Watermark="$ Costo" Padding="8" Background="{DynamicResource BgTertiaryBrush}" />
                     </StackPanel>
 
                     <StackPanel Grid.Column="2" Margin="2,0" Spacing="4">
@@ -67,6 +67,11 @@
 
             <!-- Bottom Action Bar -->
             <StackPanel DockPanel.Dock="Bottom" Spacing="10" Margin="0,12,0,0">
+                <ComboBox ItemsSource="{Binding PurchasePaymentMethods}" SelectedItem="{Binding PurchasePaymentMethod}" HorizontalAlignment="Stretch" />
+                <TextBlock Text="Importe pagado ahora (resto a cuenta por pagar)" />
+                <NumericUpDown Value="{Binding PurchasePaidAmount}" Minimum="0" FormatString="0.00" />
+                <TextBox Text="{Binding PurchasePaymentReference}" Watermark="Referencia bancaria / comprobante" />
+                <TextBox Text="{Binding PurchaseDueDate}" Watermark="Vencimiento AAAA-MM-DD (crédito)" />
                 <Border Height="1" Background="{DynamicResource BorderBrush}" />
                 <Grid ColumnDefinitions="*,Auto">
                     <TextBlock Text="COSTO TOTAL COMPRA:" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />

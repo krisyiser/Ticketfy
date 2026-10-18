@@ -15,7 +15,7 @@ public record CustomerLedgerEntryDto(string Date, string Concept, decimal Charge
 
 public partial class CustomerStatementDialogViewModel : ObservableObject
 {
-    private readonly AppDbContext _db;
+    private readonly Ticketfy.Services.Interfaces.ICustomerService _customers;
     private readonly string _customerId;
 
     [ObservableProperty] private string _customerName = string.Empty;
@@ -26,9 +26,9 @@ public partial class CustomerStatementDialogViewModel : ObservableObject
 
     public event Action? RequestClose;
 
-    public CustomerStatementDialogViewModel(AppDbContext db, string customerId, string customerName, string rfc, decimal currentDebt)
+    public CustomerStatementDialogViewModel(Ticketfy.Services.Interfaces.ICustomerService customers, string customerId, string customerName, string rfc, decimal currentDebt)
     {
-        _db = db;
+        _customers = customers;
         _customerId = customerId;
         CustomerName = customerName;
         CustomerRfc = rfc;
@@ -41,29 +41,17 @@ public partial class CustomerStatementDialogViewModel : ObservableObject
     {
         try
         {
-            var sales = await _db.Sales
-                .AsNoTracking()
-                .Where(s => s.CustomerId == _customerId)
-                .ToListAsync();
-
-            var payments = await _db.CustomerPayments
-                .AsNoTracking()
-                .Where(p => p.CustomerId == _customerId)
-                .ToListAsync();
-
-            var list = sales.Select(s => new { Date = s.Date, Concept = $"Compra Ticket #{s.Id[..Math.Min(8, s.Id.Length)]}", Charge = s.Total, Payment = 0m })
-                .Concat(payments.Select(p => new { Date = p.Date, Concept = "Abono a Cuenta de Crédito", Charge = 0m, Payment = p.Amount }))
-                .OrderBy(x => x.Date)
-                .ToList();
-
+            var statement = await _customers.GetStatementAsync(_customerId);
             LedgerEntries.Clear();
             decimal runningBalance = 0m;
-            foreach (var item in list)
+            foreach (var entry in statement.Entries)
             {
-                runningBalance += item.Charge - item.Payment;
-                string formattedDate = DateTime.TryParse(item.Date, out var dt) ? dt.ToString("dd/MM/yyyy HH:mm") : item.Date;
-                LedgerEntries.Add(new CustomerLedgerEntryDto(formattedDate, item.Concept, item.Charge, item.Payment, runningBalance));
+                runningBalance += entry.Amount;
+                string date = DateTimeOffset.TryParse(entry.CreatedAtUtc, out var dt) ? dt.LocalDateTime.ToString("dd/MM/yyyy HH:mm") : entry.CreatedAtUtc;
+                LedgerEntries.Add(new(date, entry.EntryType + " · " + entry.DocumentId,
+                    Math.Max(0, entry.Amount), Math.Max(0, -entry.Amount), runningBalance));
             }
+            CurrentDebt = statement.Balance;
         }
         catch (Exception ex)
         {

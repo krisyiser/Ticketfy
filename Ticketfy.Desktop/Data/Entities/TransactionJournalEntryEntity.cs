@@ -9,8 +9,11 @@ namespace Ticketfy.Data.Entities;
 /// money and inventory mutation it describes.
 /// </summary>
 [Table("transaction_journal")]
-public sealed class TransactionJournalEntryEntity
+public sealed class TransactionJournalEntryEntity : IImmutableRecord
 {
+    public string? ShiftId { get; set; }
+    public string? RegisterId { get; set; }
+    public string? CashierUserId { get; set; }
     [Key]
     [Column("id")]
     public string Id { get; set; } = Guid.NewGuid().ToString("N");

@@ -42,7 +42,7 @@
         <!-- 5. TOTAL EN CAJA FÍSICO -->
         <Border Margin="2,0" Padding="10" Background="{DynamicResource BgTertiaryBrush}" BorderBrush="{DynamicResource AccentPrimaryBrush}" BorderThickness="2" CornerRadius="{DynamicResource AppCornerRadius}">
             <StackPanel Spacing="4">
-                <TextBlock Text="Total en Caja Físico" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" ToolTip.Tip="Fondo Inicial + Ventas Efectivo - Gastos Efectivo" />
+                <TextBlock Text="Efectivo esperado: turno actual" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" ToolTip.Tip="Fondo inicial más todos los movimientos del turno. No sustituye el arqueo físico." />
                 <TextBlock Text="{Binding TotalEnCaja, StringFormat='${0:N2}'}" FontSize="15" FontWeight="ExtraBold" Foreground="{DynamicResource AccentPrimaryBrush}" />
             </StackPanel>
         </Border>

@@ -17,10 +17,11 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                    <Button Command="{Binding OpenAddPromotionDialogCommand}" Content="NUEVA PROMOCIÓN" Classes="primary-action" Padding="16,8" />
                     <Button x:Name="CreateKitBtn" Command="{Binding OpenCreateItemKitDialogCommand}" Classes="primary-action" Padding="16,8">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <mi:MaterialIcon Kind="PackageVariantPlus" Width="18" Height="18" />
-                            <TextBlock Text="NUEVO COMBO / PROMOCIÓN" FontWeight="Bold" FontSize="13" VerticalAlignment="Center" />
+                            <TextBlock Text="NUEVO COMBO" FontWeight="Bold" FontSize="13" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
                 </StackPanel>
@@ -41,9 +42,6 @@
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="dto:PromotionDto">
                                     <Border HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="4" Padding="8,3">
-                                        <Border.Background>
-                                            <SolidColorBrush Color="{Binding IsActive, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                                        </Border.Background>
                                         <TextBlock Text="{Binding IsActive}" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AccentSuccessBrush}" />
                                     </Border>
                                 </DataTemplate>
@@ -54,6 +52,7 @@
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="dto:PromotionDto">
                                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Button Content="Editar" Command="{Binding $parent[DataGrid].((vm:PromotionsViewModel)DataContext).EditPromotionCommand}" CommandParameter="{Binding}" />
                                         <Button Command="{Binding $parent[DataGrid].((vm:PromotionsViewModel)DataContext).ToggleStatusCommand}"
                                                 CommandParameter="{Binding}"
                                                 Padding="8,4" CornerRadius="4" Background="{DynamicResource BgTertiaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
@@ -67,8 +66,8 @@
                                         <Button Command="{Binding $parent[DataGrid].((vm:PromotionsViewModel)DataContext).DeletePromotionCommand}"
                                                 CommandParameter="{Binding}"
                                                 Padding="6,4" Background="Transparent" BorderThickness="0"
-                                                ToolTip.Tip="Eliminar Promoción">
-                                            <mi:MaterialIcon Kind="TrashCan" Width="16" Height="16" Foreground="{DynamicResource AccentDangerBrush}" />
+                                                ToolTip.Tip="Inactivar conservando el historial">
+                                            <mi:MaterialIcon Kind="Cancel" Width="16" Height="16" Foreground="{DynamicResource AccentDangerBrush}" />
                                         </Button>
                                     </StackPanel>
                                 </DataTemplate>

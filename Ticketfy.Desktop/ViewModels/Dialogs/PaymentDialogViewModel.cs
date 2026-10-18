@@ -12,6 +12,9 @@ public partial class PaymentDialogViewModel : ObservableObject
 {
     private readonly ICustomerService _customerService;
     private readonly string _customerId;
+    private readonly string _operationId = Guid.NewGuid().ToString("N");
+    private bool _saving;
+    private bool _saved;
 
     [ObservableProperty] private decimal _currentBalance;
     [ObservableProperty] private decimal _amount;
@@ -35,6 +38,8 @@ public partial class PaymentDialogViewModel : ObservableObject
     [RelayCommand]
     private async Task SaveAsync()
     {
+        if (_saving || _saved) return;
+        _saving = true;
         try
         {
             if (Amount <= 0)
@@ -44,13 +49,14 @@ public partial class PaymentDialogViewModel : ObservableObject
             }
 
             var dto = new CustomerPaymentDto(
-                Id: Guid.NewGuid().ToString(),
+                Id: _operationId,
                 CustomerId: _customerId,
                 Date: DateTime.Now.ToString("o"),
                 Amount: Amount
             );
 
             await _customerService.AddPaymentAsync(dto);
+            _saved = true;
             RequestClose?.Invoke();
         }
         catch (Exception ex)
@@ -58,5 +64,6 @@ public partial class PaymentDialogViewModel : ObservableObject
             Log.Error(ex, "Error adding payment in PaymentDialogViewModel");
             ErrorMessage = ex.Message;
         }
+        finally { _saving = false; }
     }
 }

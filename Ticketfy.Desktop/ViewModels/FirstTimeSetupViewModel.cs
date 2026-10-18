@@ -18,6 +18,7 @@ public partial class FirstTimeSetupViewModel : ValidatableViewModelBase
     private readonly IDialogService _dialogService;
     private readonly Action _navigateToNextStep;
     private readonly Action? _navigateToPreviousStep;
+    private readonly Action<UserEntity>? _onAdminCreated;
 
     [ObservableProperty] private string _adminFullName = string.Empty;
     [ObservableProperty] private string _adminUsername = string.Empty;
@@ -33,12 +34,13 @@ public partial class FirstTimeSetupViewModel : ValidatableViewModelBase
 
     [ObservableProperty] private string _errorMessage = string.Empty;
 
-    public FirstTimeSetupViewModel(IUserRepository userRepository, IDialogService dialogService, Action navigateToNextStep, Action? navigateToPreviousStep = null)
+    public FirstTimeSetupViewModel(IUserRepository userRepository, IDialogService dialogService, Action navigateToNextStep, Action? navigateToPreviousStep = null, Action<UserEntity>? onAdminCreated = null)
     {
         _userRepository = userRepository;
         _dialogService = dialogService;
         _navigateToNextStep = navigateToNextStep;
         _navigateToPreviousStep = navigateToPreviousStep;
+        _onAdminCreated = onAdminCreated;
 
         _ = LoadExistingAdminUserAsync();
     }
@@ -103,6 +105,7 @@ public partial class FirstTimeSetupViewModel : ValidatableViewModelBase
             };
 
             await _userRepository.SaveOrUpdateAdminUserAsync(adminUser);
+            _onAdminCreated?.Invoke(adminUser);
 
             // Advance to the next wizard step instead of logging in directly
             _navigateToNextStep();

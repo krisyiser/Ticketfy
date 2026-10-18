@@ -7,6 +7,8 @@ namespace Ticketfy.Data.Entities;
 [Table("returns")]
 public class ReturnEntity
 {
+    public string? ShiftId { get; set; }
+    public string? RegisterId { get; set; }
     [Key]
     [Column("id")]
     public string Id { get; set; } = Guid.NewGuid().ToString();

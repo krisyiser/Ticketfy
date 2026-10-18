@@ -12,27 +12,37 @@ namespace Ticketfy.Services.Implementations;
 
 public class PromotionService : IPromotionService
 {
-    private readonly AppDbContext _ctx;
+    private readonly IDbContextFactory<AppDbContext> _factory;
+    private readonly CommercialOperationContext? _operations;
 
-    public PromotionService(AppDbContext ctx)
-    {
-        _ctx = ctx;
-    }
+    public PromotionService(AppDbContext context, CommercialOperationContext? operations = null)
+        : this(new AppDbContextFactoryImpl<AppDbContext>(context.Options), operations) { }
+    public PromotionService(IDbContextFactory<AppDbContext> factory, CommercialOperationContext? operations = null)
+    { _factory = factory; _operations = operations; }
 
     public async Task<List<PromotionDto>> GetAllAsync()
     {
+        await using var _ctx = await _factory.CreateDbContextAsync();
         var list = await _ctx.Promotions.AsNoTracking().ToListAsync();
-        return list.Select(p => new PromotionDto(p.Id, p.Name, p.DiscountValue, p.IsActive == 1, p.StrategyType, p.TargetProductId, p.TargetCategory ?? "", p.MinQuantity, p.FreeQuantity)).ToList();
+        return list.Select(p => new PromotionDto(p.Id, p.Name, p.DiscountValue, p.IsActive == 1, p.StrategyType, p.TargetProductId, p.TargetCategory ?? "", p.MinQuantity, p.FreeQuantity, DateTime.Parse(p.StartDate), DateTime.Parse(p.EndDate), p.Priority)).ToList();
     }
 
     public async Task<List<PromotionDto>> GetActiveAsync()
     {
-        var list = await _ctx.Promotions.AsNoTracking().Where(p => p.IsActive == 1).ToListAsync();
-        return list.Select(p => new PromotionDto(p.Id, p.Name, p.DiscountValue, p.IsActive == 1, p.StrategyType, p.TargetProductId, p.TargetCategory ?? "", p.MinQuantity, p.FreeQuantity)).ToList();
+        var now = DateTime.Now;
+        return (await GetAllAsync()).Where(p => p.IsActive && (!p.StartDate.HasValue || p.StartDate <= now)
+            && (!p.EndDate.HasValue || p.EndDate >= now)).OrderByDescending(p => p.Priority).ThenBy(p => p.Id).ToList();
     }
 
     public async Task SaveAsync(PromotionDto promotion)
     {
+        await using var _ctx = await _factory.CreateDbContextAsync();
+        var actor = await (_operations ?? throw new UnauthorizedAccessException("Se requiere una sesión autenticada.")).RequireAsync(_ctx, Ticketfy.Core.Security.PermissionCatalog.PromotionsManage, false);
+        if (!Enum.IsDefined(promotion.StrategyType) || string.IsNullOrWhiteSpace(promotion.Name) || promotion.DiscountValue < 0 || !double.IsFinite(promotion.MinQuantity) || promotion.MinQuantity <= 0
+            || !double.IsFinite(promotion.FreeQuantity) || promotion.FreeQuantity < 0
+            || (promotion.StrategyType == Ticketfy.Core.Enums.PromotionType.PercentageDiscount && promotion.DiscountValue > 100)
+            || (promotion.StartDate.HasValue && promotion.EndDate.HasValue && promotion.StartDate > promotion.EndDate))
+            throw new InvalidOperationException("Regla de promoción inválida.");
         var entity = await _ctx.Promotions.FindAsync(promotion.Id);
         if (entity != null)
         {
@@ -44,6 +54,9 @@ public class PromotionService : IPromotionService
             entity.TargetCategory = promotion.TargetCategory ?? "";
             entity.MinQuantity = promotion.MinQuantity;
             entity.FreeQuantity = promotion.FreeQuantity;
+            entity.StartDate = (promotion.StartDate ?? DateTime.Today).ToString("s");
+            entity.EndDate = (promotion.EndDate ?? DateTime.Today.AddMonths(1)).ToString("s");
+            entity.Priority = promotion.Priority;
         }
         else
         {
@@ -57,24 +70,32 @@ public class PromotionService : IPromotionService
                 TargetProductId = promotion.TargetProductId,
                 TargetCategory = promotion.TargetCategory ?? "",
                 MinQuantity = promotion.MinQuantity,
+                StartDate = (promotion.StartDate ?? DateTime.Today).ToString("s"),
+                EndDate = (promotion.EndDate ?? DateTime.Today.AddMonths(1)).ToString("s"),
+                Priority = promotion.Priority,
                 FreeQuantity = promotion.FreeQuantity
             });
         }
+        CommercialLedger.Journal(_ctx, actor, Guid.NewGuid().ToString("N"), "PROMOTION_SAVED", promotion.Id, 0, "Regla comercial");
         await _ctx.SaveChangesAsync();
     }
 
     public async Task DeleteAsync(string id)
     {
+        await using var _ctx = await _factory.CreateDbContextAsync();
+        var actor = await (_operations ?? throw new UnauthorizedAccessException("Se requiere una sesión autenticada.")).RequireAsync(_ctx, Ticketfy.Core.Security.PermissionCatalog.PromotionsManage, false);
         var entity = await _ctx.Promotions.FindAsync(id);
         if (entity != null)
         {
-            _ctx.Promotions.Remove(entity);
+            entity.IsActive = 0;
+            CommercialLedger.Journal(_ctx, actor, Guid.NewGuid().ToString("N"), "PROMOTION_INACTIVATED", id, 0, "Baja lógica");
             await _ctx.SaveChangesAsync();
         }
     }
 
     public async Task<List<CartItemDto>> EvaluateAndApplyPromotionsAsync(List<CartItemDto> cartItems)
     {
+        await using var _ctx = await _factory.CreateDbContextAsync();
         if (cartItems == null || cartItems.Count == 0) return cartItems ?? [];
 
         var nowIso = DateTime.Now.ToString("s");
@@ -82,17 +103,14 @@ public class PromotionService : IPromotionService
             .AsNoTracking()
             .Where(p => p.IsActive == 1 && string.Compare(p.StartDate, nowIso) <= 0 && string.Compare(p.EndDate, nowIso) >= 0)
             .OrderByDescending(p => p.Priority)
+            .ThenBy(p => p.Id)
             .ToListAsync();
 
-        if (activePromotions.Count == 0)
-        {
-            activePromotions = await _ctx.Promotions
-                .AsNoTracking()
-                .Where(p => p.IsActive == 1)
-                .OrderByDescending(p => p.Priority)
-                .ToListAsync();
-        }
+        return Evaluate(cartItems, activePromotions);
+    }
 
+    internal static List<CartItemDto> Evaluate(List<CartItemDto> cartItems, List<PromotionEntity> activePromotions)
+    {
         foreach (var item in cartItems)
         {
             if (item.OriginalUnitPrice <= 0)
@@ -133,15 +151,16 @@ public class PromotionService : IPromotionService
                     break;
 
                 case Ticketfy.Core.Enums.PromotionType.BuyNGetM:
-                    int stepSize = (int)(matchingPromo.MinQuantity + matchingPromo.FreeQuantity);
+                    decimal stepSize = (decimal)matchingPromo.MinQuantity + (decimal)matchingPromo.FreeQuantity;
                     if (stepSize > 0)
                     {
-                        int bundleCount = (int)item.Quantity / stepSize;
+                        decimal bundleCount = Math.Floor((decimal)item.Quantity / stepSize);
                         decimal totalFreeUnits = bundleCount * (decimal)matchingPromo.FreeQuantity;
                         item.AppliedDiscountAmount = Math.Round(totalFreeUnits * item.OriginalUnitPrice, 2);
                     }
                     break;
             }
+            item.AppliedDiscountAmount = Math.Min(item.AppliedDiscountAmount, item.OriginalUnitPrice * (decimal)item.Quantity);
         }
 
         return cartItems;

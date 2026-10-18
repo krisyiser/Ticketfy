@@ -116,11 +116,20 @@ public class SecurityManagerTests
     }
 
     [Fact]
-    public void GetMasterKey_ShouldReturnValidDynamicKey()
+    public void ProtectedSecret_ShouldCreateAndReuseKey_OnlyInTemporaryStorage()
     {
-        string masterKey = SecurityManager.GetMasterKey();
-
-        Assert.False(string.IsNullOrWhiteSpace(masterKey));
-        Assert.True(masterKey.Length >= 16);
+        string directory = Path.Combine(Path.GetTempPath(), $"ticketfy-test-key-{Guid.NewGuid():N}");
+        try
+        {
+            string path = Path.Combine(directory, "key.dpapi");
+            string key = SecurityManager.GetOrCreateProtectedSecret(path);
+            Assert.Equal(32, Convert.FromBase64String(key).Length);
+            Assert.Equal(key, SecurityManager.GetOrCreateProtectedSecret(path));
+            Assert.NotEqual(key, SecurityManager.GetOrCreateProtectedSecret(Path.Combine(directory, "other.dpapi")));
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
     }
 }

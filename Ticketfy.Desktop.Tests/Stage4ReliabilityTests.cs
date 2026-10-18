@@ -169,7 +169,7 @@ public sealed class Stage4ReliabilityTests
             {
                 await setup.Database.EnsureCreatedAsync();
                 setup.Products.Add(new ProductEntity { Id = "P-CLICK", Barcode = "CLICK", Name = "Producto", Cost = 4m, Price = 10m, Stock = 5, Category = "General", Unit = "Pza" });
-                setup.Shifts.Add(new ShiftEntity { Id = "SHIFT-CLICK", StartTime = DateTimeOffset.UtcNow.ToString("O"), OpeningBalance = 100m, ExpectedBalance = 100m, IsOpen = 1 });
+                setup.Shifts.Add(new ShiftEntity { Id = "SHIFT-CLICK", RegisterId = "TEST-REGISTER", CashierUserId = CommercialTestSession.UserId.ToString(), StartTime = DateTimeOffset.UtcNow.ToString("O"), OpeningBalance = 100m, ExpectedBalance = 100m, IsOpen = 1 });
                 await setup.SaveChangesAsync();
             }
 
@@ -178,7 +178,7 @@ public sealed class Stage4ReliabilityTests
                 10m, 4m, 6m, 10m, 0m, "Efectivo", null, false, false, null,
                 CashAmount: 10m, OperationId: "double-click-operation");
             var services = Enumerable.Range(0, 2)
-                .Select(_ => new SaleService(new TestDbContextFactory(options), new CoOccurrenceQueue(), new SpyAuditService()))
+                .Select(_ => new SaleService(new TestDbContextFactory(options), new CoOccurrenceQueue(), new SpyAuditService(), CommercialTestSession.Create(options)))
                 .ToArray();
 
             SaleDto[] results = await Task.WhenAll(services.Select(service => service.SaveAsync(sale)));

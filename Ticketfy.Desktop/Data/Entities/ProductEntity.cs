@@ -11,6 +11,9 @@ namespace Ticketfy.Data.Entities;
 [Table("products")]
 public class ProductEntity
 {
+    public bool IsActive { get; set; } = true;
+    public double MaxStock { get; set; }
+    public decimal TaxRate { get; set; } = 0.16m;
     [Key]
     [Column("id")]
     public string Id { get; set; } = string.Empty;

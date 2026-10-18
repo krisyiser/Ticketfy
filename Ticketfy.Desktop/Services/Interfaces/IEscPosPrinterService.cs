@@ -6,12 +6,12 @@ namespace Ticketfy.Services.Interfaces;
 
 public interface IEscPosPrinterService
 {
-    Task<bool> PrintTicketAsync(SaleDto sale, string printerPortOrName = "COM1");
-    Task<bool> OpenCashDrawerAsync(string printerPortOrName = "COM1", int drawerPin = 0);
-    Task<bool> PrintNonSaleCashMovementSlipAsync(ShiftMovementSlipModel model, string printerPortOrName = "COM1");
-    Task<bool> PrintTestPageAsync(string printerPortOrName = "COM1");
+    Task<bool> PrintTicketAsync(SaleDto sale, string printerPortOrName = "");
+    Task<bool> OpenCashDrawerAsync(string printerPortOrName = "", int drawerPin = 0);
+    Task<bool> PrintNonSaleCashMovementSlipAsync(ShiftMovementSlipModel model, string printerPortOrName = "");
+    Task<bool> PrintTestPageAsync(string printerPortOrName = "");
     Task<bool> IsPrinterOnlineAsync();
-    Task<bool> PrintInventoryChecklistAsync(System.Collections.Generic.List<ProductDto> products, string printerPortOrName = "COM1");
-    Task<bool> PrintSnapshotChecklistAsync(Ticketfy.Data.Entities.InventorySnapshotEntity snapshot, string printerPortOrName = "COM1");
-    Task<bool> PrintPurchaseOrderAsync(Ticketfy.Data.Dtos.PurchaseDto purchase, string printerPortOrName = "COM1");
+    Task<bool> PrintInventoryChecklistAsync(System.Collections.Generic.List<ProductDto> products, string printerPortOrName = "");
+    Task<bool> PrintSnapshotChecklistAsync(Ticketfy.Data.Entities.InventorySnapshotEntity snapshot, string printerPortOrName = "");
+    Task<bool> PrintPurchaseOrderAsync(Ticketfy.Data.Dtos.PurchaseDto purchase, string printerPortOrName = "");
 }

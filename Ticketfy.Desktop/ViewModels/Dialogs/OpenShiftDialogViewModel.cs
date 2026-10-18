@@ -14,6 +14,7 @@ namespace Ticketfy.ViewModels.Dialogs;
 public partial class OpenShiftDialogViewModel : ValidatableViewModelBase
 {
     private readonly IShiftService _shiftService;
+    private readonly string _operationId = Guid.NewGuid().ToString("N");
     private readonly IAttendanceService _attendanceService;
     private readonly ISessionManager _sessionManager;
 
@@ -38,6 +39,7 @@ public partial class OpenShiftDialogViewModel : ValidatableViewModelBase
     [RelayCommand]
     private async Task OpenShiftAsync()
     {
+        if (IsProcessing) return;
         if (decimal.TryParse(InitialFloatAmount, out decimal parsedAmount))
         {
             if (parsedAmount < 0)
@@ -61,7 +63,7 @@ public partial class OpenShiftDialogViewModel : ValidatableViewModelBase
             IsProcessing = true;
             ErrorMessage = string.Empty;
 
-            var result = await _shiftService.OpenAsync(parsedAmount);
+            var result = await _shiftService.OpenAsync(parsedAmount, _operationId);
             if (result != null)
             {
                 if (_sessionManager?.CurrentCashier != null)

@@ -35,6 +35,7 @@
                 <StackPanel Spacing="4">
                     <TextBlock Text="Forma de Pago" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
                     <ComboBox ItemsSource="{Binding PaymentMethods}" SelectedItem="{Binding PaymentMethod, Mode=TwoWay}" HorizontalAlignment="Stretch" Padding="8" />
+                    <TextBox Text="{Binding ExpenseReference}" Watermark="Referencia / comprobante de pago" />
                 </StackPanel>
 
                 <StackPanel Spacing="4">
@@ -52,6 +53,11 @@
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="{DynamicResource AppCornerRadius}">
             <DockPanel LastChildFill="True">
                 <TextBlock DockPanel.Dock="Top" Text="Historial de Gastos Registrados" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,12" />
+                <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,12">
+                    <TextBox Text="{Binding CancellationReason}" Watermark="Motivo obligatorio para cancelar un gasto" />
+                    <CheckBox IsChecked="{Binding ReversalVerified}" Content="Confirmo la devolución del efectivo a esta caja / el abono bancario" />
+                    <TextBlock Text="No cancele un gasto pagado si el dinero no ha sido restituido." TextWrapping="Wrap" />
+                </StackPanel>
 
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding Expenses}">
@@ -63,10 +69,13 @@
                                             <TextBlock Text="{Binding Category}" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" />
                                             <TextBlock Text="{Binding Date}" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" />
                                         </StackPanel>
-                                        <TextBlock Grid.Column="1" Text="{Binding Description}" FontSize="13" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="8,0" />
+                                        <StackPanel Grid.Column="1" Margin="8,0">
+                                            <TextBlock Text="{Binding Description}" FontSize="13" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="CANCELADO · original conservado" IsVisible="{Binding IsCancelled}" FontSize="11" />
+                                        </StackPanel>
                                         <TextBlock Grid.Column="2" Text="{Binding Amount, StringFormat='-${0:N2}'}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource AccentDangerBrush}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="8,0" />
-                                        <Button Grid.Column="3" Command="{Binding $parent[UserControl].((vm:ExpensesViewModel)DataContext).DeleteExpenseCommand}" CommandParameter="{Binding}" Background="Transparent" BorderThickness="0" Padding="4">
-                                            <mi:MaterialIcon Kind="TrashCanOutline" Width="18" Height="18" Foreground="{DynamicResource AccentDangerBrush}" />
+                                        <Button Grid.Column="3" IsEnabled="{Binding !IsCancelled}" Command="{Binding $parent[UserControl].((vm:ExpensesViewModel)DataContext).DeleteExpenseCommand}" CommandParameter="{Binding}" Background="Transparent" BorderThickness="0" Padding="4" ToolTip.Tip="Cancelar con restitución verificada">
+                                            <mi:MaterialIcon Kind="Cancel" Width="18" Height="18" Foreground="{DynamicResource AccentDangerBrush}" />
                                         </Button>
                                     </Grid>
                                 </Border>

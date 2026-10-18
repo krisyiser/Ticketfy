@@ -6,8 +6,11 @@ using Ticketfy.Core.Enums;
 namespace Ticketfy.Data.Entities;
 
 [Table("shift_movements")]
-public class ShiftMovementEntity
+public class ShiftMovementEntity : IImmutableRecord
 {
+    public string? OperationId { get; set; }
+    public string? RegisterId { get; set; }
+    public string? CashierUserId { get; set; }
     [Key]
     [Column("id")]
     public string Id { get; set; } = Guid.NewGuid().ToString();

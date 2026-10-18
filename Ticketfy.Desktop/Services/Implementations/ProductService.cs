@@ -1,178 +1,143 @@
 using Microsoft.EntityFrameworkCore;
-using Ticketfy.Core.Helpers;
+using Ticketfy.Core.Security;
 using Ticketfy.Data;
 using Ticketfy.Data.Dtos;
 using Ticketfy.Data.Entities;
 using Ticketfy.Services.Interfaces;
-using Serilog;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
-using Ticketfy.Core.Configuration;
 
 namespace Ticketfy.Services.Implementations;
 
 public sealed class ProductService : IProductService
 {
-    private readonly AppDbContext _ctx;
-
-    public ProductService(AppDbContext ctx) => _ctx = ctx;
-
+    private readonly IDbContextFactory<AppDbContext> _factory;
+    private readonly CommercialOperationContext? _operations;
+    public ProductService(AppDbContext db, CommercialOperationContext? operations = null)
+        : this(new AppDbContextFactoryImpl<AppDbContext>(db.Options), operations) { }
+    public ProductService(IDbContextFactory<AppDbContext> factory, CommercialOperationContext? operations = null)
+    { _factory = factory; _operations = operations; }
+    private Task<OperationIdentity> AuthorizeAsync(AppDbContext db, string permission) =>
+        (_operations ?? throw new UnauthorizedAccessException("Se requiere una sesión autenticada.")).RequireAsync(db, permission);
     public async Task<List<ProductDto>> GetAllAsync()
     {
-        var list = await _ctx.Products
-            .AsNoTracking()
-            .OrderBy(p => p.Name)
-            .ToListAsync();
-        return list.Select(MapToDto).ToList();
+        await using var db = await _factory.CreateDbContextAsync();
+        var result = (await db.Products.AsNoTracking().Where(p => p.IsActive).OrderBy(p => p.Name).ToListAsync()).Select(Map).ToList();
+        for (int i = 0; i < result.Count; i++) if (result[i].IsKit)
+            result[i] = result[i] with { Stock = await KitAvailabilityAsync(db, result[i].Id, new HashSet<string>()) };
+        return result;
     }
-
     public async Task<List<ProductDto>> GetByCategoryAsync(string category)
     {
-        var list = await _ctx.Products
-            .AsNoTracking()
-            .Where(p => p.Category == category)
-            .OrderBy(p => p.Name)
-            .ToListAsync();
-        return list.Select(MapToDto).ToList();
+        await using var db = await _factory.CreateDbContextAsync();
+        return await MapAvailableAsync(db, await db.Products.AsNoTracking().Where(p => p.IsActive && p.Category == category).OrderBy(p => p.Name).ToListAsync());
     }
-
     public async Task<ProductDto?> GetByBarcodeAsync(string barcode)
     {
-        var entity = await _ctx.Products
-            .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Barcode == barcode);
-        return entity is null ? null : MapToDto(entity);
+        await using var db = await _factory.CreateDbContextAsync();
+        var p = await db.Products.AsNoTracking().SingleOrDefaultAsync(p => p.IsActive && p.Barcode == barcode);
+        return p is null ? null : p.IsKit ? Map(p) with { Stock = await KitAvailabilityAsync(db, p.Id, new HashSet<string>()) } : Map(p);
     }
-
     public async Task<ProductDto?> GetByIdAsync(string id)
     {
-        var entity = await _ctx.Products.FindAsync(id);
-        return entity is null ? null : MapToDto(entity);
+        await using var db = await _factory.CreateDbContextAsync();
+        var p = await db.Products.AsNoTracking().SingleOrDefaultAsync(p => p.Id == id);
+        return p is null ? null : p.IsKit ? Map(p) with { Stock = await KitAvailabilityAsync(db, p.Id, new HashSet<string>()) } : Map(p);
     }
-
-    public async Task AddAsync(ProductDto product)
+    public Task AddAsync(ProductDto product) => SaveAsync(product, true);
+    public Task UpdateAsync(ProductDto product) => SaveAsync(product, false);
+    private async Task SaveAsync(ProductDto dto, bool create)
     {
-        _ctx.ChangeTracker.Clear();
-
-        if (!string.IsNullOrWhiteSpace(product.Barcode))
-        {
-            var existing = await _ctx.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Barcode == product.Barcode);
-            if (existing != null)
-            {
-                throw new InvalidOperationException($"El código de barras '{product.Barcode}' ya está asignado al producto '{existing.Name}'.");
-            }
-        }
-
-        _ctx.Products.Add(MapToEntity(product));
-        await _ctx.SaveChangesAsync();
+        await using var db = await _factory.CreateDbContextAsync();
+        await using var tx = await db.Database.BeginTransactionAsync();
+        var actor = await AuthorizeAsync(db, create ? PermissionCatalog.InventoryCreate : PermissionCatalog.InventoryEdit);
+        await SaveProductAsync(db, actor, dto, create);
+        await db.SaveChangesAsync(); await tx.CommitAsync();
     }
-
-    public async Task UpdateAsync(ProductDto product)
+    private async Task SaveProductAsync(AppDbContext db, OperationIdentity actor, ProductDto dto, bool create)
     {
-        _ctx.ChangeTracker.Clear();
-
-        if (!string.IsNullOrWhiteSpace(product.Barcode))
+        Validate(dto);
+        string id = string.IsNullOrWhiteSpace(dto.Id) ? Guid.NewGuid().ToString("N") : dto.Id;
+        if (await db.Products.AnyAsync(p => p.Barcode == dto.Barcode && p.Id != id))
+            throw new InvalidOperationException("El código de barras ya está asignado.");
+        var entity = await db.Products.SingleOrDefaultAsync(p => p.Id == id);
+        if (create && entity is not null) throw new InvalidOperationException("El producto ya existe.");
+        if (!create && entity is null) throw new InvalidOperationException("Producto inexistente.");
+        if (!create && (dto.ExpectedStockVersion is null || dto.ExpectedStockVersion != entity!.StockVersion))
+            throw new DbUpdateConcurrencyException("El producto o sus existencias cambiaron. Recargue el registro antes de editarlo.");
+        if (entity is null)
         {
-            var existing = await _ctx.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Barcode == product.Barcode && p.Id != product.Id);
-            if (existing != null)
-            {
-                throw new InvalidOperationException($"El código de barras '{product.Barcode}' ya está asignado al producto '{existing.Name}'.");
-            }
+            entity = new ProductEntity { Id = id, Barcode = dto.Barcode, Name = dto.Name.Trim(), Stock = 0, CreatedAt = DateTimeOffset.UtcNow.ToString("O") };
+            db.Products.Add(entity);
+            await db.SaveChangesAsync();
         }
-
-        var entity = await _ctx.Products.FindAsync(product.Id);
-        if (entity is null) return;
-
-        entity.Barcode = product.Barcode;
-        entity.Name = product.Name;
-        entity.Cost = product.Cost;
-        entity.Price = product.Price;
-        entity.WholesalePrice = product.WholesalePrice;
-        entity.WholesaleThreshold = product.WholesaleThreshold;
-        entity.Stock = product.Stock;
-        entity.Category = product.Category;
-        entity.Unit = product.Unit;
-        entity.ExpiresSoon = product.ExpiresSoon;
-        entity.PointsRewarded = product.PointsRewarded;
-        entity.ReorderQuantity = product.ReorderQuantity;
-        entity.LocationRack = product.LocationRack;
-        entity.SatProductCode = product.SatProductCode;
-        entity.SatUnitCode = product.SatUnitCode;
-        entity.MinStock = product.MinStock;
-        entity.DefaultSupplierId = product.DefaultSupplierId;
-        entity.IsBulk = product.IsBulk;
-        entity.IsKit = product.IsKit;
-
-        _ctx.Products.Update(entity);
-        await _ctx.SaveChangesAsync();
+        string operation = Guid.NewGuid().ToString("N");
+        decimal delta = dto.IsKit ? 0m : (decimal)dto.Stock - (decimal)entity.Stock;
+        if (delta != 0)
+        {
+            await AuthorizeAsync(db, PermissionCatalog.InventoryStockAdjust);
+            string reason = create ? "Existencia inicial" : dto.StockAdjustmentReason ?? "";
+            if (string.IsNullOrWhiteSpace(reason)) throw new InvalidOperationException("Indique el motivo del ajuste de existencias.");
+            await CommercialLedger.StockAsync(db, actor, operation, id, id, delta, reason, cost: dto.Cost);
+            await db.Entry(entity).ReloadAsync();
+        }
+        entity.Barcode = dto.Barcode?.Trim(); entity.Name = dto.Name.Trim(); entity.Cost = dto.Cost; entity.Price = dto.Price;
+        entity.WholesalePrice = dto.WholesalePrice; entity.WholesaleThreshold = dto.WholesaleThreshold; entity.Category = dto.Category;
+        entity.Unit = dto.Unit; entity.MinStock = dto.MinStock; entity.MaxStock = dto.MaxStock; entity.IsActive = dto.IsActive;
+        entity.IsBulk = dto.IsBulk; entity.IsKit = dto.IsKit; entity.ReorderQuantity = dto.ReorderQuantity; entity.LocationRack = dto.LocationRack;
+        entity.SatProductCode = dto.SatProductCode; entity.SatUnitCode = dto.SatUnitCode; entity.TaxRate = dto.TaxRate;
+        entity.DefaultSupplierId = dto.DefaultSupplierId; entity.PointsRewarded = dto.PointsRewarded; entity.ExpiresSoon = dto.ExpiresSoon;
+        entity.StockVersion++;
+        CommercialLedger.Journal(db, actor, operation, create ? "PRODUCT_CREATED" : "PRODUCT_UPDATED", id, 0, dto.StockAdjustmentReason ?? "Catálogo");
     }
-
+    private static void Validate(ProductDto p)
+    {
+        if (string.IsNullOrWhiteSpace(p.Name) || string.IsNullOrWhiteSpace(p.Barcode) || string.IsNullOrWhiteSpace(p.Unit)
+            || p.Price < 0 || p.Cost < 0 || p.WholesalePrice < 0 || p.WholesaleThreshold < 0 || p.TaxRate < 0 || p.TaxRate > 1
+            || CommercialLedger.Money(p.Price) != p.Price || CommercialLedger.Money(p.Cost) != p.Cost
+            || !double.IsFinite(p.Stock) || p.Stock < 0 || Math.Round(p.Stock, 3) != p.Stock || (!p.IsBulk && Math.Truncate(p.Stock) != p.Stock)
+            || !double.IsFinite(p.MinStock) || !double.IsFinite(p.MaxStock) || p.MinStock < 0 || p.MaxStock < 0
+            || (p.MaxStock > 0 && p.MaxStock < p.MinStock) || p.PointsRewarded < 0 || !double.IsFinite(p.PointsRewarded))
+            throw new InvalidOperationException("Revise código, nombre, precios, unidades, impuestos y niveles de inventario.");
+    }
     public async Task DeleteAsync(string id)
     {
-        var entity = await _ctx.Products.FindAsync(id);
-        if (entity is not null)
-        {
-            _ctx.Products.Remove(entity);
-            await _ctx.SaveChangesAsync();
-        }
+        await using var db = await _factory.CreateDbContextAsync();
+        var actor = await AuthorizeAsync(db, PermissionCatalog.InventoryDelete);
+        var entity = await db.Products.SingleOrDefaultAsync(p => p.Id == id);
+        if (entity is null || !entity.IsActive) return;
+        entity.IsActive = false;
+        CommercialLedger.Journal(db, actor, Guid.NewGuid().ToString("N"), "PRODUCT_INACTIVATED", id, 0, "Baja lógica; conserva existencias e historial");
+        await db.SaveChangesAsync();
     }
-
     public async Task ClearInventoryAsync()
     {
-        await _ctx.Products.ExecuteDeleteAsync();
+        await using var db = await _factory.CreateDbContextAsync();
+        var actor = await AuthorizeAsync(db, PermissionCatalog.InventoryDelete);
+        var products = await db.Products.Where(p => p.IsActive).ToListAsync();
+        foreach (var p in products) p.IsActive = false;
+        CommercialLedger.Journal(db, actor, Guid.NewGuid().ToString("N"), "CATALOG_INACTIVATED", "CATALOG", 0, $"Productos: {products.Count}");
+        await db.SaveChangesAsync();
     }
-
     public async Task BulkSaveAsync(IEnumerable<ProductDto> products)
     {
-        foreach (var p in products)
+        await using var db = await _factory.CreateDbContextAsync();
+        await using var tx = await db.Database.BeginTransactionAsync();
+        var actor = await AuthorizeAsync(db, PermissionCatalog.InventoryCreate);
+        await AuthorizeAsync(db, PermissionCatalog.InventoryEdit);
+        foreach (var dto in products)
         {
-            var existing = await _ctx.Products
-                .FirstOrDefaultAsync(e => e.Barcode == p.Barcode && p.Barcode != null);
-
-            if (existing is null)
-            {
-                _ctx.Products.Add(MapToEntity(p));
-            }
-            else
-            {
-                existing.Name = p.Name;
-                existing.Cost = p.Cost;
-                existing.Price = p.Price;
-                existing.WholesalePrice = p.WholesalePrice;
-                existing.WholesaleThreshold = p.WholesaleThreshold;
-                existing.Stock = p.Stock;
-                existing.Category = p.Category;
-                existing.Unit = p.Unit;
-                existing.PointsRewarded = p.PointsRewarded;
-                existing.ReorderQuantity = p.ReorderQuantity;
-                existing.LocationRack = p.LocationRack;
-                existing.SatProductCode = p.SatProductCode;
-                existing.SatUnitCode = p.SatUnitCode;
-                existing.MinStock = p.MinStock;
-                existing.IsBulk = p.IsBulk;
-                existing.IsKit = p.IsKit;
-            }
+            var existing = await db.Products.AsNoTracking().SingleOrDefaultAsync(p => p.Barcode == dto.Barcode);
+            await SaveProductAsync(db, actor, existing is null ? dto : dto with { Id = existing.Id, ExpectedStockVersion = existing.StockVersion, StockAdjustmentReason = "Importación de inventario autorizada" }, existing is null);
+            await db.SaveChangesAsync();
         }
-        await _ctx.SaveChangesAsync();
+        await tx.CommitAsync();
     }
-
     public async Task<List<ProductDto>> SearchFtsAsync(string query)
     {
-        if (string.IsNullOrWhiteSpace(query)) return await GetAllAsync();
-        var q = query.Trim().ToLower();
-        var list = await _ctx.Products
-            .AsNoTracking()
-            .Where(p => (p.Barcode != null && EF.Functions.Like(p.Barcode.ToLower(), $"%{q}%")) ||
-                        EF.Functions.Like(p.Name.ToLower(), $"%{q}%") ||
-                        EF.Functions.Like(p.Category.ToLower(), $"%{q}%"))
-            .Take(150)
-            .ToListAsync();
-        return list.Select(MapToDto).ToList();
+        await using var db = await _factory.CreateDbContextAsync();
+        var q = query.Trim();
+        return await MapAvailableAsync(db, await db.Products.AsNoTracking().Where(p => p.IsActive && (p.Name.Contains(q) || (p.Barcode != null && p.Barcode.Contains(q)) || p.Category.Contains(q)))
+            .OrderBy(p => p.Name).Take(150).ToListAsync());
     }
-
     public async Task<int> ImportFromCsvTextAsync(string csvContent)
     {
         if (string.IsNullOrWhiteSpace(csvContent)) return 0;
@@ -180,11 +145,13 @@ public sealed class ProductService : IProductService
         using var reader = new StringReader(csvContent);
         string? line;
         bool isHeader = true;
+        int lineNumber = 0;
 
         var csvParser = new System.Text.RegularExpressions.Regex("[,;](?=(?:[^\"]*\"[^\"]*\")*(?![^\"]*\"))");
 
         while ((line = await reader.ReadLineAsync()) != null)
         {
+            lineNumber++;
             if (string.IsNullOrWhiteSpace(line)) continue;
             var parts = csvParser.Split(line);
             for (int i = 0; i < parts.Length; i++)
@@ -198,12 +165,15 @@ public sealed class ProductService : IProductService
                 if (parts[0].Contains("barcode", StringComparison.OrdinalIgnoreCase) || parts[0].Contains("codigo", StringComparison.OrdinalIgnoreCase)) continue;
             }
 
-            if (parts.Length < 4) continue;
+            if (parts.Length < 5) throw new InvalidOperationException($"Fila {lineNumber}: se requieren código, nombre, costo, precio y stock. No se importó ningún registro.");
             string barcode = parts[0];
             string name = parts[1];
-            _ = decimal.TryParse(parts[2], out decimal cost);
-            _ = decimal.TryParse(parts[3], out decimal price);
-            double stock = parts.Length > 4 && double.TryParse(parts[4], out double s) ? s : 10.0;
+            var culture = System.Globalization.CultureInfo.InvariantCulture;
+            var style = System.Globalization.NumberStyles.AllowDecimalPoint | System.Globalization.NumberStyles.AllowLeadingSign;
+            if (!decimal.TryParse(parts[2], style, culture, out decimal cost)
+                || !decimal.TryParse(parts[3], style, culture, out decimal price)
+                || !double.TryParse(parts[4], style, culture, out double stock))
+                throw new InvalidOperationException($"Fila {lineNumber}: importes inválidos; utilice punto decimal y no separadores de miles. No se importó ningún registro.");
             string category = parts.Length > 5 ? parts[5] : "General";
             string unit = parts.Length > 6 ? parts[6] : "pza";
             bool isBulk = unit.Equals("kg", StringComparison.OrdinalIgnoreCase) || unit.Equals("lt", StringComparison.OrdinalIgnoreCase) || unit.Equals("gr", StringComparison.OrdinalIgnoreCase);
@@ -211,6 +181,7 @@ public sealed class ProductService : IProductService
             items.Add(new ProductDto(Guid.NewGuid().ToString(), barcode, name, cost, price, Stock: stock, Category: category, Unit: unit, IsBulk: isBulk));
         }
 
+        if (items.GroupBy(p => p.Barcode).Any(g => g.Count() > 1)) throw new InvalidOperationException("El archivo repite códigos de barras. No se importó ningún registro.");
         if (items.Count > 0) await BulkSaveAsync(items);
         return items.Count;
     }
@@ -222,111 +193,60 @@ public sealed class ProductService : IProductService
         return await ImportFromCsvTextAsync(text);
     }
 
-    public async Task<bool> AdjustStockManuallyAsync(string productId, double newPhysicalStock, string reason, string userId, Ticketfy.Services.Security.ISecurityInterceptionService? securityService = null, IAuditService? auditService = null)
+
+    public async Task<bool> AdjustStockManuallyAsync(string productId, double newPhysicalStock, string reason, string userId,
+        Ticketfy.Services.Security.ISecurityInterceptionService? securityService = null, IAuditService? auditService = null)
     {
-        using var transaction = await _ctx.Database.BeginTransactionAsync();
-        try
+        var product = await GetByIdAsync(productId) ?? throw new InvalidOperationException("Producto inexistente.");
+        await UpdateAsync(product with { Stock = newPhysicalStock, StockAdjustmentReason = reason });
+        return true;
+    }
+    public async Task<IEnumerable<ProductDto>> GetCatalogForPosAsync() => await GetAllAsync();
+    public async Task<List<InventoryMovementEntity>> GetKardexAsync(string productId)
+    {
+        await using var db = await _factory.CreateDbContextAsync();
+        await (_operations ?? throw new UnauthorizedAccessException()).RequireAsync(db, PermissionCatalog.InventoryView, false);
+        return await db.InventoryMovements.AsNoTracking().Where(m => m.ProductId == productId).OrderBy(m => m.CreatedAtUtc).ToListAsync();
+    }
+    private static async Task<double> KitAvailabilityAsync(AppDbContext db, string id, HashSet<string> visited)
+    {
+        var requirements = new Dictionary<string, decimal>();
+        async Task<bool> ExpandAsync(string productId, decimal multiplier)
         {
-            var product = await _ctx.Products.FindAsync(productId)
-                ?? throw new InvalidOperationException($"Producto {productId} no encontrado.");
-
-            double oldStock = product.Stock;
-            double deltaStock = newPhysicalStock - oldStock;
-
-            if (Math.Abs(deltaStock) < 0.001) return true;
-
-            decimal financialLoss = Convert.ToDecimal(Math.Abs(deltaStock)) * product.Cost;
-            string? supervisorId = null;
-
-            if (deltaStock < 0 && financialLoss >= 100m && securityService != null)
+            if (!visited.Add(productId)) return false;
+            var product = await db.Products.AsNoTracking().SingleOrDefaultAsync(p => p.Id == productId && p.IsActive);
+            if (product is null) return false;
+            if (!product.IsKit) requirements[productId] = requirements.GetValueOrDefault(productId) + multiplier;
+            else
             {
-                var auth = await securityService.AuthorizeHighRiskActionAsync(
-                    "Ajuste de Merma / Faltante de Stock",
-                    $"Pérdida detectada de {Math.Abs(deltaStock):N2} unidades de '{product.Name}'. Impacto: ${financialLoss:N2}");
-
-                if (!auth.IsAuthorized)
-                {
-                    throw new UnauthorizedAccessException("Ajuste cancelado por falta de autorización del supervisor.");
-                }
-
-                supervisorId = auth.SupervisorId;
+                var kit = await db.ItemKits.AsNoTracking().SingleOrDefaultAsync(k => k.Id == productId || k.ParentProductId == productId);
+                if (kit is null) return false;
+                var components = await db.ItemKitItems.AsNoTracking().Where(i => i.ItemKitId == kit.Id).ToListAsync();
+                if (components.Count == 0) return false;
+                foreach (var part in components)
+                    if (!double.IsFinite(part.Quantity) || part.Quantity <= 0 || !await ExpandAsync(part.ProductId, multiplier * (decimal)part.Quantity)) return false;
             }
-
-            product.Stock = newPhysicalStock;
-            _ctx.Products.Update(product);
-
-            if (auditService != null)
-            {
-                await auditService.LogAsync(new AuditLogEntity
-                {
-                    UserId = userId,
-                    AuthorizedBySupervisorId = supervisorId,
-                    ActionType = Ticketfy.Core.Enums.AuditActionType.InventoryStockAdjustment,
-                    RiskLevel = deltaStock < 0 ? Ticketfy.Core.Enums.RiskLevel.HighRisk : Ticketfy.Core.Enums.RiskLevel.Info,
-                    EntityName = nameof(ProductEntity),
-                    EntityId = product.Id,
-                    OldValue = oldStock.ToString("F2"),
-                    NewValue = newPhysicalStock.ToString("F2"),
-                    FinancialImpact = deltaStock < 0 ? financialLoss : 0m,
-                    Reason = reason
-                });
-            }
-
-            await _ctx.SaveChangesAsync();
-            await transaction.CommitAsync();
+            visited.Remove(productId);
             return true;
         }
-        catch
+        if (!await ExpandAsync(id, 1m) || requirements.Count == 0) return 0;
+        decimal available = decimal.MaxValue;
+        foreach (var requirement in requirements)
         {
-            await transaction.RollbackAsync();
-            throw;
+            var stock = await db.Products.AsNoTracking().Where(p => p.Id == requirement.Key).Select(p => p.Stock).SingleAsync();
+            available = Math.Min(available, decimal.Floor((decimal)stock / requirement.Value));
         }
+        return (double)Math.Max(0, available);
     }
-
-    [Dapper.DapperAot]
-    public async Task<IEnumerable<ProductDto>> GetCatalogForPosAsync()
+    private static async Task<List<ProductDto>> MapAvailableAsync(AppDbContext db, List<ProductEntity> products)
     {
-        string securePassword = Ticketfy.Services.Security.SecurityManager.GetMasterKey();
-        string secureConnectionString = $"Data Source={AppDataPaths.DatabaseFile};Password={securePassword};";
-
-        using var connection = new Microsoft.Data.Sqlite.SqliteConnection(secureConnectionString);
-        await connection.OpenAsync();
-
-        // Consulta SQL cruda y estricta, mapeada a un DTO por el compilador AOT
-        const string sql = "SELECT Id, Barcode, Name, Cost, Price, WholesalePrice, WholesaleThreshold, Stock, Category, Unit, ExpiresSoon, CreatedAt, PointsRewarded, ReorderQuantity, LocationRack, sat_product_code AS SatProductCode, sat_unit_code AS SatUnitCode, MinStock, is_bulk AS IsBulk, is_kit AS IsKit FROM products";
-        return await Dapper.SqlMapper.QueryAsync<ProductDto>(connection, sql);
+        var result = products.Select(Map).ToList();
+        for (int i = 0; i < result.Count; i++) if (result[i].IsKit)
+            result[i] = result[i] with { Stock = await KitAvailabilityAsync(db, result[i].Id, new HashSet<string>()) };
+        return result;
     }
-
-    private static ProductDto MapToDto(ProductEntity e) => new(
-        e.Id, e.Barcode, e.Name, e.Cost, e.Price,
-        e.WholesalePrice, e.WholesaleThreshold,
-        e.Stock, e.Category, e.Unit, e.ExpiresSoon, e.CreatedAt,
-        e.PointsRewarded, e.ReorderQuantity, e.LocationRack, e.SatProductCode, e.SatUnitCode, e.MinStock,
-        e.DefaultSupplierId, e.IsBulk, e.IsKit);
-
-    private static ProductEntity MapToEntity(ProductDto d) => new()
-    {
-        Id = string.IsNullOrEmpty(d.Id) ? IdGenerator.NewProductId() : d.Id,
-        Barcode = d.Barcode,
-        Name = d.Name,
-        Cost = d.Cost,
-        Price = d.Price,
-        WholesalePrice = d.WholesalePrice,
-        WholesaleThreshold = d.WholesaleThreshold,
-        Stock = d.Stock,
-        MinStock = d.MinStock,
-        Category = d.Category,
-        Unit = d.Unit,
-        ExpiresSoon = d.ExpiresSoon,
-        CreatedAt = d.CreatedAt ?? DateTimeOffset.Now.ToString("o"),
-        PointsRewarded = d.PointsRewarded,
-        ReorderQuantity = d.ReorderQuantity,
-        LocationRack = d.LocationRack,
-        SatProductCode = d.SatProductCode,
-        SatUnitCode = d.SatUnitCode,
-        DefaultSupplierId = d.DefaultSupplierId,
-        IsBulk = d.IsBulk,
-        IsKit = d.IsKit
-    };
-
+    private static ProductDto Map(ProductEntity p) => new(p.Id, p.Barcode, p.Name, p.Cost, p.Price, p.WholesalePrice,
+        p.WholesaleThreshold, p.Stock, p.Category, p.Unit, p.ExpiresSoon, p.CreatedAt, p.PointsRewarded, p.ReorderQuantity,
+        p.LocationRack, p.SatProductCode, p.SatUnitCode, p.MinStock, p.DefaultSupplierId, p.IsBulk, p.IsKit, p.IsActive, p.MaxStock, p.TaxRate,
+        ExpectedStockVersion: p.StockVersion);
 }

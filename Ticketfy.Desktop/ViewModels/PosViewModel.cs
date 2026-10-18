@@ -62,7 +62,7 @@ public partial class PosViewModel : ObservableObject, IDisposable
         IExternalCatalogService? externalCatalogService = null)
     {
         _predictiveService = predictiveService;
-        _cartStateStore = new CartStateStore();
+        _cartStateStore = new CartStateStore { PromotionService = promotionService };
 
         Catalog = new CatalogViewModel(productService, externalCatalogService!, kitService, _cartStateStore);
         Cart = new CartViewModel(_cartStateStore, null!, customerService!); // Ideally SaleService injected

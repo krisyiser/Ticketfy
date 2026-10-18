@@ -1,84 +1,50 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Ticketfy.Core.Helpers;
 using Ticketfy.Core.Models;
+using Ticketfy.Core.Security;
 using Ticketfy.Data;
 using Ticketfy.Services.Interfaces;
-using Ticketfy.Core.Helpers;
-using Serilog;
 
 namespace Ticketfy.Services.Implementations;
 
-public class PerformanceAnalyticsService : IPerformanceAnalyticsService
+public sealed class PerformanceAnalyticsService : IPerformanceAnalyticsService
 {
-    private readonly AppDbContext _dbContext;
-
-    public PerformanceAnalyticsService(AppDbContext dbContext)
-    {
-        _dbContext = dbContext;
-    }
+    private readonly IDbContextFactory<AppDbContext> _factory;
+    private readonly CommercialOperationContext? _operations;
+    public PerformanceAnalyticsService(AppDbContext db, CommercialOperationContext? operations = null)
+    { _factory = new AppDbContextFactoryImpl<AppDbContext>(db.Options); _operations = operations; }
 
     public async Task<List<CashierProductivityReportModel>> CalculateTrueCashierProductivityAsync(DateTime startDate, DateTime endDate)
     {
-        var resultList = new List<CashierProductivityReportModel>();
-
-        try
+        await using var db = await _factory.CreateDbContextAsync();
+        await (_operations ?? throw new UnauthorizedAccessException("Sesión requerida.")).RequireAsync(db, PermissionCatalog.ReportsView, false);
+        var users = await db.Users.AsNoTracking().ToListAsync();
+        var sales = await db.Sales.AsNoTracking().ToListAsync();
+        var returns = (await db.Returns.AsNoTracking().ToListAsync()).Where(r => r.CreatedAt.IsInDateRange(startDate, endDate)).ToList();
+        var attendance = await db.Attendances.AsNoTracking().ToListAsync();
+        var list = new List<CashierProductivityReportModel>();
+        foreach (var user in users)
         {
-            var activeUsers = await _dbContext.Users.AsNoTracking().ToListAsync();
-
-            foreach (var user in activeUsers)
+            var all = sales.Where(s => s.CashierUserId == user.Id.ToString()).ToList();
+            var period = all.Where(s => s.Date.IsInDateRange(startDate, endDate)).ToList();
+            var ids = all.Where(s => s.LedgerVersion > 0).Select(s => s.Id).ToHashSet();
+            decimal net = period.Where(s => s.LedgerVersion > 0 || s.IsCancelled == 0).Sum(s => s.Total)
+                - returns.Where(r => ids.Contains(r.OriginalSaleId)).Sum(r => r.TotalRefunded);
+            double hours = attendance.Where(a => a.UserId == user.Id && a.CheckInTime.ToString("O").IsInDateRange(startDate, endDate)).Sum(a => a.TotalWorkedHours);
+            list.Add(new CashierProductivityReportModel
             {
-                // 1. COMPUTE TOTAL REAL WORKED HOURS FROM ATTENDANCE LEDGER
-                var attendances = await _dbContext.Attendances.AsNoTracking()
-                    .Where(a => a.UserId == user.Id && a.CheckInTime >= startDate && a.CheckInTime <= endDate)
-                    .ToListAsync();
-
-                double totalHoursWorked = attendances.Sum(a => a.TotalWorkedHours);
-
-                // 2. COMPUTE GROSS SALES & TRANSACTION COUNT
-                var allSales = await _dbContext.Sales.AsNoTracking().ToListAsync();
-                var userSales = allSales
-                    .Where(s => s.Date.IsInDateRange(startDate, endDate))
-                    .ToList();
-
-                decimal totalSalesAmount = userSales.Sum(s => s.Total);
-                int totalTickets = userSales.Count;
-
-                // 3. APPLY TRUE TIME-WEIGHTED METRICS
-                decimal salesPerWorkedHour = totalHoursWorked > 0
-                    ? Math.Round(totalSalesAmount / (decimal)totalHoursWorked, 2)
-                    : (totalSalesAmount > 0 ? totalSalesAmount : 0m);
-
-                double ticketsPerWorkedHour = totalHoursWorked > 0
-                    ? Math.Round((double)totalTickets / totalHoursWorked, 2)
-                    : 0.0;
-
-                decimal averageTicketValue = totalTickets > 0
-                    ? Math.Round(totalSalesAmount / totalTickets, 2)
-                    : 0m;
-
-                resultList.Add(new CashierProductivityReportModel
-                {
-                    UserId = user.Id.ToString(),
-                    FullName = user.FullName,
-                    Role = user.Role.ToString().ToUpper(),
-                    TotalHoursWorked = Math.Round(totalHoursWorked, 2),
-                    TotalTicketsProcessed = totalTickets,
-                    GrossSales = totalSalesAmount,
-                    AverageTicketValue = averageTicketValue,
-                    TrueSalesPerHour = salesPerWorkedHour,
-                    TicketsPerHour = ticketsPerWorkedHour,
-                    EstimatedCommission = Math.Round(totalSalesAmount * 0.015m, 2) // 1.5% commission
-                });
-            }
+                UserId = user.Id.ToString(),
+                FullName = user.FullName,
+                Role = user.RoleString ?? user.Role.ToString(),
+                TotalTicketsProcessed = period.Count,
+                GrossSales = net,
+                TotalHoursWorked = Math.Round(hours, 2),
+                AverageTicketValue = period.Count == 0 ? 0 : CommercialLedger.Money(net / period.Count),
+                TrueSalesPerHour = hours <= 0 ? 0 : CommercialLedger.Money(net / (decimal)hours),
+                TicketsPerHour = hours <= 0 ? 0 : Math.Round(period.Count / hours, 2),
+                EstimatedCommission = 0m
+            });
         }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error calculating true cashier productivity");
-        }
-
-        return resultList.OrderByDescending(r => r.TrueSalesPerHour).ToList();
+        return list.OrderByDescending(r => r.TrueSalesPerHour).ToList();
     }
 }

@@ -3,7 +3,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$CoverageFile,
     [ValidateRange(0, 100)]
-    [double]$MinimumPercent = 75
+    [double]$MinimumPercent = 75,
+    [ValidateRange(0, 100)]
+    [double]$MinimumFinancialServicePercent = 70
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,6 +20,21 @@ $criticalFiles = @(
     "Services/Implementations/ProductService.cs",
     "Services/Implementations/CustomerService.cs",
     "Services/Implementations/ShiftService.cs",
+    "Services/Implementations/ShiftLedgerValidator.cs",
+    "Services/Implementations/PurchaseService.cs",
+    "Services/Implementations/ExpenseService.cs",
+    "Services/Implementations/GiftcardService.cs",
+    "Services/Implementations/PromotionService.cs",
+    "Services/Implementations/SupplierService.cs",
+    "Services/Implementations/ItemKitService.cs",
+    "Services/Implementations/CategoryService.cs",
+    "Services/Implementations/CommercialLedger.cs",
+    "Services/Implementations/CommandIdentity.cs",
+    "Services/Implementations/CommercialReconciliationService.cs",
+    "Services/Implementations/HistoricalReconciliationService.cs",
+    "Services/Implementations/IncomingTransferService.cs",
+    "Services/Implementations/PerformanceAnalyticsService.cs",
+    "Services/CommercialOperationContext.cs",
     "Services/Implementations/BackupService.cs",
     "Services/Implementations/FiscalIntegrationQueueService.cs",
     "Services/Implementations/MercadoPagoTerminalService.cs",
@@ -68,4 +85,13 @@ Write-Host "Cobertura crítica agregada: $criticalPercent% ($totalCovered/$total
 
 if ($criticalPercent -lt $MinimumPercent) {
     throw "La cobertura crítica $criticalPercent% está por debajo del mínimo $MinimumPercent%."
+}
+
+# Do not let well-covered services hide an untested financial command service.
+# Initialization includes platform/startup paths and keeps the aggregate requirement.
+$belowServiceMinimum = @($rows | Where-Object {
+    $_.File -ne "DatabaseInitializer.cs" -and $_.Percent -lt $MinimumFinancialServicePercent
+})
+if ($belowServiceMinimum.Count -gt 0) {
+    throw "Servicios por debajo del mínimo individual $MinimumFinancialServicePercent%: $($belowServiceMinimum.File -join ', ')"
 }
