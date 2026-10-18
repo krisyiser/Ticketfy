@@ -1,6 +1,8 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using System;
 using System.Text.Json.Serialization;
+using Ticketfy.Core.Configuration;
+using Ticketfy.Core.Operations;
 
 namespace Ticketfy.Core.Models.Settings;
 
@@ -113,7 +115,13 @@ public sealed class SystemSecurityConfig
 {
     public bool EnablePinLock { get; set; } = true;
     public int AutoLockTimeoutMinutes { get; set; } = 15;
-    public string BackupPath { get; set; } = "C:\\TicketfyData\\Backups";
+    public string BackupPath { get; set; } = AppDataPaths.BackupDirectory;
     public bool AutoBackupOnClose { get; set; } = true;
+    public bool AutomaticBackupsEnabled { get; set; } = true;
+    public int BackupIntervalHours { get; set; } = 24;
+    public int BackupRetentionCount { get; set; } = 30;
+    public int BackupRetentionDays { get; set; } = 30;
+    public bool VerifyAutomaticBackups { get; set; } = true;
+    public TelemetryConsent TelemetryConsent { get; set; } = TelemetryConsent.Disabled;
     public bool EnableAuditLogs { get; set; } = true;
 }

@@ -28,13 +28,24 @@
                     <TextBlock Text="1. Copias de Seguridad &amp; Almacenamiento Local" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
 
                     <StackPanel Spacing="4">
-                        <TextBlock Text="Ruta Destino de Copias de Seguridad (.db / .zip)" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                        <TextBox Text="{Binding State.System.BackupPath, Mode=TwoWay}" Watermark="C:\TicketfyData\Backups" Padding="8,6" />
+                        <TextBlock Text="Ruta destino de copias de seguridad (.db)" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
+                        <TextBox Text="{Binding State.System.BackupPath, Mode=TwoWay}" Padding="8,6" />
                     </StackPanel>
 
-                    <Grid ColumnDefinitions="*,*">
-                        <ToggleSwitch Grid.Column="0" IsChecked="{Binding State.System.AutoBackupOnClose, Mode=TwoWay}" OffContent="Respaldo al Cerrar" OnContent="Respaldo al Cerrar" />
-                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding State.System.EnableAuditLogs, Mode=TwoWay}" OffContent="Auditoría de Acciones" OnContent="Auditoría de Acciones" />
+                    <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto">
+                        <ToggleSwitch Grid.Column="0" IsChecked="{Binding State.System.AutomaticBackupsEnabled, Mode=TwoWay}" OffContent="Respaldos automáticos" OnContent="Respaldos automáticos" />
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding State.System.VerifyAutomaticBackups, Mode=TwoWay}" OffContent="Probar restauración" OnContent="Probar restauración" />
+                        <StackPanel Grid.Row="1" Grid.Column="0" Spacing="3" Margin="0,8,8,0">
+                            <TextBlock Text="Intervalo (horas)" FontSize="11" />
+                            <NumericUpDown Minimum="1" Maximum="168" Value="{Binding State.System.BackupIntervalHours, Mode=TwoWay}" />
+                        </StackPanel>
+                        <StackPanel Grid.Row="1" Grid.Column="1" Spacing="3" Margin="0,8,0,0">
+                            <TextBlock Text="Retención (copias / días)" FontSize="11" />
+                            <Grid ColumnDefinitions="*,*">
+                                <NumericUpDown Value="{Binding State.System.BackupRetentionCount, Mode=TwoWay}" Minimum="1" Maximum="365" />
+                                <NumericUpDown Grid.Column="1" Margin="6,0,0,0" Value="{Binding State.System.BackupRetentionDays, Mode=TwoWay}" Minimum="1" Maximum="3650" />
+                            </Grid>
+                        </StackPanel>
                     </Grid>
 
                     <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,4" />
@@ -48,15 +59,40 @@
                             </StackPanel>
                         </Button>
 
+                        <TextBlock Text="Restauración guiada" FontSize="12" FontWeight="Bold" Margin="0,6,0,0" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBox Text="{Binding RestoreBackupPath, Mode=TwoWay}" Watermark="Ruta completa del respaldo .db" Padding="8,6" />
+                            <Button Grid.Column="1" Command="{Binding SelectRestoreBackupCommand}" Margin="8,0,0,0" Padding="12,8">
+                                <TextBlock Text="EXAMINAR…" FontWeight="Bold" FontSize="11" />
+                            </Button>
+                        </Grid>
+                        <TextBlock Text="Se comprobarán integridad y esquema, se hará una copia de seguridad y la restauración se aplicará al reiniciar." FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource TextMutedBrush}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Command="{Binding ValidateAndPrepareRestoreCommand}" IsEnabled="{Binding !IsExecutingBackup}" Padding="12,8">
+                                <TextBlock Text="VALIDAR Y PREPARAR RESTAURACIÓN" FontWeight="Bold" FontSize="11" />
+                            </Button>
+                            <Button Command="{Binding ExportDiagnosticsCommand}" IsEnabled="{Binding !IsExecutingBackup}" Padding="12,8">
+                                <TextBlock Text="EXPORTAR DIAGNÓSTICO" FontWeight="Bold" FontSize="11" />
+                            </Button>
+                        </StackPanel>
+
                         <TextBlock Text="{Binding FeedbackMessage}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource AccentSuccessBrush}" TextWrapping="Wrap" />
                     </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Padding="16" Background="{DynamicResource BgSecondaryBrush}" CornerRadius="{DynamicResource AppCornerRadius}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="2. Privacidad y telemetría" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <ToggleSwitch IsChecked="{Binding AnonymousTelemetryEnabled, Mode=TwoWay}" OffContent="Telemetría operativa anónima (desactivada)" OnContent="Telemetría operativa anónima (activada)" />
+                    <TextBlock Text="Desactivada por defecto. Sólo registra localmente nombre del evento, fecha y resultado; nunca ventas, importes, clientes, credenciales o identificadores del equipo." FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource TextMutedBrush}" />
                 </StackPanel>
             </Border>
 
             <!-- 2. SEGURIDAD & INACTIVIDAD -->
             <Border Padding="16" Background="{DynamicResource BgSecondaryBrush}" CornerRadius="{DynamicResource AppCornerRadius}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                 <StackPanel Spacing="14">
-                    <TextBlock Text="2. Seguridad &amp; Bloqueo por Inactividad" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <TextBlock Text="3. Seguridad &amp; Bloqueo por Inactividad" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
 
                     <Grid ColumnDefinitions="*,Auto">
                         <TextBlock Text="Minutos de Inactividad para Bloqueo por PIN" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" />

@@ -78,6 +78,7 @@ public partial class App : Application
             try
             {
                 this.Services = await Ticketfy.Core.Startup.AppBootstrapper.BootstrapServicesAsync();
+                desktop.Exit += (_, _) => (Services as IDisposable)?.Dispose();
                 var licenseService = new Ticketfy.Services.Security.LicenseEnforcementService();
                 if (licenseService.IsSystemLocked())
                 {

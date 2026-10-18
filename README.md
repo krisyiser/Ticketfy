@@ -1,6 +1,6 @@
 # Ticketfy Desktop POS
 
-Current automated-quality status: [Stage 4 — Automated quality](docs/STAGE_4_AUTOMATED_QUALITY.md).
+Current operations status: [Stage 5 — Operations and support](docs/STAGE_5_OPERATIONS_SUPPORT.md).
 
 Ticketfy is a high-performance, industrial-grade Point of Sale (POS) and ERP system built on **Protocol Valcore v4.0**.
 
@@ -21,6 +21,12 @@ Please refer to the `docs/` folder for comprehensive architectural guidelines:
 - [Stage 2: Security and Compliance](docs/STAGE_2_SECURITY_COMPLIANCE.md)
 - [Stage 3: Commercial Integrations](docs/STAGE_3_COMMERCIAL_INTEGRATIONS.md)
 - [Stage 4: Automated Quality](docs/STAGE_4_AUTOMATED_QUALITY.md)
+- [Stage 5: Operations and Support](docs/STAGE_5_OPERATIONS_SUPPORT.md)
+- [Operations Manual](docs/OPERATIONS_MANUAL.md)
+- [Installation Manual](docs/INSTALLATION_MANUAL.md)
+- [Contingency and Support](docs/CONTINGENCY_SUPPORT_MANUAL.md)
+- [Privacy and Telemetry](docs/PRIVACY_AND_TELEMETRY.md)
+- [Windows and Hardware Compatibility](docs/WINDOWS_HARDWARE_COMPATIBILITY.md)
 
 ## Requirements
 - .NET 9.0 SDK

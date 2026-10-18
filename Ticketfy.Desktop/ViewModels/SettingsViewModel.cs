@@ -39,7 +39,14 @@ public partial class SettingsViewModel : ObservableObject
 
     public event Func<Task>? SettingsSaved;
 
-    public SettingsViewModel(IUserService userService, ISettingsService settingsService, IBackupService? backupService = null, IAuditService? auditService = null, Func<string>? auditActor = null)
+    public SettingsViewModel(
+        IUserService userService,
+        ISettingsService settingsService,
+        IBackupService? backupService = null,
+        IAuditService? auditService = null,
+        Func<string>? auditActor = null,
+        IDiagnosticExportService? diagnosticService = null,
+        IOperationalTelemetry? operationalTelemetry = null)
     {
         _userService = userService;
         _settingsService = settingsService;
@@ -47,7 +54,7 @@ public partial class SettingsViewModel : ObservableObject
         var personalizacionVM = new PersonalizacionSettingsViewModel(settingsService);
         var empresaVM = new EmpresaSettingsViewModel(settingsService);
         var hardwareVM = new HardwareSettingsViewModel(settingsService);
-        var seguridadVM = new SeguridadSettingsViewModel(settingsService, backupService);
+        var seguridadVM = new SeguridadSettingsViewModel(settingsService, backupService, diagnosticService, operationalTelemetry);
         var usuariosVM = new UsuariosSettingsViewModel(userService, settingsService, auditService, auditActor);
         var acercaDeVM = new AcercaDeSettingsViewModel();
 

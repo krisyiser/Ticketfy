@@ -20,6 +20,11 @@ public static class AppDataPaths
     public static string AuditDatabaseFile => Path.Combine(DatabaseDirectory, AppConstants.AuditDatabaseFileName);
     public static string BackupDirectory => Path.Combine(RootDirectory, "Backups");
     public static string LogDirectory => Path.Combine(RootDirectory, "Logs");
+    public static string DiagnosticDirectory => Path.Combine(RootDirectory, "Diagnostics");
+    public static string TelemetryDirectory => Path.Combine(RootDirectory, "Telemetry");
+    public static string PendingRestoreFile => Path.Combine(DatabaseDirectory, "ticketfy.restore.pending.db");
+    public static string PendingRestoreManifestFile => Path.Combine(DatabaseDirectory, "ticketfy.restore.pending.json");
+    public static string BackupMaintenanceStateFile => Path.Combine(BackupDirectory, "maintenance-state.json");
     public static string FiscalDocumentsDirectory => Path.Combine(RootDirectory, "FiscalDocuments");
     public static string SecretDirectory => Path.Combine(RootDirectory, "Secrets");
     public static string CredentialDirectory => Path.Combine(SecretDirectory, "Credentials");

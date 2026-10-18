@@ -18,11 +18,23 @@ public static partial class LogSanitizer
     private static partial Regex Pan();
     [GeneratedRegex(@"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", RegexOptions.IgnoreCase)]
     private static partial Regex Email();
+    [GeneratedRegex(@"(?i)\bBearer\s+[A-Za-z0-9._~+\-/]+=*")]
+    private static partial Regex BearerToken();
+    [GeneratedRegex(@"(?i)\bAuthorization\s*:\s*(?:Basic|Bearer)\s+[A-Za-z0-9._~+\-/]+=*")]
+    private static partial Regex AuthorizationHeader();
+    [GeneratedRegex(@"(?i)([?&](?:token|api[_-]?key|access[_-]?token)=)[^&\s]+")]
+    private static partial Regex SecretQueryString();
+    [GeneratedRegex(@"(?i)\b[A-Z]:\\Users\\[^\\\s]+")]
+    private static partial Regex WindowsUserProfile();
 
     public static string Sanitize(string? value)
     {
         if (string.IsNullOrEmpty(value)) return string.Empty;
-        string result = SecretAssignment().Replace(value, "$1=[REDACTED]");
+        string result = AuthorizationHeader().Replace(value, "Authorization: [REDACTED]");
+        result = SecretAssignment().Replace(result, "$1=[REDACTED]");
+        result = BearerToken().Replace(result, "Bearer [REDACTED]");
+        result = SecretQueryString().Replace(result, "$1[REDACTED]");
+        result = WindowsUserProfile().Replace(result, @"C:\Users\[REDACTED]");
         result = Jwt().Replace(result, "[JWT-REDACTED]");
         result = Curp().Replace(result, "[CURP-REDACTED]");
         result = Rfc().Replace(result, "[RFC-REDACTED]");

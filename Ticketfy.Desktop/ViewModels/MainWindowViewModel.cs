@@ -104,7 +104,15 @@ public partial class MainWindowViewModel : ObservableObject
 
         // ── Services ─────────────────────────────────────────────────────────
         var printerService = new EscPosPrinterService();
-        var backupService = new BackupService();
+        var backupService =
+            (App.Current?.Services?.GetService(typeof(IBackupService)) as IBackupService)
+            ?? new BackupService();
+        var diagnosticService =
+            (App.Current?.Services?.GetService(typeof(IDiagnosticExportService)) as IDiagnosticExportService)
+            ?? new DiagnosticExportService();
+        var operationalTelemetry =
+            (App.Current?.Services?.GetService(typeof(IOperationalTelemetry)) as IOperationalTelemetry)
+            ?? new LocalOperationalTelemetry();
         var productService = new ProductService(db);
         var customerService = new CustomerService(db, printerService);
         var auditService = new AuditService(auditContextFactory);
@@ -160,7 +168,8 @@ public partial class MainWindowViewModel : ObservableObject
         var promotionsVm = new PromotionsViewModel(promotionService, kitService);
         var fiscalVm = new FiscalViewModel(saleService, fiscalQueue);
         var cashierPerformanceVm = new CashierPerformanceViewModel(performanceAnalyticsService, attendanceService);
-        var settingsVm = new SettingsViewModel(userService, settingsService, backupService, auditService, auditActor);
+        var settingsVm = new SettingsViewModel(userService, settingsService, backupService, auditService, auditActor,
+            diagnosticService, operationalTelemetry);
         var suppliersVm = new SuppliersViewModel(supplierService, purchaseService, productService, printerService);
         var expensesVm = new ExpensesViewModel(expenseService, shiftService);
         var loginVm = new LoginViewModel(authService, sessionManager,
