@@ -849,20 +849,29 @@ public sealed class SaleServiceTests : IDisposable
     }
 
     [Fact]
-    public void DateTimeExtensions_ShouldConvertBetweenUtcAndMexicoCityTimezone()
+    public void DateTimeExtensions_ShouldRoundTripUtcUsingConfiguredLocalTimezone()
     {
-        // 2026-08-10 05:30:00 UTC = 2026-08-09 23:30:00 America/Mexico_City
-        var utcDate = new DateTime(2026, 8, 10, 5, 30, 0, DateTimeKind.Utc);
-        var localDate = Ticketfy.Core.Helpers.DateTimeExtensions.ToBusinessLocalTime(utcDate);
+        // The current contract uses the workstation's zone, not a hardcoded Mexican zone.
+        // Exercise winter/summer and instants near a calendar-day boundary on any CI host.
+        foreach (var utcDate in new[]
+        {
+            new DateTime(2026, 1, 10, 5, 30, 0, DateTimeKind.Utc),
+            new DateTime(2026, 8, 10, 5, 30, 0, DateTimeKind.Utc),
+            new DateTime(2026, 1, 10, 23, 30, 0, DateTimeKind.Utc),
+            new DateTime(2026, 8, 10, 23, 30, 0, DateTimeKind.Utc)
+        })
+        {
+            var expectedLocal = TimeZoneInfo.ConvertTimeFromUtc(utcDate, TimeZoneInfo.Local);
+            var localDate = Ticketfy.Core.Helpers.DateTimeExtensions.ToBusinessLocalTime(utcDate);
 
-        Assert.Equal(2026, localDate.Year);
-        Assert.Equal(8, localDate.Month);
-        Assert.Equal(9, localDate.Day);
-        Assert.Equal(23, localDate.Hour);
-        Assert.Equal(30, localDate.Minute);
+            Assert.Equal(expectedLocal, localDate);
+            Assert.Equal(DateTimeKind.Local, localDate.Kind);
+            Assert.Equal(localDate, Ticketfy.Core.Helpers.DateTimeExtensions.ToBusinessLocalTime(localDate));
 
-        var utcBack = Ticketfy.Core.Helpers.DateTimeExtensions.ToBusinessUtcTime(localDate);
-        Assert.Equal(utcDate, utcBack);
+            var utcBack = Ticketfy.Core.Helpers.DateTimeExtensions.ToBusinessUtcTime(localDate);
+            Assert.Equal(utcDate, utcBack);
+            Assert.Equal(DateTimeKind.Utc, utcBack.Kind);
+        }
     }
 
     [Fact]
