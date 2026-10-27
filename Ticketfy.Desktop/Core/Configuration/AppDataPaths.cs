@@ -12,9 +12,11 @@ namespace Ticketfy.Core.Configuration;
 public static class AppDataPaths
 {
     private static string? _selectedDataDirectory;
-    public static string RootDirectory => _selectedDataDirectory ?? Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Ticketfy");
+    private static readonly Lazy<(string Directory, bool IsInternalTesting)> DefaultProfile = new(() =>
+        InternalTestingProfile.ResolveDefault(AppContext.BaseDirectory,
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)));
+    public static string RootDirectory => _selectedDataDirectory ?? DefaultProfile.Value.Directory;
+    internal static bool IsInternalTesting => DefaultProfile.Value.IsInternalTesting;
 
     /// <summary>Explicit startup selection for a separately restored installation or isolated laboratory.</summary>
     internal static void UseDataDirectory(string directory)

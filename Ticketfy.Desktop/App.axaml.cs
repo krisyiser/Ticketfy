@@ -108,6 +108,7 @@ public partial class App : Application
                     {
                         DataContext = new MainWindowViewModel()
                     };
+                    if (AppDataPaths.IsInternalTesting) mainWin.Title = "TICKETFY! — PRUEBAS INTERNAS — Datos ficticios";
 
                     desktop.MainWindow = mainWin;
                     mainWin.Show();

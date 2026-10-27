@@ -1,0 +1,67 @@
+TICKETFY — PRUEBAS INTERNAS
+
+Este instalador es para pruebas con información ficticia. No es una edición
+comercial aprobada ni debe utilizarse para cobrar dinero real o emitir CFDI.
+
+REQUISITOS
+Windows 10 22H2 (compilación 19045) o Windows 11, procesador Intel/AMD de 64 bits.
+No admite Windows de 32 bits, ARM, Windows 7/8, macOS ni Linux.
+Incluye .NET: no requiere Visual Studio, SDK ni descargar el runtime.
+Se instala para el usuario actual, sin solicitar permisos de administrador.
+Recomendación de laboratorio: 4 GB de RAM, 1 GB libre y pantalla 1366 x 768
+con escala de 100%. No representa una capacidad empresarial certificada.
+Mantenga Windows actualizado. La compatibilidad técnica no extiende el ciclo
+de soporte de Microsoft de la edición de Windows instalada.
+
+INSTALAR Y EMPEZAR
+1. Reciba el EXE y su archivo SHA256 del responsable del proyecto.
+2. Compruebe el hash antes de instalar. El candidato no está firmado;
+   Windows o la política de su empresa pueden advertir o bloquear su ejecución.
+   No desactive las protecciones: solicite autorización a su responsable de TI.
+3. Cierre cualquier Ticketfy de pruebas abierto y ejecute el instalador.
+4. Abra "Ticketfy - Pruebas internas" desde Inicio o el escritorio.
+5. Complete el asistente con una empresa ficticia y una contraseña propia de
+   al menos 15 caracteres. No se incluyen usuarios, contraseñas ni licencias.
+6. Cierre y vuelva a abrir para comprobar que se conservan los datos.
+
+DATOS Y REINSTALACIÓN
+Los datos se guardan exclusivamente en:
+  %LocalAppData%\Ticketfy.InternalTesting\Data
+Los programas se instalan en:
+  %LocalAppData%\Programs\Ticketfy.InternalTesting
+También al abrir directamente el ejecutable se selecciona la carpeta de pruebas.
+No copie bases, llaves, licencias ni datos de una instalación operativa.
+Cada compañero tiene una base independiente; no comparta esa carpeta por red.
+Para trasladar datos entre perfiles utilice el respaldo integral y su procedimiento
+de recuperación. Las llaves locales están protegidas para su usuario de Windows.
+Antes de actualizar, cierre el turno, cree un respaldo verificado y cierre la app.
+Reinstalar conserva los datos; desinstalar conserva bases, llaves y respaldos.
+Una versión anterior no se debe ejecutar contra datos migrados por una posterior.
+
+JORNADA DE PRUEBA (MXN FICTICIOS)
+Producto por pieza, precio final 50, costo 30, existencia inicial 0, sin promoción.
+Cliente y proveedor nuevos, sin saldos previos.
+1. Abra turno con 1000.
+2. Reciba 10 piezas a 30; pague 100 en efectivo. Caja 900, stock 10, proveedor 200.
+3. Venda 2 piezas en efectivo. Caja 1000, stock 8.
+4. Devuelva 1 pieza de esa venta y reintegre 50. Caja 950, stock 9.
+5. Devuelva 2 piezas al proveedor a crédito. Stock 7, deuda al proveedor 140.
+6. Pague 140 al proveedor en efectivo. Caja 810, deuda al proveedor 0.
+7. Registre gasto de 10 en efectivo y después cancélelo con restitución.
+   Caja pasa a 800 y regresa a 810.
+8. Venda 1 pieza al cliente a crédito y reciba abono de 20 en efectivo.
+   Caja 830, stock 6, deuda del cliente 30.
+9. Revise históricos, Kardex, estados de cuenta y conciliación; cierre con 830.
+10. Reinicie y verifique los mismos folios y saldos; pruebe respaldo/restauración
+    sólo en otro laboratorio nuevo, nunca sobre información operativa.
+
+ALCANCE
+Facturama y la infraestructura remota permanecen desactivados. No se requiere
+acceso al servidor para instalar. La evaluación mantiene su política normal.
+Impresión física, cajón, lector, báscula y terminal requieren sus pruebas reales;
+un aviso de envío al controlador no confirma que haya salido papel.
+
+INCIDENCIAS
+Anote versión/commit del instalador, Windows, paso, resultado esperado y observado.
+Adjunte sólo diagnóstico sanitizado. No envíe contraseñas, llaves ni bases operativas.
+Si un cobro presenta un error, consulte el historial antes de repetirlo.

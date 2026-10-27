@@ -92,6 +92,7 @@ $criticalFiles = @(
     "Core/Operations/InventoryWorkloadLimits.cs",
     "Core/Operations/CommercialDocumentLimits.cs",
     "Core/Configuration/CommercialDatabaseConnection.cs",
+    "Core/Configuration/InternalTestingProfile.cs",
     "Services/Implementations/CheckoutDocumentQuery.cs",
     "Services/Implementations/PerformanceAnalyticsService.cs",
     "Services/CommercialOperationContext.cs",

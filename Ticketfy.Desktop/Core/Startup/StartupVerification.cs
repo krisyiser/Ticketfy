@@ -56,6 +56,7 @@ internal static class StartupVerification
                 BootstrapPasses = 2,
                 BackupRestorationVerified = true,
                 FacturamaEnabled = false,
+                InternalTestingEdition = AppDataPaths.IsInternalTesting,
                 PasswordPolicyVersion = Ticketfy.Services.Security.PasswordPolicy.CurrentVersion,
                 PasswordBlocklistEntries = Ticketfy.Services.Security.PasswordBlocklist.Current.Count,
                 PasswordBlocklistSha256 = Ticketfy.Services.Security.PasswordBlocklist.PackagedSha256,

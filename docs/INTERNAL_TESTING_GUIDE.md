@@ -14,6 +14,8 @@ Ejecutar desde la raíz del repositorio. El lanzador comprueba la identidad del 
 
 ## Preparar una instalación aislada
 
+Para compañeros que no tienen el repositorio, distribuir el instalador **Ticketfy - Pruebas internas** generado por `eng/build-internal-installer.ps1`, junto con `LEEME-PRUEBAS.txt` y su SHA256. El ZIP `*-Compartir.zip` reúne esos archivos y el manifiesto. No enviar la carpeta `Data`, las llaves ni una base operativa. La [guía de instalación](INSTALLATION_MANUAL.md#instalador-para-pruebas-internas) explica requisitos y aislamiento. Los instaladores comerciales firmados siguen un proceso distinto.
+
 Desde PowerShell, en la raíz del repositorio, ejecutar:
 
 ```powershell

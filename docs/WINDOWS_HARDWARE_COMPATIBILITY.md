@@ -8,13 +8,23 @@ física por fabricante, modelo, firmware y fecha.
 | Plataforma | Arquitectura | Estado Ticketfy | Alcance |
 |---|---|---|---|
 | Windows 11 | x64 | Objetivo soportado | Build, pruebas automáticas, SQLCipher, DPAPI, UI y paquete CI |
-| Windows 10 | x64 | Compatibilidad declarada; laboratorio pendiente | Requiere regresión física antes de cada release comercial |
+| Windows 10 22H2, build 19045 | x64 Intel/AMD | Laboratorio local; aceptación por equipo pendiente | Arranque y suite con datos sintéticos; instalador interno desde build 19045 |
 | Windows 10/11 | x86 | No soportado por la puerta CI actual | No distribuir aunque exista script heredado de publicación |
 | Windows ARM64 | ARM64/emulación | No soportado | Sin build, drivers ni pruebas de periféricos |
 | Windows Server/Wine/Linux/macOS | cualquiera | No soportado | DPAPI, spooler y drivers no homologados |
 
 Cada release comercial debe registrar edición, versión, compilación, parches, runtime,
 idioma, escala de pantalla y usuario que ejecutó la prueba.
+
+El instalador interno exige Windows x64 nativo: no anuncia soporte de ARM por
+emulación ni de Windows 10 anterior a 22H2. La CI `windows-latest` corresponde a
+Windows Server 2025, no demuestra aceptación en una estación Windows 11.
+La compatibilidad técnica no extiende el soporte del sistema operativo:
+[Microsoft limita el soporte vigente de .NET en Windows 10 a determinadas ediciones LTSC/Enterprise](https://learn.microsoft.com/en-us/dotnet/core/install/windows).
+Para una futura instalación productiva debe comprobarse además el ciclo de soporte
+y las actualizaciones de la edición concreta. Las instrucciones internas recomiendan
+4 GB de RAM, 1 GB libre y pantalla 1366 x 768 al 100%; son una base de laboratorio,
+no una certificación de capacidad o rendimiento.
 
 ## Periféricos
 

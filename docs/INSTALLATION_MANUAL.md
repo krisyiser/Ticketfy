@@ -1,5 +1,28 @@
 # Manual de instalación
 
+## Instalador para pruebas internas
+
+El candidato compartible se llama `Ticketfy-Pruebas-<versión>-<commit>-win-x64-Setup.exe`. Se genera desde un paquete de commit limpio con arranque verificado. Su ZIP `*-Compartir.zip` incluye el EXE, SHA256, instrucciones y manifiesto; no contiene bases, llaves, usuarios ni licencias. El candidato interno no está firmado: Windows o la política corporativa pueden advertir o bloquearlo. La aprobación de TI no debe sustituirse por desactivar protecciones.
+
+Requiere Windows 10 **22H2/build 19045** o Windows 11 **x64 Intel/AMD**; bloquea sistemas anteriores, Windows de 32 bits y ARM. Incluye .NET y dependencias de aplicación; no exige SDK, Visual Studio ni descarga de runtime. La instalación es por usuario, sin elevación. La matriz distingue el objetivo de compatibilidad de la aceptación física en cada equipo.
+
+1. Extraer el ZIP y comprobar el EXE con `Get-FileHash -Algorithm SHA256`, comparándolo con el archivo `.sha256` recibido por el canal de confianza del proyecto.
+2. Cerrar Ticketfy de pruebas e instalar. Su identidad y registro de desinstalación son distintos de los de la edición comercial.
+3. Abrir **Ticketfy - Pruebas internas** desde Inicio o escritorio. Incluso el ejecutable directo usa `%LocalAppData%\Ticketfy.InternalTesting\Data`; no selecciona la carpeta habitual `%LocalAppData%\Ticketfy`.
+4. Crear empresa y usuarios ficticios. Se conserva la política normal de evaluación; no se incluyen claves universales ni licencias de prueba falsificadas.
+5. Ejecutar la jornada incluida en `LEEME-PRUEBAS.txt`. Cada compañero trabaja con su propia base local; no se comparte el directorio por red.
+
+El programa se instala en `%LocalAppData%\Programs\Ticketfy.InternalTesting`. Reinstalar conserva los datos; desinstalar retira el programa y accesos directos y conserva bases, llaves y respaldos. Cerrar turnos y verificar un respaldo antes de actualizar. No ejecutar una versión anterior sobre un esquema migrado por otra posterior. Facturama y la infraestructura remota permanecen pausados.
+
+Para desarrolladores, desde la raíz del repositorio:
+
+```powershell
+./eng/build-internal-installer.ps1 -PackageDirectory ./artifacts/<gate>/package-a/publish-win-x64 -OutputDirectory ./artifacts/<salida-nueva>
+./eng/assert-internal-installer.ps1 -InstallerDirectory ./artifacts/<salida-nueva>
+```
+
+Requiere Inno Setup 6.4 o posterior. La segunda orden instala en una carpeta nueva del laboratorio, comprueba archivos y accesos directos, inicia con datos sintéticos, rechaza la actualización con el proceso abierto y verifica reinstalación/desinstalación sin alterar datos. Se niega a reemplazar una edición interna o accesos directos ya existentes. La evidencia no homologa periféricos ni reemplaza la jornada manual. CI conserva el instalador y su reporte de verificación.
+
 ## Requisitos previos
 
 - Windows x64 incluido en la matriz soportada.

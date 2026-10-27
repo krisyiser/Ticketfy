@@ -34,6 +34,25 @@ jobs:
         shell: pwsh
         run: ./eng/invoke-quality-gate.ps1 -LockedRestore -RequireClean -VerifyReproducible
 
+      - name: Construir y verificar instalador de pruebas internas
+        shell: pwsh
+        run: |
+          $manifests = @(Get-ChildItem artifacts/quality-*/package-a/publish-win-x64/build-manifest.json)
+          if ($manifests.Count -ne 1) { throw 'Se requiere un único candidato aprobado.' }
+          ./eng/build-internal-installer.ps1 -PackageDirectory $manifests[0].DirectoryName -OutputDirectory artifacts/internal-installer
+          ./eng/assert-internal-installer.ps1 -InstallerDirectory artifacts/internal-installer
+
+      - name: Conservar instalador para el equipo de pruebas
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ticketfy-internal-installer-${{ github.sha }}
+          path: |
+            artifacts/internal-installer/*-Compartir.zip
+            artifacts/internal-installer/installer-verification.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Conservar resultados de pruebas y cobertura
         if: always()
         uses: actions/upload-artifact@v4
@@ -46,6 +65,7 @@ jobs:
             artifacts/quality-*/TestResults/*/coverage.cobertura.xml
             artifacts/quality-*/TestResults/*-dependencies.json
             artifacts/quality-*/TestResults/startup-*/startup-verification.json
+            artifacts/internal-installer/installer-verification.json
           if-no-files-found: warn
           retention-days: 14
 

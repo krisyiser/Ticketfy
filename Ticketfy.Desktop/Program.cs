@@ -31,18 +31,21 @@ internal static class Program
             catch (Exception ex) { Console.Error.WriteLine("Startup verification failed: " + ex.GetType().Name); Environment.ExitCode = 1; }
             return;
         }
-        // 1. Initialize Velopack (crucial for shortcuts, uninstalls, and OTA background updates).
-        // TLS certificate validation intentionally uses the operating-system trust store.
-        VelopackApp.Build().Run();
-
         try
         {
             int dataDirectoryArgument = Array.IndexOf(args, "--data-directory");
             if (dataDirectoryArgument >= 0)
             {
                 if (dataDirectoryArgument + 1 >= args.Length) throw new ArgumentException("Falta la carpeta después de --data-directory.");
+                if (AppDataPaths.IsInternalTesting)
+                    InternalTestingProfile.ValidateDirectory(args[dataDirectoryArgument + 1],
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
                 AppDataPaths.UseDataDirectory(args[dataDirectoryArgument + 1]);
             }
+            // Inno Setup detects this presence mutex and refuses to update/uninstall a running test edition.
+            // It never closes an operating POS or shares its installation identity.
+            using var testEditionPresence = AppDataPaths.IsInternalTesting ? new System.Threading.Mutex(false, InternalTestingProfile.InstallerMutex) : null;
+            VelopackApp.Build().Run();
             using var ownership = new Ticketfy.Core.Startup.ApplicationInstanceLock(AppDataPaths.RootDirectory);
             if (!ownership.IsAcquired)
             {
