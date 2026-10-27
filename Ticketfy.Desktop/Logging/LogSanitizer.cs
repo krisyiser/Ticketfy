@@ -26,6 +26,15 @@ public static partial class LogSanitizer
     private static partial Regex SecretQueryString();
     [GeneratedRegex(@"(?i)\b[A-Z]:\\Users\\[^\\\s]+")]
     private static partial Regex WindowsUserProfile();
+    [GeneratedRegex(@"(?<![\dA-Za-z])(?:\+?52[ -]?)?(?:\(?\d{2}\)?[ -]?\d{4}[ -]?\d{4}|\(?\d{3}\)?[ -]?\d{3}[ -]?\d{4})(?![\dA-Za-z])")]
+    private static partial Regex PhoneCandidate();
+
+    public static bool IsSensitiveProperty(string key) => key.ToLowerInvariant() is
+        "name" or "fullname" or "username" or "cashier" or "cashiername" or "customer" or "customername"
+        or "suppliername" or "address" or "direccion" or "phone" or "telefono" or "email" or "rfc" or "curp"
+        or "text" or "notetext" or "notes" or "reason" or "oldvalue" or "newvalue" or "password" or "passwd"
+        or "token" or "apikey" or "api_key" or "authorization" or "secret" or "masterkey"
+        or "message" or "msg" or "errortext" or "commandtext" or "passphrase" or "recoverypassphrase";
 
     public static string Sanitize(string? value)
     {
@@ -40,6 +49,7 @@ public static partial class LogSanitizer
         result = Rfc().Replace(result, "[RFC-REDACTED]");
         result = Email().Replace(result, "[EMAIL-REDACTED]");
         result = Pan().Replace(result, match => PassesLuhn(match.Value) ? "[PAN-REDACTED]" : match.Value);
+        result = PhoneCandidate().Replace(result, match => match.Value.Count(char.IsDigit) is 10 or 12 ? "[PHONE-REDACTED]" : match.Value);
         return result;
     }
 

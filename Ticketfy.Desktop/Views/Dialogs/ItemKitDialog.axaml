@@ -17,11 +17,12 @@
                 Background="{DynamicResource BgSecondaryBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                 CornerRadius="{DynamicResource AppCornerRadius}" Padding="20">
+            <ScrollViewer MaxHeight="560" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="14">
                 <Grid ColumnDefinitions="*,Auto">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <mi:MaterialIcon Kind="PackageVariantClosed" Width="22" Height="22" Foreground="{DynamicResource AccentPrimaryBrush}" />
-                        <TextBlock Text="Armar Nuevo Combo / Paquete / Promoción" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
+                        <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
                     </StackPanel>
                     <Button Grid.Column="1" Command="{Binding CancelCommand}" Width="28" Height="28" Padding="0" Background="Transparent" BorderThickness="0">
                         <mi:MaterialIcon Kind="Close" Width="18" Height="18" Foreground="{DynamicResource TextSecondaryBrush}" />
@@ -30,15 +31,16 @@
 
                 <Border Height="1" Background="{DynamicResource BorderBrush}" />
 
-                <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,*">
+                <TextBlock Text="{Binding ActivationNotice}" TextWrapping="Wrap" />
+                <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,*" IsEnabled="{Binding CanEditFields}">
                     <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,4,8" Spacing="4">
                         <TextBlock Text="Código de Barras Combo / Promoción" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                        <TextBox Text="{Binding KitBarcode, Mode=TwoWay}" Watermark="Opcional (se autogenera si se omite)" Padding="8" />
+                        <TextBox x:Name="KitBarcodeField" Text="{Binding KitBarcode, Mode=TwoWay}" Watermark="Opcional: genera código interno COMBO" Padding="8" />
                     </StackPanel>
 
                     <StackPanel Grid.Row="0" Grid.Column="1" Margin="4,0,0,8" Spacing="4">
                         <TextBlock Text="Nombre del Combo / Promoción *" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                        <TextBox Text="{Binding KitName, Mode=TwoWay}" Watermark="Ej. Paquetecagao 2x$40" Padding="8" />
+                        <TextBox x:Name="KitNameField" Text="{Binding KitName, Mode=TwoWay}" Watermark="Ej. Paquete desayuno" Padding="8" />
                     </StackPanel>
 
                     <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,4,0" Spacing="4">
@@ -53,7 +55,12 @@
                 </Grid>
 
                 <TextBlock Text="Agregar Productos Ingredientes al Combo" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,6,0,0" />
-                <Grid ColumnDefinitions="*,80,Auto">
+                <Grid ColumnDefinitions="*,Auto" IsEnabled="{Binding CanEditFields}">
+                    <TextBox Text="{Binding ProductSearch}" Watermark="Buscar producto por nombre o código" />
+                    <Button Grid.Column="1" Content="Buscar" Command="{Binding LoadProductsCommand}" />
+                </Grid>
+                <TextBlock Text="{Binding CatalogMessage}" TextWrapping="Wrap" FontSize="11" />
+                <Grid ColumnDefinitions="*,80,Auto" IsEnabled="{Binding CanEditFields}">
                     <ComboBox Grid.Column="0" ItemsSource="{Binding AvailableProducts}" SelectedItem="{Binding SelectedProduct, Mode=TwoWay}" HorizontalAlignment="Stretch" Padding="8">
                         <ComboBox.ItemTemplate>
                             <DataTemplate x:DataType="dto:ProductDto">
@@ -66,14 +73,14 @@
                 </Grid>
 
                 <!-- Ingredients Table -->
-                <ScrollViewer Height="140" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer Height="140" VerticalScrollBarVisibility="Auto" IsEnabled="{Binding CanEditFields}">
                     <ItemsControl ItemsSource="{Binding DraftKitItems}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="dto:ItemKitItemDto">
                                 <Border Margin="0,0,0,4" Padding="10,6" CornerRadius="{DynamicResource AppCornerRadius}" Background="{DynamicResource BgTertiaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                                     <Grid ColumnDefinitions="*,Auto,Auto">
                                         <TextBlock Grid.Column="0" Text="{Binding ProductName}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="1" Text="{Binding Quantity, StringFormat='{}{0} Pza'}" FontSize="12" Foreground="{DynamicResource AccentPrimaryBrush}" VerticalAlignment="Center" Margin="8,0" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Quantity, StringFormat='Cantidad: {0}'}" FontSize="12" Foreground="{DynamicResource AccentPrimaryBrush}" VerticalAlignment="Center" Margin="8,0" />
                                         <Button Grid.Column="2" Command="{Binding $parent[UserControl].((vm:ItemKitDialogViewModel)DataContext).RemoveItemFromDraftCommand}" CommandParameter="{Binding}" Background="Transparent" BorderThickness="0" Padding="2">
                                             <mi:MaterialIcon Kind="Close" Width="14" Height="14" Foreground="{DynamicResource AccentDangerBrush}" />
                                         </Button>
@@ -87,10 +94,11 @@
                 <controls:AlertBannerControl Message="{Binding FeedbackMessage}" IsError="True" />
 
                 <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right" Margin="0,6,0,0">
-                    <Button Command="{Binding CancelCommand}" Content="Cancelar" Padding="16,8" CornerRadius="{DynamicResource AppCornerRadius}" Background="{DynamicResource BgTertiaryBrush}" />
-                    <Button Command="{Binding SaveKitCommand}" Content="GUARDAR COMBO / PROMOCIÓN" Padding="16,8" CornerRadius="{DynamicResource AppCornerRadius}" Classes="success-action" FontWeight="Bold" />
+                    <Button Command="{Binding CancelCommand}" Content="{Binding CloseButtonText}" Padding="16,8" CornerRadius="{DynamicResource AppCornerRadius}" Background="{DynamicResource BgTertiaryBrush}" />
+                    <Button x:Name="SaveKitButton" Command="{Binding SaveKitCommand}" Content="{Binding SaveButtonText}" Padding="16,8" CornerRadius="{DynamicResource AppCornerRadius}" Classes="success-action" FontWeight="Bold" />
                 </StackPanel>
             </StackPanel>
+            </ScrollViewer>
         </Border>
     </Grid>
 </UserControl>

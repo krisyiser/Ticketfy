@@ -17,10 +17,18 @@ namespace Ticketfy.ViewModels;
 public partial class InventoryViewModel : ObservableObject
 {
     private readonly IProductService _productService;
+    private long _sessionVersion;
+    public void ClearSessionData()
+    {
+        ++_sessionVersion;
+        CatalogVM.ClearSessionData(); IntelligenceVM.ClearSessionData();
+        ActionsVM.ClearSessionData();
+    }
 
     public InventoryCatalogViewModel CatalogVM { get; }
     public InventoryActionsViewModel ActionsVM { get; }
     public InventoryIntelligenceViewModel IntelligenceVM { get; }
+    internal Task InitialLoad { get; }
 
     public bool ShowOnlyLowStock
     {
@@ -46,6 +54,7 @@ public partial class InventoryViewModel : ObservableObject
 
     public ObservableCollection<ProductDto> FilteredProducts => CatalogVM.FilteredProducts;
     public decimal TotalStockCost => CatalogVM.TotalStockCost;
+    public string TotalStockCostDisplay => CatalogVM.TotalStockCostDisplay;
     public decimal TotalStockSale => CatalogVM.TotalStockSale;
 
     public string FeedbackMessage => ActionsVM.FeedbackMessage;
@@ -53,8 +62,8 @@ public partial class InventoryViewModel : ObservableObject
     public bool IsIntelligencePanelVisible => IntelligenceVM.IsIntelligencePanelVisible;
     public ObservableCollection<PredictiveAlertDto> UrgentRestockAlerts => IntelligenceVM.UrgentRestockAlerts;
 
-    public static double LoadDefaultMinStock() => InventoryCatalogViewModel.LoadDefaultMinStock();
-    public static void SaveDefaultMinStock(double val) => InventoryCatalogViewModel.SaveDefaultMinStock(val);
+    public double DefaultMinStock => CatalogVM.DefaultMinStock;
+    public Task SaveDefaultMinStockAsync(double val) => CatalogVM.SetDefaultMinStockAsync(val);
 
     public event Action? OpenAddProductRequested;
     public event Action<Ticketfy.ViewModels.Dialogs.ProductDialogParameters>? OpenProductDialogWithParamsRequested;
@@ -66,17 +75,28 @@ public partial class InventoryViewModel : ObservableObject
     [RelayCommand] private void ScanBarcode(string query) => CatalogVM.ScanBarcodeCommand.Execute(query);
 
     [RelayCommand] private async Task ImportCsvCatalogAsync() => await ActionsVM.ImportCsvCatalogAsync();
-    [RelayCommand] private async Task PrintChecklistAsync() => await ActionsVM.PrintChecklistAsync();
+    [RelayCommand] private async Task PrintChecklistAsync() => await ActionsVM.PrintChecklistAsync(SearchQuery, ShowOnlyLowStock);
     [RelayCommand] private async Task CreateSnapshotAsync() => await ActionsVM.CreateSnapshotAsync();
     [RelayCommand] private async Task ViewSnapshotsAsync() => await ActionsVM.ViewSnapshotsAsync();
     [RelayCommand] private void ClearFeedback() => ActionsVM.ClearFeedbackCommand.Execute(null);
 
-    public InventoryViewModel(IProductService productService, IExternalCatalogService externalCatalogService, IPurchaseService? purchaseService = null, IPredictiveIntelligenceService? predictiveService = null, IEscPosPrinterService? printerService = null)
+    public InventoryViewModel(IProductService productService, IExternalCatalogService externalCatalogService, IPurchaseService? purchaseService = null, IPredictiveIntelligenceService? predictiveService = null, IEscPosPrinterService? printerService = null, IInventorySnapshotService? snapshotService = null, bool loadOnCreate = true)
     {
         _productService = productService;
         CatalogVM = new InventoryCatalogViewModel(productService);
-        ActionsVM = new InventoryActionsViewModel(productService, externalCatalogService, printerService: printerService);
+        CatalogVM.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(CatalogVM.TotalStockCostDisplay)) OnPropertyChanged(nameof(TotalStockCostDisplay));
+            if (e.PropertyName == nameof(CatalogVM.TotalStockCost)) OnPropertyChanged(nameof(TotalStockCost));
+            if (e.PropertyName == nameof(CatalogVM.TotalStockSale)) OnPropertyChanged(nameof(TotalStockSale));
+        };
+        ActionsVM = new InventoryActionsViewModel(productService, externalCatalogService, snapshotService, printerService);
         IntelligenceVM = new InventoryIntelligenceViewModel(predictiveService);
+        IntelligenceVM.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(IntelligenceVM.IsIntelligencePanelVisible))
+                OnPropertyChanged(nameof(IsIntelligencePanelVisible));
+        };
 
         ActionsVM.ProductsUpdated += async () => await LoadProductsAsync();
         ActionsVM.PropertyChanged += (s, e) =>
@@ -86,12 +106,14 @@ public partial class InventoryViewModel : ObservableObject
             if (e.PropertyName == nameof(ActionsVM.IsFeedbackError))
                 OnPropertyChanged(nameof(IsFeedbackError));
         };
-        _ = LoadProductsAsync();
+        InitialLoad = loadOnCreate ? LoadProductsAsync() : Task.CompletedTask;
     }
 
     public async Task LoadProductsAsync()
     {
+        var version = _sessionVersion;
         await CatalogVM.LoadProductsAsync();
+        if (version != _sessionVersion) return;
         await IntelligenceVM.RefreshAlertsAsync();
     }
 
@@ -108,7 +130,12 @@ public partial class InventoryViewModel : ObservableObject
             await _productService.DeleteAsync(product.Id);
             await LoadProductsAsync();
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Product inactivation failed");
+            ActionsVM.IsFeedbackError = true;
+            ActionsVM.FeedbackMessage = "No se pudo inactivar el producto. Verifique sus permisos e inténtelo nuevamente.";
+        }
     }
 
     [RelayCommand] private void OpenConfigureLowStockDialog() => OpenConfigureLowStockRequested?.Invoke();

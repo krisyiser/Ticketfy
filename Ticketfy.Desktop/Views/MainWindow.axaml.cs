@@ -28,7 +28,12 @@ public partial class MainWindow : Window
         };
         _idleTimer.Tick += OnIdleTimeout;
         _idleTimer.Start();
-        Closed += (_, _) => { _idleTimer.Stop(); (DataContext as MainWindowViewModel)?.Hardware.Dispose(); };
+        Closed += (_, _) =>
+        {
+            _idleTimer.Stop();
+            (DataContext as MainWindowViewModel)?.Hardware.Dispose();
+            (DataContext as MainWindowViewModel)?.Maintenance.Dispose();
+        };
 
         // Global Event Listeners for Inactivity auto-lock
         AddHandler(PointerMovedEvent, OnUserActivity, RoutingStrategies.Tunnel);

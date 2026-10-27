@@ -32,7 +32,7 @@
                                     <TextBlock Grid.Column="2" Text="{Binding AverageTicketValue, StringFormat='Ticket Prom: ${0:N2}'}" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="8,0" />
                                     <TextBlock Grid.Column="3" Text="{Binding TotalRevenue, StringFormat='Venta: ${0:N2}'}" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" VerticalAlignment="Center" Margin="8,0" />
                                     <Border Grid.Column="4" Background="#10B981" CornerRadius="{DynamicResource AppCornerRadius}" Padding="6,2" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding EarnedCommissionAmount, StringFormat='Comisión: ${0:N2}'}" FontSize="11" FontWeight="Bold" Foreground="White" />
+                                        <TextBlock Text="{Binding EarnedCommissionDisplay, StringFormat='Comisión: {0}'}" FontSize="11" FontWeight="Bold" Foreground="White" />
                                     </Border>
                                 </Grid>
                             </Border>

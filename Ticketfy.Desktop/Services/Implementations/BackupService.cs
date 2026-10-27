@@ -131,7 +131,9 @@ public sealed class BackupService : IBackupService
             int deleted = ApplyRetention(policy, backupPath);
             if (!TryWriteMaintenanceState(new MaintenanceState(_utcNow(), null, Path.GetFileName(backupPath))))
                 return new(true, false, "El respaldo fue creado, pero no se pudo guardar el estado de programación.", backupPath, deleted);
-            return new(true, true, "Respaldo automático creado y verificado.", backupPath, deleted);
+            return new(true, true, policy.VerifyAfterCreation
+                ? "Respaldo automático creado y prueba de restauración verificada."
+                : "Respaldo automático creado; prueba de restauración desactivada.", backupPath, deleted);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -286,6 +288,7 @@ public sealed class BackupService : IBackupService
         {
             DataSource = path,
             Mode = mode,
+            Cache = SqliteCacheMode.Private,
             Pooling = false,
             Password = _passwordProvider()
         };

@@ -36,17 +36,19 @@ public partial class SettingsViewModel
 
     public async Task LoadUsersAsync()
     {
+        var version = ++_usersLoadVersion;
         if (_userService == null) return;
         try
         {
             var list = await _userService.GetAllAsync();
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
+                if (version != _usersLoadVersion) return;
                 Users.Clear();
                 foreach (var u in list) Users.Add(u);
             });
         }
-        catch (Exception ex) { Log.Error(ex, "SettingsViewModel.Usuarios: error loading users"); }
+        catch (Exception ex) { Log.Error(ex, "SettingsViewModel.Usuarios: error loading users"); if (version == _usersLoadVersion) Users.Clear(); }
     }
 
     [RelayCommand]
@@ -61,10 +63,6 @@ public partial class SettingsViewModel
 
         try
         {
-            string finalPass = string.IsNullOrWhiteSpace(NewPassword)
-                ? string.Empty
-                : Ticketfy.Core.Helpers.CryptoHelper.HashPassword(NewPassword);
-
             string finalPin = $"{NewPin1}{NewPin2}{NewPin3}{NewPin4}";
             if (finalPin.Length != 4)
             {
@@ -72,7 +70,7 @@ public partial class SettingsViewModel
                 return;
             }
 
-            await _userService.SaveAsync(Guid.NewGuid().ToString(), NewFullName, NewUsername, NewRole, finalPass, finalPin, NewPasswordHint);
+            await _userService.SaveAsync(Guid.NewGuid().ToString(), NewFullName, NewUsername, NewRole, NewPassword, finalPin);
             await LoadUsersAsync();
 
             NewUsername = string.Empty;
@@ -95,12 +93,12 @@ public partial class SettingsViewModel
     {
         if (user == null) return;
 
-        if (user.Role.ToUpper() == "ADMIN")
+        if (user.Role.Equals("ADMIN", StringComparison.OrdinalIgnoreCase) || user.Role.Equals("ADMINISTRADOR", StringComparison.OrdinalIgnoreCase))
         {
             UserToDelete = user;
             IsConfirmingAdminDelete = true;
             AdminDeletePassword = string.Empty;
-            FeedbackMessage = "Para eliminar un administrador, confirma con su contraseña.";
+            FeedbackMessage = "Para desactivar un administrador, confirma tu propia contraseña de administrador.";
         }
         else
         {
@@ -122,18 +120,24 @@ public partial class SettingsViewModel
     {
         if (UserToDelete == null || _userService == null) return;
 
-        string savedHash = await _userService.GetPasswordHashAsync(UserToDelete.Id) ?? string.Empty;
-        bool valid = !string.IsNullOrEmpty(savedHash)
-            && Ticketfy.Services.Security.SecurityManager.VerifyPassword(AdminDeletePassword, savedHash);
-
-        if (valid)
+        var target = UserToDelete;
+        long version = _usersLoadVersion;
+        try
         {
-            await ConfirmDeleteUserAsync(UserToDelete);
-            CancelAdminDelete();
+            bool valid = await _userService.ConfirmCurrentAdministratorAsync(AdminDeletePassword);
+            if (version != _usersLoadVersion || UserToDelete != target) return;
+            AdminDeletePassword = string.Empty;
+            if (valid)
+            {
+                await ConfirmDeleteUserAsync(target);
+                CancelAdminDelete();
+            }
+            else FeedbackMessage = "Credencial incorrecta o temporalmente bloqueada. No se puede desactivar.";
         }
-        else
+        catch (Exception ex)
         {
-            FeedbackMessage = "Contraseña de administrador incorrecta. No se puede eliminar.";
+            Log.Warning(ex, "Administrative account deactivation verification failed");
+            if (version == _usersLoadVersion) { AdminDeletePassword = ""; FeedbackMessage = "No se pudo confirmar tu autorización."; }
         }
     }
 

@@ -34,7 +34,7 @@ public static class DatabaseInitializer
         {
             AppDataPaths.EnsureRequiredDirectories();
             string securePassword = SecurityManager.GetMasterKey();
-            string connectionString = $"Data Source={AppDataPaths.DatabaseFile};Password={securePassword};Cache=Shared;Mode=ReadWriteCreate;";
+            string connectionString = CommercialDatabaseConnection.Create(AppDataPaths.DatabaseFile, securePassword);
             var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connectionString).Options;
 
             await AdoptValidatedLegacyHistoryAsync(connectionString);
@@ -49,7 +49,9 @@ public static class DatabaseInitializer
 #if DEBUG
                 await DatabaseSeeder.SeedAsync(context);
 #endif
-                await NormalizeLegacyDatesAsync(context);
+                // Legacy wall-clock document dates are evidence, not values to reinterpret using Windows' zone.
+                var settings = await new SettingsService(context).GetAppSettingsAsync();
+                Ticketfy.Core.Helpers.BusinessTime.Configure(settings.Company.TimeZoneId);
                 await MigrateLegacySecretsAsync(context);
             }
 
@@ -58,15 +60,20 @@ public static class DatabaseInitializer
             var auditOptions = new DbContextOptionsBuilder<AuditDbContext>()
                 .UseSqlite(auditConnectionString)
                 .Options;
+            bool importingUnsignedAudit;
             await using (var auditContext = new AuditDbContext(auditOptions))
             {
+                // Only the known transition from the unsigned schema permits initial signing.
+                // Once applied, missing signatures stop startup rather than being silently regenerated.
+                importingUnsignedAudit = (await auditContext.Database.GetPendingMigrationsAsync())
+                    .Contains("20261018190000_AddAuditIntegrityChain");
                 await auditContext.Database.MigrateAsync();
             }
 
             var appFactory = new AppDbContextFactoryImpl<AppDbContext>(options);
             var auditFactory = new AppDbContextFactoryImpl<AuditDbContext>(auditOptions);
             var auditService = new AuditService(auditFactory);
-            await auditService.InitializeIntegrityAsync();
+            await auditService.InitializeIntegrityAsync(allowLegacyBootstrap: importingUnsignedAudit);
             var recoveryService = new SaleService(appFactory, new CoOccurrenceQueue(), auditService);
             int recovered = await recoveryService.RecoverInterruptedCheckoutsAsync();
             if (recovered > 0)
@@ -198,17 +205,6 @@ public static class DatabaseInitializer
         context.Categories.AddRange(new[] { "General", "Abarrotes", "Bebidas", "Farmacia", "Hogar" }
             .Select(name => new CategoryEntity { Id = Guid.NewGuid().ToString(), Name = name }));
         await context.SaveChangesAsync();
-    }
-
-    private static async Task NormalizeLegacyDatesAsync(AppDbContext context)
-    {
-        var legacySales = await context.Sales.Where(s => !s.Date.Contains("T")).ToListAsync();
-        foreach (var sale in legacySales)
-        {
-            if (DateTime.TryParse(sale.Date, out var parsedDate))
-                sale.Date = new DateTimeOffset(DateTime.SpecifyKind(parsedDate, DateTimeKind.Local)).UtcDateTime.ToString("O");
-        }
-        if (legacySales.Count > 0) await context.SaveChangesAsync();
     }
 
     private static async Task MigrateLegacySecretsAsync(AppDbContext context)

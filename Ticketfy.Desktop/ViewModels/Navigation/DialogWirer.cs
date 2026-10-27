@@ -2,7 +2,6 @@ using CommunityToolkit.Mvvm.Messaging;
 using Ticketfy.Core.Messages;
 using Ticketfy.Core.Repositories;
 using Ticketfy.Core.Services;
-using Ticketfy.Data;
 using Ticketfy.Services;
 using Ticketfy.Services.Audit;
 using Ticketfy.Services.Implementations;
@@ -27,7 +26,6 @@ public sealed class DialogWirer
     private readonly IEscPosPrinterService _printerService;
     private readonly IPrintDispatcherService _printDispatcherService;
     private readonly IGiftcardService _giftcardService;
-    private readonly AppDbContext _db;
     private readonly IShiftService _shiftService;
     private readonly ISessionManager _sessionManager;
     private readonly IUserRepository _userRepository;
@@ -48,7 +46,6 @@ public sealed class DialogWirer
         IEscPosPrinterService printerService,
         IPrintDispatcherService printDispatcherService,
         IGiftcardService giftcardService,
-        AppDbContext db,
         IShiftService shiftService,
         ISessionManager sessionManager,
         IUserRepository userRepository,
@@ -69,7 +66,6 @@ public sealed class DialogWirer
         _printerService = printerService;
         _printDispatcherService = printDispatcherService;
         _giftcardService = giftcardService;
-        _db = db;
         _shiftService = shiftService;
         _sessionManager = sessionManager;
         _userRepository = userRepository;
@@ -85,15 +81,20 @@ public sealed class DialogWirer
     {
         posVm.OpenCheckoutRequested += () =>
         {
-            var dialog = new CheckoutDialogViewModel(
+            CheckoutDialogViewModel? dialog = null;
+            dialog = new CheckoutDialogViewModel(
                 _saleService, _customerService, _printDispatcherService, _terminalService,
                 posVm.Cart.CartState.Items.ToList(), posVm.Cart.CartState.Total,
                 async () =>
                 {
+                    if (!_dialogs.IsCurrent(dialog)) return;
                     posVm.Cart.ClearCartCommand.Execute(null);
                     await posVm.LoadProductsAsync();
+                    if (!_dialogs.IsCurrent(dialog)) return;
                     await posVm.Cart.LoadCustomersAsync();
+                    if (!_dialogs.IsCurrent(dialog)) return;
                     await historyVm.LoadSalesAsync();
+                    if (!_dialogs.IsCurrent(dialog)) return;
                     await historyVm.LoadCashierPerformanceAsync();
                 },
                 _giftcardService,
@@ -101,13 +102,14 @@ public sealed class DialogWirer
 
             dialog.RequestClose += () =>
             {
-                _dialogs.CloseDialog();
+                if (!_dialogs.TryCloseDialog(dialog)) return;
                 WeakReferenceMessenger.Default.Send(new FocusSearchMessage());
             };
             _dialogs.ShowDialog(dialog);
 
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
+                if (!_dialogs.IsCurrent(dialog)) return;
                 dialog.PaymentMethod = posVm.Cart.InitialPaymentMode;
             }, Avalonia.Threading.DispatcherPriority.Loaded);
         };
@@ -117,7 +119,7 @@ public sealed class DialogWirer
             var dialog = new CustomerDialogViewModel(_customerService);
             dialog.RequestClose += () =>
             {
-                _dialogs.CloseDialog();
+                if (!_dialogs.TryCloseDialog(dialog)) return;
                 _ = posVm.Cart.LoadCustomersAsync();
             };
             _dialogs.ShowDialog(dialog);
@@ -125,11 +127,11 @@ public sealed class DialogWirer
 
         posVm.Catalog.OpenProductDialogWithParamsRequested += (parameters) =>
         {
-            var dialog = new ProductDialogViewModel(_productService, _db, _sessionManager, _auditService);
+            var dialog = new ProductDialogViewModel(_productService, _sessionManager);
             dialog.LoadFromParameters(parameters);
             dialog.RequestClose += () =>
             {
-                _dialogs.CloseDialog();
+                if (!_dialogs.TryCloseDialog(dialog)) return;
                 _ = inventoryVm.LoadProductsAsync();
                 _ = posVm.LoadProductsAsync();
                 WeakReferenceMessenger.Default.Send(new FocusSearchMessage());
@@ -142,7 +144,7 @@ public sealed class DialogWirer
             var dialog = new ShiftNotesDialogViewModel(_shiftNoteService);
             dialog.RequestClose += () =>
             {
-                _dialogs.CloseDialog();
+                if (!_dialogs.TryCloseDialog(dialog)) return;
                 _ = posVm.Header.LoadActiveShiftNotesAsync();
                 WeakReferenceMessenger.Default.Send(new FocusSearchMessage());
             };
@@ -151,9 +153,10 @@ public sealed class DialogWirer
 
         posVm.OpenSwitchUserPinRequested += () =>
         {
-            var dialog = new SwitchUserPinDialogViewModel(_userRepository, _sessionManager, () =>
+            SwitchUserPinDialogViewModel? dialog = null;
+            dialog = new SwitchUserPinDialogViewModel(_userRepository, _sessionManager, () =>
             {
-                _dialogs.CloseDialog();
+                if (!_dialogs.TryCloseDialog(dialog)) return;
                 WeakReferenceMessenger.Default.Send(new FocusSearchMessage());
             });
             _dialogs.ShowDialog(dialog);
@@ -161,19 +164,15 @@ public sealed class DialogWirer
 
         posVm.OpenLockScreenRequested += () =>
         {
-            var dialog = new LockScreenDialogViewModel(_userRepository, _sessionManager, () =>
-            {
-                _dialogs.CloseDialog();
-                WeakReferenceMessenger.Default.Send(new FocusSearchMessage());
-            });
-            _dialogs.ShowDialog(dialog);
+            _sessionManager.LockTerminal();
         };
 
         posVm.OpenSupervisorPinRequested += (title, callback) =>
         {
-            var dialog = new SupervisorPinDialogViewModel(_userRepository, title, (authorized, user) =>
+            SupervisorPinDialogViewModel? dialog = null;
+            dialog = new SupervisorPinDialogViewModel(_userRepository, title, (authorized, user) =>
             {
-                _dialogs.CloseDialog();
+                if (!_dialogs.TryCloseDialog(dialog)) { callback?.Invoke(false); return; }
                 callback?.Invoke(authorized);
                 WeakReferenceMessenger.Default.Send(new FocusSearchMessage());
             });
@@ -185,7 +184,7 @@ public sealed class DialogWirer
             var dialog = new BulkWeightDialogViewModel(product);
             dialog.RequestCloseWithResult += (confirmed, quantity) =>
             {
-                _dialogs.CloseDialog();
+                if (!_dialogs.TryCloseDialog(dialog)) return;
                 if (confirmed && quantity > 0)
                 {
                     posVm.Catalog.DirectAddToCart(product, quantity);
@@ -200,10 +199,10 @@ public sealed class DialogWirer
     {
         inventoryVm.OpenAddProductRequested += () =>
         {
-            var dialog = new ProductDialogViewModel(_productService, _db, _sessionManager, _auditService);
+            var dialog = new ProductDialogViewModel(_productService, _sessionManager);
             dialog.RequestClose += () =>
             {
-                _dialogs.CloseDialog();
+                if (!_dialogs.TryCloseDialog(dialog)) return;
                 _ = inventoryVm.LoadProductsAsync();
                 _ = posVm.LoadProductsAsync();
             };
@@ -212,11 +211,11 @@ public sealed class DialogWirer
 
         inventoryVm.OpenProductDialogWithParamsRequested += (parameters) =>
         {
-            var dialog = new ProductDialogViewModel(_productService, _db, _sessionManager, _auditService);
+            var dialog = new ProductDialogViewModel(_productService, _sessionManager);
             dialog.LoadFromParameters(parameters);
             dialog.RequestClose += () =>
             {
-                _dialogs.CloseDialog();
+                if (!_dialogs.TryCloseDialog(dialog)) return;
                 _ = inventoryVm.LoadProductsAsync();
                 _ = posVm.LoadProductsAsync();
             };
@@ -225,11 +224,11 @@ public sealed class DialogWirer
 
         inventoryVm.OpenEditProductRequested += (product) =>
         {
-            var dialog = new ProductDialogViewModel(_productService, _db, _sessionManager, _auditService);
+            var dialog = new ProductDialogViewModel(_productService, _sessionManager);
             dialog.LoadProductForEdit(product);
             dialog.RequestClose += () =>
             {
-                _dialogs.CloseDialog();
+                if (!_dialogs.TryCloseDialog(dialog)) return;
                 _ = inventoryVm.LoadProductsAsync();
                 _ = posVm.LoadProductsAsync();
             };
@@ -238,15 +237,15 @@ public sealed class DialogWirer
 
         inventoryVm.OpenConfigureLowStockRequested += () =>
         {
-            double currentVal = InventoryViewModel.LoadDefaultMinStock();
-            var dialog = new ConfigureMinStockDialogViewModel(currentVal);
+            double currentVal = inventoryVm.DefaultMinStock;
+            var dialog = new ConfigureMinStockDialogViewModel(currentVal, inventoryVm.SaveDefaultMinStockAsync);
             dialog.Saved += (newVal) =>
             {
-                InventoryViewModel.SaveDefaultMinStock(newVal);
+                if (!_dialogs.IsCurrent(dialog)) return;
                 inventoryVm.ShowOnlyLowStock = true;
                 _ = inventoryVm.LoadProductsAsync();
             };
-            dialog.RequestClose += _dialogs.CloseDialog;
+            dialog.RequestClose += () => _dialogs.TryCloseDialog(dialog);
             _dialogs.ShowDialog(dialog);
         };
 
@@ -255,10 +254,11 @@ public sealed class DialogWirer
             var dialog = new ManageCategoriesDialogViewModel(_categories);
             dialog.CategoriesUpdated += () =>
             {
+                if (!_dialogs.IsCurrent(dialog)) return;
                 _ = inventoryVm.LoadProductsAsync();
                 _ = posVm.LoadProductsAsync();
             };
-            dialog.RequestClose += _dialogs.CloseDialog;
+            dialog.RequestClose += () => _dialogs.TryCloseDialog(dialog);
             _dialogs.ShowDialog(dialog);
         };
     }
@@ -270,7 +270,7 @@ public sealed class DialogWirer
             var dialog = new CustomerDialogViewModel(_customerService);
             dialog.RequestClose += () =>
             {
-                _dialogs.CloseDialog();
+                if (!_dialogs.TryCloseDialog(dialog)) return;
                 _ = customersVm.LoadCustomersAsync();
             };
             _dialogs.ShowDialog(dialog);
@@ -282,7 +282,7 @@ public sealed class DialogWirer
             dialog.LoadForEdit(customer);
             dialog.RequestClose += () =>
             {
-                _dialogs.CloseDialog();
+                if (!_dialogs.TryCloseDialog(dialog)) return;
                 _ = customersVm.LoadCustomersAsync();
             };
             _dialogs.ShowDialog(dialog);
@@ -293,7 +293,7 @@ public sealed class DialogWirer
             var dialog = new PaymentDialogViewModel(_customerService, customer.Id, customer.Debt);
             dialog.RequestClose += () =>
             {
-                _dialogs.CloseDialog();
+                if (!_dialogs.TryCloseDialog(dialog)) return;
                 _ = customersVm.LoadCustomersAsync();
             };
             _dialogs.ShowDialog(dialog);
@@ -302,7 +302,7 @@ public sealed class DialogWirer
         customersVm.OpenStatementRequested += (customer) =>
         {
             var dialog = new CustomerStatementDialogViewModel(_customerService, customer.Id, customer.Name, customer.Rfc, customer.Debt);
-            dialog.RequestClose += _dialogs.CloseDialog;
+            dialog.RequestClose += () => _dialogs.TryCloseDialog(dialog);
             _dialogs.ShowDialog(dialog);
         };
     }
@@ -311,9 +311,9 @@ public sealed class DialogWirer
     {
         historyVm.OpenCashupRequested += () =>
         {
-            var dialog = new CashupDialogViewModel(_db, _shiftService, _sessionManager, _printerService,
+            var dialog = new CashupDialogViewModel(_shiftService, _sessionManager, _printerService,
                 _backupService, attendanceService: _attendanceService);
-            dialog.RequestClose += _dialogs.CloseDialog;
+            dialog.RequestClose += () => _dialogs.TryCloseDialog(dialog);
             _dialogs.ShowDialog(dialog);
         };
 
@@ -322,7 +322,7 @@ public sealed class DialogWirer
             var dialog = new ReturnDialogViewModel(_saleService, sale);
             dialog.RequestClose += () =>
             {
-                _dialogs.CloseDialog();
+                if (!_dialogs.TryCloseDialog(dialog)) return;
                 _ = historyVm.LoadSalesAsync();
                 _ = historyVm.LoadCashierPerformanceAsync();
                 _ = posVm.LoadProductsAsync();
@@ -332,9 +332,10 @@ public sealed class DialogWirer
 
         historyVm.OpenSupervisorPinRequested += (title, callback) =>
         {
-            var dialog = new SupervisorPinDialogViewModel(_userRepository, title, (authorized, user) =>
+            SupervisorPinDialogViewModel? dialog = null;
+            dialog = new SupervisorPinDialogViewModel(_userRepository, title, (authorized, user) =>
             {
-                _dialogs.CloseDialog();
+                if (!_dialogs.TryCloseDialog(dialog)) { callback?.Invoke(false); return; }
                 callback?.Invoke(authorized);
             });
             _dialogs.ShowDialog(dialog);
@@ -346,38 +347,44 @@ public sealed class DialogWirer
         promotionsVm.OpenEditPromotionRequested += promotion =>
         {
             var dialog = new PromotionDialogViewModel(promotionService, _productService, promotion);
-            dialog.RequestClose += () => { _dialogs.CloseDialog(); _ = promotionsVm.LoadPromotionsAsync(); };
+            dialog.RequestClose += () => { if (!_dialogs.TryCloseDialog(dialog)) return; _ = promotionsVm.LoadPromotionsAsync(); };
             _dialogs.ShowDialog(dialog);
         };
         promotionsVm.OpenCreatePromotionRequested += () =>
         {
             var dialog = new PromotionDialogViewModel(promotionService, _productService);
-            dialog.RequestClose += () => { _dialogs.CloseDialog(); _ = promotionsVm.LoadPromotionsAsync(); };
+            dialog.RequestClose += () => { if (!_dialogs.TryCloseDialog(dialog)) return; _ = promotionsVm.LoadPromotionsAsync(); };
             _dialogs.ShowDialog(dialog);
         };
-        promotionsVm.OpenCreateItemKitRequested += () =>
+        void OpenKit(Ticketfy.Data.Dtos.KitDraft? draft)
         {
-            var dialog = new ItemKitDialogViewModel(_kitService, _productService);
+            var dialog = new ItemKitDialogViewModel(_kitService, _productService, draft);
             dialog.RequestClose += () =>
             {
-                _dialogs.CloseDialog();
+                if (!_dialogs.TryCloseDialog(dialog)) return;
                 _ = posVm.LoadProductsAsync();
                 _ = promotionsVm.LoadPromotionsAsync();
                 WeakReferenceMessenger.Default.Send(new FocusSearchMessage());
             };
             _dialogs.ShowDialog(dialog);
-        };
+        }
+        promotionsVm.OpenCreateItemKitRequested += () => OpenKit(null);
+        if (promotionsVm.Kits is not null)
+        {
+            promotionsVm.Kits.OpenEditRequested += draft => OpenKit(draft);
+            promotionsVm.Kits.CatalogChanged += () => _ = posVm.LoadProductsAsync();
+        }
     }
 
     public void WireExpensesVm(ExpensesViewModel expensesVm)
     {
         expensesVm.OpenCashupRequested += () =>
         {
-            var dialog = new CashupDialogViewModel(_db, _shiftService, _sessionManager, _printerService,
+            var dialog = new CashupDialogViewModel(_shiftService, _sessionManager, _printerService,
                 _backupService, attendanceService: _attendanceService);
             dialog.RequestClose += () =>
             {
-                _dialogs.CloseDialog();
+                if (!_dialogs.TryCloseDialog(dialog)) return;
                 _ = expensesVm.LoadExpensesAsync();
             };
             _dialogs.ShowDialog(dialog);

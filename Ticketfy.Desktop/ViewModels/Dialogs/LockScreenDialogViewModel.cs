@@ -7,34 +7,41 @@ using Ticketfy.Core.Services;
 
 namespace Ticketfy.ViewModels.Dialogs;
 
-public partial class LockScreenDialogViewModel : ObservableObject
+public partial class LockScreenDialogViewModel : ObservableObject, Ticketfy.ViewModels.Navigation.IDismissibleDialog
 {
-    private readonly IUserRepository _userRepository;
+    private readonly Ticketfy.ViewModels.Shell.LockScreenViewModel _unlock;
     private readonly ISessionManager _sessionManager;
     private readonly Action _closeAction;
+    private bool _dismissed;
 
-    [ObservableProperty] private string _enteredPin = string.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(MaskedPin))]
+    private string _enteredPin = string.Empty;
+    public string MaskedPin => new('•', EnteredPin.Length);
     [ObservableProperty] private string _errorMessage = string.Empty;
     [ObservableProperty] private string _cashierName = string.Empty;
+    [ObservableProperty] private string _password = string.Empty;
+    [ObservableProperty] private bool _usePassword = true;
+    partial void OnUsePasswordChanged(bool value) { _unlock.UsePassword = value; ClearPin(); Password = ""; }
 
     public LockScreenDialogViewModel(IUserRepository userRepository, ISessionManager sessionManager, Action closeAction)
     {
-        _userRepository = userRepository;
+        _unlock = new(userRepository, sessionManager);
         _sessionManager = sessionManager;
         _closeAction = closeAction;
         CashierName = _sessionManager.CurrentCashier?.FullName ?? "Terminal Bloqueada";
     }
 
     [RelayCommand]
-    private void AppendPinDigit(string digit)
+    private async Task AppendPinDigitAsync(string digit)
     {
-        if (EnteredPin.Length < 4)
+        if (!_dismissed && !UsePassword && digit.Length == 1 && digit[0] is >= '0' and <= '9' && EnteredPin.Length < 4)
         {
             EnteredPin += digit;
             ErrorMessage = string.Empty;
             if (EnteredPin.Length == 4)
             {
-                ValidateAndUnlockAsync();
+                await ValidateAndUnlockAsync();
             }
         }
     }
@@ -46,21 +53,23 @@ public partial class LockScreenDialogViewModel : ObservableObject
         ErrorMessage = string.Empty;
     }
 
-    private async void ValidateAndUnlockAsync()
+    private async Task ValidateAndUnlockAsync()
     {
-        bool isCurrentMatch = _sessionManager.CurrentCashier is { } currentUser
-            && await _userRepository.ValidatePinAsync(currentUser.Username, EnteredPin) != null;
-        bool isAdminMatch = await _userRepository.ValidateAdminPinAsync(EnteredPin);
-
-        if (isCurrentMatch || isAdminMatch)
+        if (_dismissed) return;
+        _unlock.UsePassword = UsePassword;
+        _unlock.UnlockPin = UsePassword ? Password : EnteredPin;
+        EnteredPin = Password = string.Empty;
+        await _unlock.UnlockTerminalCommand.ExecuteAsync(null);
+        if (_dismissed) return;
+        UsePassword = _unlock.UsePassword;
+        ErrorMessage = _unlock.UnlockErrorMessage;
+        if (_unlock.LastUnlockSucceeded)
         {
-            _sessionManager.UnlockTerminal();
+            OnDismissed();
             _closeAction?.Invoke();
         }
-        else
-        {
-            ErrorMessage = "PIN Inválido — Acceso Denegado";
-            EnteredPin = string.Empty;
-        }
     }
+    [RelayCommand]
+    private Task VerifyPasswordAsync() => ValidateAndUnlockAsync();
+    public void OnDismissed() { _dismissed = true; EnteredPin = Password = ""; _unlock.Dispose(); }
 }

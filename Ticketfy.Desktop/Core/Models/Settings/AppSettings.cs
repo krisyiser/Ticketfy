@@ -80,6 +80,7 @@ public partial class VisualCustomizationConfig : ObservableObject
 
 public sealed class CompanyProfileConfig
 {
+    public string TimeZoneId { get; set; } = Ticketfy.Core.Helpers.BusinessTime.DefaultZoneId;
     public string CommercialName { get; set; } = string.Empty;
     public string LegalName { get; set; } = string.Empty;
     public string Rfc { get; set; } = string.Empty;

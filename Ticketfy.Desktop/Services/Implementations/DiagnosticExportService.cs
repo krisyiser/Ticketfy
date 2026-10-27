@@ -25,19 +25,22 @@ public sealed class DiagnosticExportService : IDiagnosticExportService
     private readonly string _databasePath;
     private readonly string _defaultDestination;
     private readonly Func<DateTimeOffset> _utcNow;
+    private readonly Func<MaintenanceSnapshot>? _maintenance;
 
     public DiagnosticExportService(
         string? logDirectory = null,
         string? backupDirectory = null,
         string? databasePath = null,
         string? defaultDestination = null,
-        Func<DateTimeOffset>? utcNow = null)
+        Func<DateTimeOffset>? utcNow = null,
+        Func<MaintenanceSnapshot>? maintenance = null)
     {
         _logDirectory = Path.GetFullPath(logDirectory ?? AppDataPaths.LogDirectory);
         _backupDirectory = Path.GetFullPath(backupDirectory ?? AppDataPaths.BackupDirectory);
         _databasePath = Path.GetFullPath(databasePath ?? AppDataPaths.DatabaseFile);
         _defaultDestination = Path.GetFullPath(defaultDestination ?? AppDataPaths.DiagnosticDirectory);
         _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
+        _maintenance = maintenance;
     }
 
     public Task<DiagnosticExportResult> ExportAsync(string? destinationDirectory = null, CancellationToken cancellationToken = default) =>
@@ -56,7 +59,7 @@ public sealed class DiagnosticExportService : IDiagnosticExportService
             using (var archive = ZipFile.Open(archivePath, ZipArchiveMode.Create))
             {
                 WriteEntry(archive, "README.txt",
-                    "Paquete de diagnóstico Ticketfy. No contiene bases de datos, credenciales, llaves, tokens ni archivos de licencia.\n");
+                    "Paquete de diagnóstico Ticketfy. No contiene bases de datos, credenciales, llaves, tokens ni archivos de licencia. Los mensajes libres de logs se omiten: sólo se exportan fechas y niveles para evitar datos personales heredados.\n");
 
                 var report = new
                 {
@@ -72,6 +75,7 @@ public sealed class DiagnosticExportService : IDiagnosticExportService
                         sizeBytes = File.Exists(_databasePath) ? new FileInfo(_databasePath).Length : 0
                     },
                     backups = BuildBackupSummary(),
+                    maintenance = BuildMaintenanceSummary(),
                     hardwareCompatibility = HardwareCompatibility.Matrix.Select(profile => new
                     {
                         profile.Id,
@@ -85,6 +89,7 @@ public sealed class DiagnosticExportService : IDiagnosticExportService
 
                 if (Directory.Exists(_logDirectory))
                 {
+                    int index = 0;
                     foreach (FileInfo log in new DirectoryInfo(_logDirectory).EnumerateFiles("*.*")
                                  .Where(file => file.Extension.Equals(".log", StringComparison.OrdinalIgnoreCase)
                                      || file.Name.Equals("crash_log.txt", StringComparison.OrdinalIgnoreCase))
@@ -93,7 +98,7 @@ public sealed class DiagnosticExportService : IDiagnosticExportService
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         string content = ReadTail(log.FullName, MaximumLogCharacters);
-                        WriteEntry(archive, $"logs/{SanitizeArchiveName(log.Name)}", LogSanitizer.Sanitize(content));
+                        WriteEntry(archive, $"logs/summary-{++index}.log", SummarizeLog(content));
                     }
                 }
             }
@@ -105,6 +110,26 @@ public sealed class DiagnosticExportService : IDiagnosticExportService
             if (File.Exists(archivePath)) File.Delete(archivePath);
             throw;
         }
+    }
+
+    private object? BuildMaintenanceSummary()
+    {
+        var snapshot = _maintenance?.Invoke();
+        return snapshot is null ? null : new
+        {
+            snapshot.Revision,
+            snapshot.WritesBlocked,
+            snapshot.RestoreTestEnabled,
+            tasks = snapshot.Tasks.Select(row => new
+            {
+                task = row.Task.ToString(),
+                state = row.State.ToString(),
+                failure = row.Failure.ToString(),
+                row.LastAttemptUtc,
+                row.LastSuccessUtc,
+                row.LastFailureUtc
+            })
+        };
     }
 
     private object BuildBackupSummary()
@@ -122,14 +147,24 @@ public sealed class DiagnosticExportService : IDiagnosticExportService
 
     private static string ReadTail(string path, int maximumCharacters)
     {
-        string content = File.ReadAllText(path);
+        using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        if (input.Length > maximumCharacters * 4L) input.Seek(-maximumCharacters * 4L, SeekOrigin.End);
+        using var reader = new StreamReader(input);
+        string content = reader.ReadToEnd();
         return content.Length <= maximumCharacters ? content : content[^maximumCharacters..];
     }
 
-    private static string SanitizeArchiveName(string name)
+    private static string SummarizeLog(string content)
     {
-        foreach (char invalid in Path.GetInvalidFileNameChars()) name = name.Replace(invalid, '_');
-        return name;
+        var output = new System.Text.StringBuilder("Mensajes y datos personales omitidos [REDACTED].\n");
+        foreach (string line in content.Split('\n'))
+        {
+            // Only fixed grammar is copied. Old log text and filenames are untrusted free-form data.
+            var match = System.Text.RegularExpressions.Regex.Match(line,
+                @"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} \[(?:VRB|DBG|INF|WRN|ERR|FTL)\]", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+            if (match.Success) output.AppendLine(match.Value);
+        }
+        return output.ToString();
     }
 
     private static void WriteEntry(ZipArchive archive, string name, string content)

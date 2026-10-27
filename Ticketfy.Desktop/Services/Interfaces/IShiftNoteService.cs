@@ -11,4 +11,6 @@ public interface IShiftNoteService
     Task<bool> UpdateNoteAsync(string id, string noteText, string category = "General");
     Task<bool> DeleteNoteAsync(string id);
     Task<bool> ResolveNoteAsync(string id);
+    Task<List<ShiftNoteDto>> GetUnassignedHistoricalNotesAsync() => throw new System.NotSupportedException();
+    Task AssignHistoricalNoteAsync(string id, string reason) => throw new System.NotSupportedException();
 }

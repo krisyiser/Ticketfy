@@ -10,6 +10,8 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Ticketfy.Core.Enums;
+using Ticketfy.Services.Implementations;
 
 namespace Ticketfy.ViewModels.Dialogs;
 
@@ -65,6 +67,12 @@ public partial class CheckoutDialogViewModel
     [RelayCommand]
     private void Cancel()
     {
+        if (IsProcessing)
+        {
+            ErrorMessage = "Hay una operación en curso. Detener la espera no confirma una cancelación bancaria.";
+            return;
+        }
+        OnDismissed();
         RequestClose?.Invoke();
     }
 
@@ -94,12 +102,14 @@ public partial class CheckoutDialogViewModel
     [RelayCommand(CanExecute = nameof(CanConfirmPayment))]
     private async Task ConfirmPaymentAsync()
     {
-        if (IsProcessing || _committed) return;
-        bool checkoutStarted = false;
+        if (!CanConfirmPayment()) return;
+        bool checkoutAttempted = false;
         bool paymentAuthorized = false;
+        bool terminalAttempted = false;
         try
         {
             IsProcessing = true;
+            Ticketfy.Core.Operations.CommercialDocumentLimits.RequireLineCount(_cartItems.Count);
             bool isCredit = IsCreditPayment;
             if (isCredit && SelectedCustomer == null)
             {
@@ -231,14 +241,17 @@ public partial class CheckoutDialogViewModel
                 saleDto = saleDto with { EstadoFiscal = "EN COLA" };
             }
 
+            ThrowIfDismissed();
+            checkoutAttempted = true;
             await _saleService.BeginCheckoutAsync(saleDto, fiscalOutbox);
-            checkoutStarted = true;
+            ThrowIfDismissed();
 
             if (IsBankTransfer)
             {
                 if (!BankPaymentVerified || _reconciliation is null) throw new InvalidOperationException("Verifique el depósito en la cuenta bancaria y confirme la referencia.");
                 await _reconciliation.ConfirmTransferAsync(_checkoutOperationId, TotalToPay, BankReference);
                 paymentAuthorized = true;
+                ThrowIfDismissed();
             }
 
             if (cardPortion > 0)
@@ -246,27 +259,28 @@ public partial class CheckoutDialogViewModel
                 IsWaitingForTerminal = true;
                 TerminalStatusMessage = "Por favor, pase la tarjeta por la terminal...";
                 _paymentCts = new CancellationTokenSource();
-
+                terminalAttempted = true;
                 var terminalResult = await _terminalService.ProcessPaymentAsync(cardPortion, _checkoutOperationId, _paymentCts.Token);
                 IsWaitingForTerminal = false;
+                ThrowIfDismissed();
 
                 if (!terminalResult.IsSuccess || terminalResult.Data == null)
                 {
-                    ErrorMessage = terminalResult.ErrorMessage ?? "Cobro rechazado o cancelado en la terminal.";
+                    ErrorMessage = terminalResult.ErrorMessage ?? "No se pudo confirmar el resultado del cobro.";
                     bool requiresReconciliation = await _terminalService.RequiresReconciliationAsync(_checkoutOperationId);
-                    await _saleService.MarkCheckoutFailedAsync(_checkoutOperationId, ErrorMessage, requiresReconciliation);
-                    if (!requiresReconciliation)
-                        _checkoutOperationId = Guid.NewGuid().ToString("N");
+                    await RecordFailureAsync(ErrorMessage, requiresReconciliation);
                     return;
                 }
 
                 paymentAuthorized = true;
                 await _saleService.MarkPaymentAuthorizedAsync(_checkoutOperationId, terminalResult.Data.TransactionId);
+                ThrowIfDismissed();
             }
 
             var savedSale = await _saleService.SaveAsync(saleDto, fiscalOutbox);
             _committed = true;
             Log.Information("Sale saved successfully with ID: {SaleId}", savedSale.Id);
+            if (_dismissed) return;
 
             try { await _printDispatcher.DispatchSaleDocumentsAsync(savedSale, ShouldPrintReceipt); }
             catch (Exception printError)
@@ -275,12 +289,7 @@ public partial class CheckoutDialogViewModel
                 Ticketfy.Core.Messages.HardwareFeedbackMessage.Report($"Venta {savedSale.Id} registrada. Falló el envío a impresión; revise el historial antes de reimprimir. No vuelva a cobrar.", true);
             }
 
-            if (_onSuccessCallback != null)
-            {
-                await _onSuccessCallback();
-            }
-
-            RequestClose?.Invoke();
+            await NotifyCommittedAsync();
         }
         catch (Exception ex)
         {
@@ -288,19 +297,30 @@ public partial class CheckoutDialogViewModel
             if (_committed)
             {
                 ErrorMessage = "Venta registrada. Consulte el historial; no vuelva a cobrar este ticket.";
-                RequestClose?.Invoke();
+                if (!_dismissed) RequestClose?.Invoke();
                 return;
             }
             ErrorMessage = ex.Message;
-            if (checkoutStarted)
+            if (checkoutAttempted)
             {
                 try
                 {
-                    await _saleService.MarkCheckoutFailedAsync(_checkoutOperationId, ex.GetBaseException().Message, paymentAuthorized);
+                    await RecordFailureAsync(ex.GetBaseException().Message, paymentAuthorized || terminalAttempted);
                 }
                 catch (Exception journalError)
                 {
                     Log.Error(journalError, "Could not update checkout recovery journal for operation {OperationId}", _checkoutOperationId);
+                    if (_committed)
+                    {
+                        RequiresReconciliation = false;
+                        ErrorMessage = "Venta registrada. Falló la actualización de la pantalla; consulte el historial y no vuelva a cobrar.";
+                        if (!_dismissed) RequestClose?.Invoke();
+                    }
+                    else
+                    {
+                        RequiresReconciliation = true;
+                        ErrorMessage = $"{CheckoutStatePolicy.ReconciliationRequired} Referencia: {_checkoutOperationId}. No se pudo confirmar el estado local.";
+                    }
                 }
             }
         }
@@ -308,6 +328,8 @@ public partial class CheckoutDialogViewModel
         {
             IsProcessing = false;
             IsWaitingForTerminal = false;
+            _paymentCts?.Dispose();
+            _paymentCts = null;
         }
     }
 
@@ -315,9 +337,44 @@ public partial class CheckoutDialogViewModel
     private async Task CancelTerminalPaymentAsync()
     {
         _paymentCts?.Cancel();
-        IsWaitingForTerminal = false;
-        ErrorMessage = "Cobro cancelado por el cajero.";
+        TerminalStatusMessage = "Deteniendo la espera; el banco aún puede completar la operación.";
+        ErrorMessage = "Detener la espera no confirma una cancelación bancaria. No vuelva a cobrar; conserve la referencia.";
         await Task.CompletedTask;
+    }
+
+    private void ThrowIfDismissed()
+    {
+        if (_dismissed) throw new OperationCanceledException("Se cerró la sesión o el diálogo; concilie la intención original.");
+    }
+
+    private async Task RecordFailureAsync(string reason, bool uncertain)
+    {
+        RequiresReconciliation = true;
+        var state = await _saleService.MarkCheckoutFailedAsync(_checkoutOperationId, reason, uncertain);
+        if (state == CheckoutOperationState.Completed)
+        {
+            _committed = true; RequiresReconciliation = false;
+            ErrorMessage = "Venta registrada. Consulte el historial; no vuelva a cobrar este ticket.";
+            await NotifyCommittedAsync();
+        }
+        else if (state is null or CheckoutOperationState.Failed)
+        {
+            RequiresReconciliation = false;
+            _checkoutOperationId = Guid.NewGuid().ToString("N");
+            OnPropertyChanged(nameof(OperationReference));
+        }
+        else ErrorMessage = $"{CheckoutStatePolicy.ReconciliationRequired} Referencia: {_checkoutOperationId}.";
+    }
+
+    private async Task NotifyCommittedAsync()
+    {
+        if (_dismissed) return;
+        if (!_successNotified && _onSuccessCallback is not null)
+        {
+            _successNotified = true;
+            await _onSuccessCallback();
+        }
+        if (!_dismissed) RequestClose?.Invoke();
     }
 
     public async Task<bool> ApplyManualDiscountAsync(double requestedDiscountPercentage, string reason, ISecurityInterceptionService? securityService = null, IAuditService? auditService = null, UserModel? currentUser = null)

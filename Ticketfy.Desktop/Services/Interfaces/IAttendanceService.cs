@@ -11,4 +11,6 @@ public interface IAttendanceService
     Task<AttendanceResultModel> ClockInAsync(string userId, string notes = "");
     Task<AttendanceResultModel> ClockOutAsync(string userId);
     Task AutoCloseForgottenAttendancesAsync();
+    Task<List<AttendanceEntity>> GetReviewQueueAsync() => throw new NotSupportedException();
+    Task ResolveAnomalyAsync(string attendanceId, DateTime confirmedEnd, string reason, string operationId) => throw new NotSupportedException();
 }

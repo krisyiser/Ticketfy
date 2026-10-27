@@ -12,13 +12,13 @@
     <Grid RowDefinitions="Auto,*">
         <!-- Header Controls -->
         <Border Grid.Row="0" Background="#1E293B" Padding="20,16" BorderBrush="#334155" BorderThickness="0,0,0,1">
-            <Grid ColumnDefinitions="Auto,*,Auto">
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12">
+            <Grid RowDefinitions="Auto,Auto">
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12">
                     <materialIcons:MaterialIcon Kind="AccountClock" Width="28" Height="28" Foreground="#10B981"/>
                     <TextBlock Text="Rendimiento y Productividad de Cajeros" FontSize="22" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
                 </StackPanel>
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                <WrapPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,12,0,0">
                     <TextBlock Text="Periodo:" Foreground="#94A3B8" VerticalAlignment="Center"/>
                     <DatePicker SelectedDate="{Binding StartDate}"/>
                     <TextBlock Text="a" Foreground="#94A3B8" VerticalAlignment="Center"/>
@@ -32,7 +32,7 @@
                             <TextBlock Text="Filtrar"/>
                         </StackPanel>
                     </Button>
-                </StackPanel>
+                </WrapPanel>
             </Grid>
         </Border>
 
@@ -45,20 +45,21 @@
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="CAJERO" Binding="{Binding FullName}" Width="2*"/>
                         <DataGridTextColumn Header="ROL" Binding="{Binding Role}" Width="120"/>
-                        <DataGridTextColumn Header="HRS. LABORADAS" Binding="{Binding TotalHoursWorked, StringFormat='{}{0:F1} hrs'}" Width="130"/>
+                        <DataGridTextColumn Header="HRS. COMPLETADAS" Binding="{Binding TotalHoursWorked, StringFormat='{}{0:F2} hrs'}" Width="145"/>
+                        <DataGridTextColumn Header="ASISTENCIA" Binding="{Binding AttendanceStatusDisplay}" Width="210"/>
                         <DataGridTextColumn Header="TICKETS" Binding="{Binding TotalTicketsProcessed}" Width="100"/>
-                        <DataGridTextColumn Header="VENTA TOTAL" Binding="{Binding GrossSales, StringFormat='{}{0:C}'}" Width="140"/>
+                        <DataGridTextColumn Header="VENTA NETA" Binding="{Binding GrossSales, StringFormat='{}{0:C}'}" Width="140"/>
                         <DataGridTextColumn Header="TICKET PROMEDIO" Binding="{Binding AverageTicketValue, StringFormat='{}{0:C}'}" Width="140"/>
                         
                         <!-- TIME-WEIGHTED TRUE PERFORMANCE COLUMN (HIGHLIGHTED) -->
                         <DataGridTextColumn Header="VENTA / HORA REAL" 
-                                            Binding="{Binding TrueSalesPerHour, StringFormat='{}{0:C}'}" 
+                                            Binding="{Binding TrueSalesPerHourDisplay}"
                                             Width="160"
                                             FontWeight="Bold"
                                             Foreground="#10B981"/>
 
-                        <DataGridTextColumn Header="TICKETS / HORA" Binding="{Binding TicketsPerHour, StringFormat='{}{0:F1}'}" Width="130"/>
-                        <DataGridTextColumn Header="{Binding CommissionPercentage, StringFormat='COMISIÓN EST. ({0:F1}%)'}" Binding="{Binding EstimatedCommission, StringFormat='{}{0:C}'}" Width="150"/>
+                        <DataGridTextColumn Header="TICKETS / HORA" Binding="{Binding TicketsPerHourDisplay}" Width="130"/>
+                        <DataGridTextColumn Header="{Binding CommissionPercentage, StringFormat='COMISIÓN EST. ({0:F1}%)'}" Binding="{Binding EstimatedCommissionDisplay}" Width="150"/>
                     </DataGrid.Columns>
                 </DataGrid>
 

@@ -35,6 +35,7 @@ public sealed partial class Stage6CommercialLedgerTests
     {
         public int Tickets { get; private set; }
         public int Drawers { get; private set; }
+        public int PurchaseTickets { get; private set; }
         public string? Target { get; private set; }
         public Task<bool> PrintTicketAsync(SaleDto sale, string printerPortOrName = "")
         { Tickets++; Target = printerPortOrName; return Task.FromResult(succeeds); }
@@ -45,7 +46,8 @@ public sealed partial class Stage6CommercialLedgerTests
         public Task<bool> IsPrinterOnlineAsync() => Task.FromResult(false);
         public Task<bool> PrintInventoryChecklistAsync(List<ProductDto> products, string printerPortOrName = "") => Task.FromResult(succeeds);
         public Task<bool> PrintSnapshotChecklistAsync(InventorySnapshotEntity snapshot, string printerPortOrName = "") => Task.FromResult(succeeds);
-        public Task<bool> PrintPurchaseOrderAsync(PurchaseDto purchase, string printerPortOrName = "") => Task.FromResult(succeeds);
+        public Task<bool> PrintPurchaseOrderAsync(PurchaseDto purchase, string printerPortOrName = "")
+        { PurchaseTickets++; return Task.FromResult(succeeds); }
     }
 
     [Theory]

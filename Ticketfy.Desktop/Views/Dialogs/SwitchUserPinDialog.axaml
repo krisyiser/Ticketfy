@@ -16,7 +16,7 @@
                 <Grid ColumnDefinitions="*, Auto">
                     <StackPanel Spacing="4">
                         <TextBlock Text="Cambio Rápido de Cajero" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}"/>
-                        <TextBlock Text="Seleccione su usuario e ingrese su PIN de 4 dígitos" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                        <TextBlock Text="Use su contraseña. El PIN sólo funciona durante 15 minutos desde una verificación primaria en esta ejecución." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"/>
                     </StackPanel>
                     <Button Grid.Column="1" Command="{Binding CloseModalCommand}" Width="28" Height="28" Padding="0" Background="Transparent" BorderThickness="0">
                         <mi:MaterialIcon Kind="Close" Width="18" Height="18" Foreground="{DynamicResource TextSecondaryBrush}" />
@@ -43,16 +43,18 @@
                     </ComboBox>
                 </StackPanel>
 
+                <CheckBox IsChecked="{Binding UsePassword}" Content="Usar contraseña" />
+                <StackPanel IsVisible="{Binding UsePassword}" Spacing="8">
+                    <TextBox Text="{Binding Password}" PasswordChar="•" MaxLength="1024" Watermark="Contraseña" />
+                    <Button Content="Verificar y cambiar cajero" Command="{Binding VerifyPasswordCommand}" IsEnabled="{Binding !IsVerifying}" />
+                </StackPanel>
+                <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" Foreground="{DynamicResource AccentDangerBrush}" />
                 <!-- PIN Display Mask -->
-                <StackPanel Spacing="12" HorizontalAlignment="Center">
+                <StackPanel Spacing="12" HorizontalAlignment="Center" IsVisible="{Binding !UsePassword}">
                     <Border Background="{DynamicResource BgTertiaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6" Height="48" Width="240">
-                        <TextBlock Text="{Binding EnteredPin}" FontSize="24" FontWeight="Bold" LetterSpacing="12" 
+                        <TextBlock Text="{Binding MaskedPin}" FontSize="24" FontWeight="Bold" LetterSpacing="12"
                                    HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
                     </Border>
-
-                    <!-- Error Banner -->
-                    <TextBlock Text="{Binding ErrorMessage}" Foreground="#EF4444" FontWeight="Bold" FontSize="13" 
-                               HorizontalAlignment="Center" Height="20"/>
 
                     <!-- Numeric Keypad -->
                     <Grid RowDefinitions="44, 44, 44, 44" ColumnDefinitions="60, 60, 60" HorizontalAlignment="Center">

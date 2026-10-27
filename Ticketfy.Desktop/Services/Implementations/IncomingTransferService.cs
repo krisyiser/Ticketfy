@@ -7,7 +7,7 @@ using Ticketfy.Data.Entities;
 
 namespace Ticketfy.Services.Implementations;
 
-public sealed class IncomingTransferService(IDbContextFactory<AppDbContext> factory, CommercialOperationContext operations)
+public sealed partial class IncomingTransferService(IDbContextFactory<AppDbContext> factory, CommercialOperationContext operations)
 {
     public const string SalePurpose = "CAPTURE";
     public const string CustomerPurpose = "CUSTOMER_PAYMENT";
@@ -62,33 +62,44 @@ public sealed class IncomingTransferService(IDbContextFactory<AppDbContext> fact
     {
         if (!verified) throw new InvalidOperationException("Compruebe el depósito en la cuenta del comercio, no sólo el comprobante del cliente.");
         IncomingTransferIntentEntity intent;
+        string approverId;
         await using (var db = await factory.CreateDbContextAsync())
         {
-            var actor = await operations.RequireAsync(db, PermissionCatalog.PaymentsReconcile);
             intent = await db.IncomingTransferIntents.AsNoTracking().SingleAsync(i => i.OperationId == operationId);
-            RequireOwner(intent, actor);
+            var authorization = await AuthorizeResolutionAsync(db, operations, intent);
+            approverId = authorization.Approver.UserId;
+            await operations.RequireAsync(db, intent.Purpose == CustomerPurpose ? PermissionCatalog.CashInOut : PermissionCatalog.WalletManage, false);
             if (await db.IncomingTransferReceipts.AnyAsync(r => r.OperationId == operationId && r.Outcome == TransferOutcome.RefundedExternally))
                 throw new InvalidOperationException("El depósito ya fue devuelto externamente; no puede aplicarse.");
         }
         // The confirmation is durable BEFORE applying the account movement. A failure leaves a recoverable pending intent.
         await new CommercialReconciliationService(factory, operations).ConfirmTransferAsync(operationId, intent.Amount, reference, intent.Purpose);
-        if (intent.Purpose == CustomerPurpose)
-            await new CustomerService(factory, operations).RegisterCustomerPaymentAsync(intent.DestinationId, intent.Amount, "Transferencia", intent.Notes, operationId);
-        else
-            await new GiftcardService(factory, operations).RechargeAsync(intent.DestinationId, intent.Amount, PaymentMethod.Transferencia, intent.ShiftId, operationId);
+        await ApplyConfirmedTransferAsync(operationId, approverId);
     }
     public async Task CancelUnfundedAsync(string operationId, string reason, bool noFundsVerified)
     {
         if (!noFundsVerified || string.IsNullOrWhiteSpace(reason) || reason.Length > 1000) throw new InvalidOperationException("Verifique que no se recibió dinero e indique el motivo (máximo 1000 caracteres).");
         await using var db = await factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
-        var actor = await operations.RequireAsync(db, PermissionCatalog.PaymentsReconcile);
-        var intent = await db.IncomingTransferIntents.SingleAsync(i => i.OperationId == operationId); RequireOwner(intent, actor);
+        var intent = await db.IncomingTransferIntents.SingleAsync(i => i.OperationId == operationId);
+        var (actor, approver) = await AuthorizeResolutionAsync(db, operations, intent);
         await CommandIdentity.BindAsync(db, actor, "TRANSFER_CANCEL:" + CommandIdentity.Hash(operationId), CancelEvent, operationId, reason);
-        if (await db.TransactionJournal.AnyAsync(j => j.OperationId == operationId && j.EventType == CancelEvent)) return;
+        var cancelled = await db.TransactionJournal.AsNoTracking().SingleOrDefaultAsync(j => j.OperationId == operationId && j.EventType == CancelEvent);
+        if (cancelled is not null)
+        {
+            if (cancelled.RegisterId != intent.RegisterId || cancelled.ShiftId != intent.ShiftId ||
+                cancelled.EntityId != intent.DestinationId || cancelled.Amount != intent.Amount)
+                throw new InvalidOperationException("El descarte previo no coincide con la intención original. Conserve la evidencia y solicite revisión.");
+            if (await db.TenderConfirmations.AnyAsync(c => c.OperationId == operationId) ||
+                await db.IncomingTransferReceipts.AnyAsync(r => r.OperationId == operationId))
+                throw new InvalidOperationException("El descarte contradice evidencia bancaria o un comprobante. Requiere revisión; no vuelva a mover dinero.");
+            return;
+        }
+        await RequireOriginalShiftAsync(db, intent);
         if (await db.TenderConfirmations.AnyAsync(c => c.OperationId == operationId) || await db.IncomingTransferReceipts.AnyAsync(r => r.OperationId == operationId))
             throw new InvalidOperationException("Hay fondos confirmados. Aplique el depósito o documente su devolución bancaria; no lo descarte.");
-        CommercialLedger.Journal(db, actor, operationId, CancelEvent, intent.DestinationId, intent.Amount, reason);
+        CommercialLedger.Journal(db, approver, operationId, CancelEvent, intent.DestinationId, intent.Amount, reason);
+        await RevalidateResolutionAsync(db, operations, intent, approver.UserId);
         await db.SaveChangesAsync(); await tx.CommitAsync();
     }
     public async Task ResolveByExternalRefundAsync(string operationId, string refundReference, string reason, bool verified)
@@ -98,24 +109,23 @@ public sealed class IncomingTransferService(IDbContextFactory<AppDbContext> fact
         refundReference = refundReference.Trim();
         await using var db = await factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
-        var actor = await operations.RequireAsync(db, PermissionCatalog.PaymentsReconcile);
-        var intent = await db.IncomingTransferIntents.SingleAsync(i => i.OperationId == operationId); RequireOwner(intent, actor);
+        var intent = await db.IncomingTransferIntents.SingleAsync(i => i.OperationId == operationId);
+        var (actor, approver) = await AuthorizeResolutionAsync(db, operations, intent);
         await CommandIdentity.BindAsync(db, actor, "TRANSFER_REFUND:" + CommandIdentity.Hash(operationId), "TRANSFER_REFUND", operationId, refundReference, reason);
         var existing = await db.IncomingTransferReceipts.FindAsync(operationId);
         if (existing is not null)
         {
+            RequireMatchingReceipt(intent, existing);
             if (existing.Outcome != TransferOutcome.RefundedExternally || existing.RefundReference != refundReference)
                 throw new InvalidOperationException("El depósito ya se aplicó o tiene otra resolución.");
             return;
         }
+        await RequireOriginalShiftAsync(db, intent);
         var proof = await RequireProofAsync(db, actor, operationId, intent.Amount, intent.Purpose, intent.DestinationId);
-        string normalizedRefund = refundReference.ToUpperInvariant();
-        if (proof.ExternalReference.Equals(refundReference, StringComparison.OrdinalIgnoreCase)
-            || await db.RefundSettlements.AnyAsync(r => r.ExternalReference.ToUpper() == normalizedRefund)
-            || await db.IncomingTransferReceipts.AnyAsync(r => r.RefundReference != null && r.RefundReference.ToUpper() == normalizedRefund))
-            throw new InvalidOperationException("La referencia del reembolso no puede reutilizar otra transacción.");
+        await BankReferenceGuard.RequireUnusedAsync(db, refundReference);
         db.IncomingTransferReceipts.Add(Receipt(actor, proof, operationId, TransferOutcome.RefundedExternally, refundReference));
-        CommercialLedger.Journal(db, actor, operationId, "INCOMING_TRANSFER_REFUNDED_EXTERNALLY", intent.DestinationId, intent.Amount, reason);
+        CommercialLedger.Journal(db, approver, operationId, "INCOMING_TRANSFER_REFUNDED_EXTERNALLY", intent.DestinationId, intent.Amount, reason);
+        await RevalidateResolutionAsync(db, operations, intent, approver.UserId);
         await db.SaveChangesAsync(); await tx.CommitAsync();
     }
     internal static async Task<TenderConfirmationEntity> RequireProofAsync(AppDbContext db, OperationIdentity actor, string operationId,
@@ -150,23 +160,30 @@ public sealed class IncomingTransferService(IDbContextFactory<AppDbContext> fact
             RegisterId = actor.RegisterId,
             ShiftId = actor.ShiftId!
         };
-    internal static Task<bool> HasPendingAsync(AppDbContext db, string shiftId) => db.IncomingTransferIntents.AnyAsync(i => i.ShiftId == shiftId
-        && !db.IncomingTransferReceipts.Any(r => r.OperationId == i.OperationId)
-        && !db.TransactionJournal.Any(j => j.OperationId == i.OperationId && j.EventType == CancelEvent));
+    internal static IQueryable<IncomingTransferIntentEntity> PendingIntents(AppDbContext db) =>
+        db.IncomingTransferIntents.Where(i =>
+            !db.IncomingTransferReceipts.Any(r => r.OperationId == i.OperationId && r.Amount == i.Amount &&
+                r.Purpose == i.Purpose && r.CashierUserId == i.CashierUserId && r.RegisterId == i.RegisterId && r.ShiftId == i.ShiftId &&
+                (r.Outcome == TransferOutcome.Applied || r.Outcome == TransferOutcome.RefundedExternally) &&
+                db.TenderConfirmations.Any(p => p.OperationId == i.OperationId && p.Kind == TenderKind.Transfer &&
+                    p.Amount == i.Amount && p.Purpose == i.Purpose && p.CashierUserId == i.CashierUserId &&
+                    p.ShiftId == i.ShiftId && p.RegisterId == i.RegisterId && p.ExternalReference == r.ExternalReference) &&
+                !db.TransactionJournal.Any(j => j.OperationId == i.OperationId && j.EventType == CancelEvent)) &&
+            !(db.TransactionJournal.Any(j => j.OperationId == i.OperationId && j.EventType == CancelEvent &&
+                j.Amount == i.Amount && j.EntityId == i.DestinationId && j.RegisterId == i.RegisterId && j.ShiftId == i.ShiftId) &&
+                !db.TenderConfirmations.Any(p => p.OperationId == i.OperationId) &&
+                !db.IncomingTransferReceipts.Any(r => r.OperationId == i.OperationId)));
+    internal static Task<bool> HasPendingAsync(AppDbContext db, string shiftId) => PendingIntents(db).AnyAsync(i => i.ShiftId == shiftId);
     public async Task<List<PendingTransferDto>> GetPendingAsync()
     {
-        await using var db = await factory.CreateDbContextAsync();
-        var actor = await operations.RequireAsync(db, PermissionCatalog.PaymentsReconcile, false);
-        return await db.IncomingTransferIntents.AsNoTracking().Where(i => i.CashierUserId == actor.UserId && i.RegisterId == actor.RegisterId
-            && !db.IncomingTransferReceipts.Any(r => r.OperationId == i.OperationId)
-            && !db.TransactionJournal.Any(j => j.OperationId == i.OperationId && j.EventType == CancelEvent))
-            .OrderBy(i => i.CreatedAtUtc).Take(200).Select(i => new PendingTransferDto(i.OperationId, i.Purpose, i.DestinationId, i.Amount,
-                db.TenderConfirmations.Where(c => c.OperationId == i.OperationId).Select(c => c.ExternalReference).FirstOrDefault())).ToListAsync();
+        var result = await GetPendingPageAsync(LegacyCatalogReadPolicy.Limit);
+        LegacyCatalogReadPolicy.RequireComplete(result.Next is not null);
+        return result.Items;
     }
     public async Task<List<IncomingTransferReceiptEntity>> GetReceiptsAsync()
     {
-        await using var db = await factory.CreateDbContextAsync();
-        await operations.RequireAsync(db, PermissionCatalog.ReportsView, false);
-        return await db.IncomingTransferReceipts.AsNoTracking().OrderByDescending(r => r.CreatedAtUtc).Take(200).ToListAsync();
+        var result = await GetReceiptsPageAsync(LegacyCatalogReadPolicy.Limit);
+        LegacyCatalogReadPolicy.RequireComplete(result.Next is not null);
+        return result.Items;
     }
 }

@@ -2,12 +2,13 @@ using Microsoft.EntityFrameworkCore;
 using Ticketfy.Core.Enums;
 using Ticketfy.Core.Security;
 using Ticketfy.Data;
+using Ticketfy.Data.Dtos;
 using Ticketfy.Data.Entities;
 using Ticketfy.Services.Interfaces;
 
 namespace Ticketfy.Services.Implementations;
 
-public sealed class GiftcardService : IGiftcardService
+public sealed partial class GiftcardService : IGiftcardService
 {
     private readonly IDbContextFactory<AppDbContext> _factory;
     private readonly CommercialOperationContext? _operations;
@@ -15,14 +16,27 @@ public sealed class GiftcardService : IGiftcardService
         : this(new AppDbContextFactoryImpl<AppDbContext>(db.Options), operations) { }
     public GiftcardService(IDbContextFactory<AppDbContext> factory, CommercialOperationContext? operations = null)
     { _factory = factory; _operations = operations; }
+    public async Task<AccountStatementPageDto> GetStatementPageAsync(string cardNumber, int page = 0, int size = 100, LedgerReadCut? cut = null)
+    {
+        await using var db = await _factory.CreateDbContextAsync();
+        await using var snapshot = await ReadSnapshot.BeginAsync(db);
+        await (_operations ?? throw new UnauthorizedAccessException("Sesión requerida.")).RequireAsync(db, PermissionCatalog.WalletManage, false);
+        return await CommercialLedgerReader.AccountAsync(db, AccountKind.Giftcard, cardNumber, page, size, cut);
+    }
     public async Task<List<GiftcardEntity>> GetAllAsync()
     {
         await using var db = await _factory.CreateDbContextAsync();
-        return await db.Giftcards.AsNoTracking().Where(g => g.IsActive).OrderBy(g => g.CardNumber).ToListAsync();
+        await using var snapshot = await ReadSnapshot.BeginAsync(db);
+        await (_operations ?? throw new UnauthorizedAccessException("Sesión requerida.")).RequireAsync(db, PermissionCatalog.WalletManage, false);
+        var rows = await db.Giftcards.AsNoTracking().Where(g => g.IsActive).OrderBy(g => g.CardNumber).ThenBy(g => g.Id)
+            .Take(LegacyCatalogReadPolicy.Limit + 1).ToListAsync();
+        LegacyCatalogReadPolicy.RequireComplete(rows.Count > LegacyCatalogReadPolicy.Limit);
+        return rows;
     }
     public async Task<GiftcardEntity?> GetByCardNumberAsync(string cardNumber)
     {
         await using var db = await _factory.CreateDbContextAsync();
+        await (_operations ?? throw new UnauthorizedAccessException("Sesión requerida.")).RequireAsync(db, PermissionCatalog.PosCheckout, false);
         return await db.Giftcards.AsNoTracking().SingleOrDefaultAsync(g => g.CardNumber == cardNumber && g.IsActive);
     }
     public Task<bool> DeductBalanceAsync(string cardNumber, decimal amount) =>
@@ -73,6 +87,14 @@ public sealed class GiftcardService : IGiftcardService
         await using var tx = await db.Database.BeginTransactionAsync();
         var actor = await (_operations ?? throw new UnauthorizedAccessException("Sesión requerida.")).RequireAsync(db, PermissionCatalog.WalletManage);
         if (actor.ShiftId != activeShiftId) throw new InvalidOperationException("La recarga debe pertenecer al turno actual.");
+        await PostRechargeAsync(db, actor, cardId, amount, method, operationId);
+        await db.SaveChangesAsync(); await tx.CommitAsync();
+    }
+
+    // Caller owns authorization and the transaction, including recovery approval.
+    internal static async Task PostRechargeAsync(AppDbContext db, OperationIdentity actor, string cardId,
+        decimal amount, PaymentMethod method, string operationId)
+    {
         await CommandIdentity.BindAsync(db, actor, operationId, "WALLET_LOAD", cardId, amount, method);
         var prior = await db.TransactionJournal.SingleOrDefaultAsync(e => e.OperationId == operationId && e.EventType == "WALLET_LOADED");
         if (prior is not null)
@@ -88,6 +110,5 @@ public sealed class GiftcardService : IGiftcardService
         if (proof is null) await CommercialLedger.CashAsync(db, actor, operationId, card.Id, amount, false, MovementType.RecargaMonedero, "Recarga de monedero");
         else db.IncomingTransferReceipts.Add(IncomingTransferService.Receipt(actor, proof, card.Id));
         CommercialLedger.Journal(db, actor, operationId, "WALLET_LOADED", card.Id, amount, method.ToString());
-        await db.SaveChangesAsync(); await tx.CommitAsync();
     }
 }

@@ -27,7 +27,7 @@ public partial class EscPosPrinterService
             WriteString(ms, "INVENTARIO - CHECKLIST\n");
             ms.Write(DoubleSizeOff, 0, DoubleSizeOff.Length);
             ms.Write(BoldOff, 0, BoldOff.Length);
-            WriteString(ms, $"FECHA: {DateTime.Now:dd/MM/yyyy HH:mm}\n");
+            WriteString(ms, $"FECHA: {Ticketfy.Core.Helpers.BusinessTime.Now:dd/MM/yyyy HH:mm}\n");
             WriteString(ms, "================================================\n");
 
             ms.Write(AlignLeft, 0, AlignLeft.Length);
@@ -38,7 +38,7 @@ public partial class EscPosPrinterService
             {
                 string cod = (p.Barcode ?? p.Id).Length > 10 ? (p.Barcode ?? p.Id).Substring(0, 10) : (p.Barcode ?? p.Id).PadRight(10);
                 string desc = p.Name.Length > 18 ? p.Name.Substring(0, 18) : p.Name.PadRight(18);
-                string stock = p.Stock.ToString("N2").PadLeft(7);
+                string stock = p.Stock.ToString("0.###").PadLeft(7);
 
                 WriteString(ms, $"{cod} {desc} {stock}  [    ]\n");
             }
@@ -86,15 +86,16 @@ public partial class EscPosPrinterService
             {
                 string cod = (p.Barcode ?? p.ProductId).Length > 10 ? (p.Barcode ?? p.ProductId).Substring(0, 10) : (p.Barcode ?? p.ProductId).PadRight(10);
                 string desc = p.Name.Length > 18 ? p.Name.Substring(0, 18) : p.Name.PadRight(18);
-                string stock = p.Quantity.ToString("N2").PadLeft(7);
+                string stock = p.Quantity.ToString("0.###").PadLeft(7);
 
                 WriteString(ms, $"{cod} {desc} {stock}  [    ]\n");
             }
 
             WriteString(ms, "------------------------------------------------\n");
             ms.Write(AlignCenter, 0, AlignCenter.Length);
-            WriteString(ms, $"TOTAL ARTICULOS: {snapshot.TotalItems}\n");
-            WriteString(ms, $"VALOR TOTAL: {snapshot.TotalValue:C}\n");
+            WriteString(ms, $"ARTICULOS EN ESTA IMPRESION: {snapshot.Items.Count}\n");
+            WriteString(ms, $"ARTICULOS DE TODA LA CAPTURA: {snapshot.TotalItems}\n");
+            WriteString(ms, $"VALOR DE TODA LA CAPTURA: {snapshot.TotalValue:C}\n");
             WriteString(ms, "\n\n________________________________\n");
             WriteString(ms, "FIRMA DE SUPERVISOR\n\n\n\n");
             ms.Write(PaperCut, 0, PaperCut.Length);
@@ -111,8 +112,10 @@ public partial class EscPosPrinterService
 
     public Task<bool> PrintPurchaseOrderAsync(PurchaseDto purchase, string printerPortOrName = "")
     {
+        if (!purchase.DetailsAvailable) return Task.FromResult(false);
         try
         {
+            PurchaseDocumentReader.ValidateDetail(purchase);
             using var ms = new MemoryStream();
             ms.Write(EscInit, 0, EscInit.Length);
             ms.Write(new byte[] { 0x1B, 0x74, 0x13 }, 0, 3); // CP858
@@ -144,7 +147,7 @@ public partial class EscPosPrinterService
                 foreach (var item in purchase.Items)
                 {
                     string desc = item.ProductName.Length > 22 ? item.ProductName.Substring(0, 22) : item.ProductName.PadRight(22);
-                    string qty = item.Quantity.ToString("N2").PadLeft(6);
+                    string qty = item.Quantity.ToString("N3").PadLeft(7);
                     string cost = $"${item.TotalPrice:N2}".PadLeft(8);
                     WriteString(ms, $"{desc} {qty} {cost}\n");
                 }
@@ -155,6 +158,10 @@ public partial class EscPosPrinterService
             ms.Write(BoldOn, 0, BoldOn.Length);
             ms.Write(DoubleSizeOn, 0, DoubleSizeOn.Length);
             WriteString(ms, $"TOTAL: ${purchase.TotalCost:N2}\n");
+            WriteString(ms, $"PAGOS DOCUMENTADOS: {purchase.RecordedPaymentsDisplay}\n");
+            WriteString(ms, $"SALDO (+DEUDA/-CREDITO): {purchase.BalanceDisplay}\n");
+            WriteString(ms, purchase.FinancialStatus + "\n");
+            WriteString(ms, "No sustituye comprobantes bancarios.\n");
             ms.Write(DoubleSizeOff, 0, DoubleSizeOff.Length);
             ms.Write(BoldOff, 0, BoldOff.Length);
 

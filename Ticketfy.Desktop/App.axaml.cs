@@ -51,7 +51,7 @@ public partial class App : Application
             string logFilePath = System.IO.Path.Combine(logDirectory, "crash_log.txt");
             string errorBlock = $"--- CRASH REPORT: {DateTime.Now:yyyy-MM-dd HH:mm:ss} ---\n" +
                                 $"Source: {LogSanitizer.Sanitize(source)}\n" +
-                                $"Message: {LogSanitizer.Sanitize(ex.Message)}\n" +
+                                $"Exception: {ex.GetType().FullName} (0x{ex.HResult:X8})\n" +
                                 $"StackTrace: {LogSanitizer.Sanitize(ex.StackTrace)}\n\n";
 
             System.IO.File.AppendAllText(logFilePath, errorBlock);
@@ -68,6 +68,13 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            if (desktop.Args?.Contains("--recovery", StringComparer.Ordinal) == true)
+            {
+                // Recovery never bootstraps or migrates the operational database.
+                desktop.MainWindow = new RecoveryWindow { DataContext = new RecoveryViewModel() };
+                base.OnFrameworkInitializationCompleted();
+                return;
+            }
             Log.Information("TICKETFY! {Version} — Avalonia Native Desktop starting", Ticketfy.Core.Helpers.AppVersionHelper.DisplayVersion);
 
             // Show splash window immediately so user gets instant visual response
@@ -116,16 +123,30 @@ public partial class App : Application
                 {
                     Title = "TICKETFY! — Error de Inicio",
                     Width = 550,
-                    Height = 320,
+                    Height = 420,
                     WindowStartupLocation = Avalonia.Controls.WindowStartupLocation.CenterScreen,
-                    Content = new Avalonia.Controls.TextBlock
+                    Content = new Avalonia.Controls.StackPanel
                     {
-                        Text = $"Error crítico al inicializar la base de datos o servicios de TICKETFY!:\n\n{ex.Message}\n\nDetalles registrados en %LocalAppData%\\ticketfy\\Logs\\crash_log.txt",
                         Margin = new Avalonia.Thickness(25),
-                        TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                        FontSize = 14
+                        Spacing = 16,
+                        Children =
+                        {
+                            new Avalonia.Controls.TextBlock
+                            {
+                                Text = $"No se inició Ticketfy porque falló la validación de la base o los servicios. No opere ni reemplace archivos manualmente.\n\n{ex.Message}\n\nPuede recuperar un paquete integral en otra carpeta; la instalación original se conserva.",
+                                TextWrapping = Avalonia.Media.TextWrapping.Wrap, FontSize = 14
+                            }
+                        }
                     }
                 };
+                var recover = new Avalonia.Controls.Button { Content = "Abrir asistente de recuperación integral" };
+                recover.Click += (_, _) =>
+                {
+                    var wizard = new RecoveryWindow { DataContext = new RecoveryViewModel() };
+                    desktop.MainWindow = wizard;
+                    wizard.Show(); errorWindow.Close();
+                };
+                ((Avalonia.Controls.StackPanel)errorWindow.Content).Children.Add(recover);
                 desktop.MainWindow = errorWindow;
                 errorWindow.Show();
                 splash.Close();

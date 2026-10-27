@@ -14,7 +14,11 @@ namespace Ticketfy.ViewModels;
 public partial class CustomersViewModel : ObservableObject
 {
     private readonly ICustomerService _customerService;
-    private List<CustomerDto> _allCustomers = [];
+    private long _loadVersion;
+    private int _page;
+    [ObservableProperty] private bool _hasNextPage;
+    public bool HasPreviousPage => _page > 0;
+    public string PageDescription => $"Página {_page + 1} · {Customers.Count} clientes";
     public ObservableCollection<CustomerDto> Customers { get; } = [];
 
     [ObservableProperty] private string _searchQuery = string.Empty;
@@ -25,51 +29,63 @@ public partial class CustomersViewModel : ObservableObject
     public event Action<CustomerDto>? OpenAddPaymentRequested;
     public event Action<CustomerDto>? OpenStatementRequested;
 
-    public CustomersViewModel(ICustomerService customerService)
+    public CustomersViewModel(ICustomerService customerService, bool loadOnCreate = true)
     {
         _customerService = customerService;
-        _ = LoadCustomersAsync();
+        if (loadOnCreate) _ = LoadCustomersAsync();
     }
 
     public async Task LoadCustomersAsync()
     {
+        var version = ++_loadVersion;
         try
         {
-            var items = await _customerService.GetAllAsync();
+            var page = await _customerService.GetPageAsync(_page, 100, SearchQuery);
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                _allCustomers = new List<CustomerDto>(items);
-                ApplySearchFilter();
+                if (version != _loadVersion) return;
+                Customers.Clear();
+                foreach (var item in page.Items) Customers.Add(item);
+                HasNextPage = page.HasMore;
+                OnPropertyChanged(nameof(HasPreviousPage));
+                OnPropertyChanged(nameof(PageDescription));
             });
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error loading customers");
+            if (version != _loadVersion) return;
+            Customers.Clear(); HasNextPage = false;
+            IsFeedbackError = true;
+            FeedbackMessage = "No se pudieron consultar los clientes. Verifique su sesión y vuelva a buscar.";
         }
     }
 
     partial void OnSearchQueryChanged(string value)
     {
-        ApplySearchFilter();
+        _page = 0;
+        _ = SearchAfterDelayAsync(++_loadVersion);
     }
 
-    private void ApplySearchFilter()
+    private async Task SearchAfterDelayAsync(long version)
     {
-        Customers.Clear();
-        var q = SearchQuery?.Trim().ToLowerInvariant() ?? string.Empty;
+        await Task.Delay(180);
+        if (version == _loadVersion) await LoadCustomersAsync();
+    }
 
-        foreach (var c in _allCustomers)
-        {
-            if (string.IsNullOrWhiteSpace(q) ||
-                c.Name.ToLowerInvariant().Contains(q) ||
-                (!string.IsNullOrEmpty(c.Phone) && c.Phone.Contains(q)) ||
-                (!string.IsNullOrEmpty(c.Rfc) && c.Rfc.ToLowerInvariant().Contains(q)) ||
-                (!string.IsNullOrEmpty(c.Email) && c.Email.ToLowerInvariant().Contains(q)) ||
-                (!string.IsNullOrEmpty(c.CustomerCode) && c.CustomerCode.ToLowerInvariant().Contains(q)))
-            {
-                Customers.Add(c);
-            }
-        }
+    [RelayCommand] private async Task NextPageAsync() { if (HasNextPage) { ++_page; await LoadCustomersAsync(); } }
+    [RelayCommand] private async Task PreviousPageAsync() { if (_page > 0) { --_page; await LoadCustomersAsync(); } }
+
+    public void ClearSessionData()
+    {
+        SearchQuery = string.Empty;
+        ++_loadVersion;
+        _page = 0;
+        Customers.Clear();
+        HasNextPage = false;
+        FeedbackMessage = string.Empty;
+        OnPropertyChanged(nameof(HasPreviousPage));
+        OnPropertyChanged(nameof(PageDescription));
     }
 
     [RelayCommand]

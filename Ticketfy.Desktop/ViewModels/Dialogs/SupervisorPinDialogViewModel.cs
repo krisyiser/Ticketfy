@@ -3,15 +3,21 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Ticketfy.Core.Models;
 using Ticketfy.Core.Repositories;
+using System.Threading.Tasks;
 
 namespace Ticketfy.ViewModels.Dialogs;
 
-public partial class SupervisorPinDialogViewModel : ObservableObject
+public partial class SupervisorPinDialogViewModel : ObservableObject, Ticketfy.ViewModels.Navigation.IDismissibleDialog
 {
     private readonly IUserRepository _userRepository;
     private readonly Action<bool, UserModel?> _callback;
+    private bool _finished;
+    private long _version;
 
-    [ObservableProperty] private string _enteredPin = string.Empty;
+    [ObservableProperty]
+    private string _password = string.Empty;
+    [ObservableProperty] private bool _isVerifying;
+    [ObservableProperty] private string _username = string.Empty;
     [ObservableProperty] private string _errorMessage = string.Empty;
     [ObservableProperty] private string _actionTitle = "Autorización de Supervisor Requerida";
 
@@ -23,43 +29,48 @@ public partial class SupervisorPinDialogViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void AppendPinDigit(string digit)
-    {
-        if (EnteredPin.Length < 4)
-        {
-            EnteredPin += digit;
-            ErrorMessage = string.Empty;
-            if (EnteredPin.Length == 4)
-            {
-                ValidateAdminAsync();
-            }
-        }
-    }
-
-    [RelayCommand]
     private void ClearPin()
     {
-        EnteredPin = string.Empty;
+        ++_version;
+        Password = string.Empty;
         ErrorMessage = string.Empty;
     }
 
     [RelayCommand]
     private void Cancel()
     {
+        if (_finished) return;
+        _finished = true; ++_version; Password = string.Empty;
         _callback?.Invoke(false, null);
     }
+    public void OnDismissed() => Cancel();
 
-    private async void ValidateAdminAsync()
+    partial void OnUsernameChanged(string value) => ClearPin();
+
+    [RelayCommand]
+    private async Task ApproveAsync()
     {
-        var user = await _userRepository.ValidateAnyPinAsync(EnteredPin);
-        if (user != null && user.Role == SystemRole.ADMIN)
+        if (_finished || IsVerifying) return;
+        long version = _version;
+        if (string.IsNullOrWhiteSpace(Username)) { ErrorMessage = "Indique el usuario del supervisor."; Password = ""; return; }
+        string secret = Password;
+        Password = ""; ErrorMessage = ""; IsVerifying = true;
+        try
         {
-            _callback?.Invoke(true, user);
+            var user = await _userRepository.VerifyPasswordAsync(Username, secret, supervisorOnly: true,
+                isRequestCurrent: () => !_finished && version == _version);
+            if (_finished || version != _version) return;
+            if (user is not null && user.Role == SystemRole.ADMIN)
+            {
+                _finished = true;
+                _callback(true, user);
+            }
+            else ErrorMessage = "Contraseña incorrecta, cuenta bloqueada o sin autorización de supervisor. Si requiere actualizar su clave, hágalo desde la pantalla de acceso. El PIN no autoriza esta acción.";
         }
-        else
+        catch (Exception)
         {
-            ErrorMessage = "PIN de Supervisor / ADMIN Inválido";
-            EnteredPin = string.Empty;
+            if (!_finished && version == _version) ErrorMessage = "No se pudo verificar la autorización.";
         }
+        finally { IsVerifying = false; }
     }
 }

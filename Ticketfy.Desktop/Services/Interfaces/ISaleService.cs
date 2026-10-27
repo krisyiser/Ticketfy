@@ -17,16 +17,19 @@ public interface ISaleService
     Task BeginCheckoutAsync(SaleDto sale);
     Task BeginCheckoutAsync(SaleDto sale, FiscalOutboxRequest? fiscalOutbox) => BeginCheckoutAsync(sale);
     Task MarkPaymentAuthorizedAsync(string operationId, string paymentReference);
-    Task MarkCheckoutFailedAsync(string operationId, string reason, bool requiresReconciliation);
+    Task<Ticketfy.Core.Enums.CheckoutOperationState?> MarkCheckoutFailedAsync(string operationId, string reason, bool requiresReconciliation);
     Task<int> RecoverInterruptedCheckoutsAsync();
     Task ResolveInterruptedCheckoutAsync(string operationId, bool complete, bool fundsVerified, string reason) => throw new NotSupportedException();
     Task<List<PendingCheckoutDto>> GetInterruptedCheckoutsAsync() => throw new NotSupportedException();
+    Task<PendingCheckoutPage> GetInterruptedCheckoutsPageAsync(int size = 100, string? search = null,
+        PendingCheckoutCursor? after = null) => throw new NotSupportedException();
     Task<SaleResultModel> ProcessSaleAsync(SaleCreationDto dto);
     Task<SaleDto?> GetByIdAsync(string saleId);
-    Task<List<SaleDto>> GetHistoryAsync(int limit = 500);
+    Task<List<SaleDto>> GetHistoryAsync(int limit = 200);
     Task CancelAsync(string saleId);
     Task<bool> CancelSaleAsync(string saleId, string reason);
     Task<List<SaleDto>> GetSalesByDateRangeAsync(System.DateTime start, System.DateTime end);
+    Task<SalesHistoryPage> GetHistoryPageAsync(System.DateTime start, System.DateTime end, int page, int size = 100) => throw new NotSupportedException();
     Task UpdateFiscalStatusAsync(string saleId, string status, string? uuid, string? folio);
     Task<bool> ProcessPartialReturnAsync(string saleId, string productId, double returnQty, string reason, string refundMethod = "Efectivo", bool isProductInGoodCondition = true, string? operationId = null);
     /// <summary>

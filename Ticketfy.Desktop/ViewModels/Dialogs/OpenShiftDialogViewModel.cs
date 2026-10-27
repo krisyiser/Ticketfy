@@ -40,6 +40,8 @@ public partial class OpenShiftDialogViewModel : ValidatableViewModelBase
     private async Task OpenShiftAsync()
     {
         if (IsProcessing) return;
+        long version = _sessionManager.SessionVersion;
+        var cashier = _sessionManager.CurrentCashier;
         if (decimal.TryParse(InitialFloatAmount, out decimal parsedAmount))
         {
             if (parsedAmount < 0)
@@ -64,13 +66,25 @@ public partial class OpenShiftDialogViewModel : ValidatableViewModelBase
             ErrorMessage = string.Empty;
 
             var result = await _shiftService.OpenAsync(parsedAmount, _operationId);
+            if (version != _sessionManager.SessionVersion) return;
             if (result != null)
             {
-                if (_sessionManager?.CurrentCashier != null)
+                if (cashier != null)
                 {
-                    await _attendanceService.ClockInAsync(_sessionManager.CurrentCashier.Id.ToString());
+                    try
+                    {
+                        var attendance = await _attendanceService.ClockInAsync(cashier.Id.ToString());
+                        if (!attendance.IsSuccess) Ticketfy.Core.Messages.HardwareFeedbackMessage.Report(
+                            "Turno abierto. La asistencia no se confirmó; solicite revisión al supervisor. No repita el fondo inicial.", true);
+                    }
+                    catch (Exception ex)
+                    {
+                        Serilog.Log.Warning(ex, "Shift opened but attendance requires review");
+                        Ticketfy.Core.Messages.HardwareFeedbackMessage.Report(
+                            "Turno abierto. Falló el registro de asistencia; solicite revisión al supervisor. No repita la apertura.", true);
+                    }
                 }
-                RequestClose?.Invoke(true);
+                if (version == _sessionManager.SessionVersion) RequestClose?.Invoke(true);
             }
             else
             {

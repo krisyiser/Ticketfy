@@ -23,10 +23,10 @@ public sealed partial class Stage6CommercialLedgerTests
     {
         await Sales.SaveAsync(Sale("VERIFY"));
         await ShiftsService().CloseAsync("SHIFT-1", 20m);
-        Assert.True(Assert.Single(await Reconciliation.ReconcileAsync(DateTime.Today)).IsBalanced);
+        Assert.True(Assert.Single(await Reconciliation.ReconcileAsync(Ticketfy.Core.Helpers.BusinessTime.Today)).IsBalanced);
         await using var db = Db();
         await db.Database.ExecuteSqlRawAsync(corruption);
-        var report = Assert.Single(await Reconciliation.ReconcileAsync(DateTime.Today));
+        var report = Assert.Single(await Reconciliation.ReconcileAsync(Ticketfy.Core.Helpers.BusinessTime.Today));
         Assert.False(report.IsBalanced);
         Assert.Contains(report.Issues, issue => issue.Code == "PAYMENT_LEDGER");
     }
@@ -51,7 +51,7 @@ public sealed partial class Stage6CommercialLedgerTests
         await using var db = Db();
         await db.Database.ExecuteSqlRawAsync("DELETE FROM cashups;");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM transaction_journal WHERE event_type='SHIFT_CLOSED';");
-        var report = Assert.Single(await Reconciliation.ReconcileAsync(DateTime.Today));
+        var report = Assert.Single(await Reconciliation.ReconcileAsync(Ticketfy.Core.Helpers.BusinessTime.Today));
         Assert.False(report.IsBalanced);
         Assert.Contains(report.Issues, issue => issue.Code == "CLOSE_EVIDENCE");
     }
@@ -67,7 +67,7 @@ public sealed partial class Stage6CommercialLedgerTests
         await using var db = Db();
         await db.Database.ExecuteSqlRawAsync(corruption);
         int journalCount = await db.TransactionJournal.CountAsync();
-        var report = Assert.Single(await Reconciliation.ReconcileAsync(DateTime.Today));
+        var report = Assert.Single(await Reconciliation.ReconcileAsync(Ticketfy.Core.Helpers.BusinessTime.Today));
         Assert.False(report.IsBalanced);
         Assert.Contains(report.Issues, issue => issue.Code == code);
         Assert.Equal(journalCount, await db.TransactionJournal.CountAsync());
@@ -79,7 +79,7 @@ public sealed partial class Stage6CommercialLedgerTests
         await ShiftsService().CloseAsync("SHIFT-1", 0m);
         await using var db = Db();
         await db.Database.ExecuteSqlRawAsync("UPDATE shifts SET endTime='unreadable-date';");
-        var report = Assert.Single(await Reconciliation.ReconcileAsync(DateTime.Today));
+        var report = Assert.Single(await Reconciliation.ReconcileAsync(Ticketfy.Core.Helpers.BusinessTime.Today));
         Assert.False(report.IsBalanced);
         Assert.Contains(report.Issues, issue => issue.Code == "SHIFT_DATE_INVALID");
     }
@@ -96,7 +96,7 @@ public sealed partial class Stage6CommercialLedgerTests
             ShiftId = "SHIFT-1"
         });
         await db.SaveChangesAsync();
-        Assert.False(Assert.Single(await Reconciliation.ReconcileAsync(DateTime.Today)).IsBalanced);
+        Assert.False(Assert.Single(await Reconciliation.ReconcileAsync(Ticketfy.Core.Helpers.BusinessTime.Today)).IsBalanced);
     }
 
     [Theory]
@@ -138,7 +138,7 @@ public sealed partial class Stage6CommercialLedgerTests
         await ShiftsService().RegisterMovementAsync(10m, false, "Fondo adicional", "EXTRA");
         await ShiftsService().RegisterMovementAsync(5m, true, "Retiro a caja fuerte", "DROP");
         await ShiftsService().CloseAsync(next.Id, 25m);
-        var reports = await Reconciliation.ReconcileAsync(DateTime.Today);
+        var reports = await Reconciliation.ReconcileAsync(Ticketfy.Core.Helpers.BusinessTime.Today);
         Assert.Equal(2, reports.Count);
         Assert.All(reports, report => Assert.True(report.IsBalanced));
     }
@@ -163,10 +163,10 @@ public sealed partial class Stage6CommercialLedgerTests
         var pending = Assert.Single(await Reconciliation.GetPendingRefundsAsync());
         await Reconciliation.SettleRefundAsync(pending.Id, "REFUND-AMOUNT-BANK", "SETTLE-AMOUNT");
         await ShiftsService().CloseAsync("SHIFT-1", 0m);
-        Assert.True(Assert.Single(await Reconciliation.ReconcileAsync(DateTime.Today)).IsBalanced);
+        Assert.True(Assert.Single(await Reconciliation.ReconcileAsync(Ticketfy.Core.Helpers.BusinessTime.Today)).IsBalanced);
         await using var db = Db();
         await db.Database.ExecuteSqlRawAsync("UPDATE refund_settlements SET Amount=1000;");
-        var report = Assert.Single(await Reconciliation.ReconcileAsync(DateTime.Today));
+        var report = Assert.Single(await Reconciliation.ReconcileAsync(Ticketfy.Core.Helpers.BusinessTime.Today));
         Assert.False(report.IsBalanced);
         Assert.Equal(20m, report.PendingRefunds);
         Assert.Contains(report.Issues, issue => issue.Code == "PENDING_REFUND");
@@ -183,7 +183,7 @@ public sealed partial class Stage6CommercialLedgerTests
             Type = "Partial",
             ClosedCashAmount = 1m
         });
-        var report = Assert.Single(await Reconciliation.ReconcileAsync(DateTime.Today));
+        var report = Assert.Single(await Reconciliation.ReconcileAsync(Ticketfy.Core.Helpers.BusinessTime.Today));
         Assert.False(report.IsBalanced);
         Assert.Equal("CASH_DIFFERENCE", Assert.Single(report.Issues).Code);
         await using var db = Db();

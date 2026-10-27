@@ -11,14 +11,14 @@
         <Border Margin="0,0,2,0" Padding="10" Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="{DynamicResource AppCornerRadius}">
             <StackPanel Spacing="4">
                 <TextBlock Text="Fondo Inicial (Apertura)" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}" ToolTip.Tip="Monto con el que se abrió la caja en el turno activo" />
-                <TextBlock Text="{Binding FondoInicial, StringFormat='${0:N2}'}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
+                <TextBlock Text="{Binding OpeningBalanceDisplay}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
             </StackPanel>
         </Border>
 
         <!-- 2. INGRESOS (VENTAS) -->
         <Border Margin="2,0" Padding="10" Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="{DynamicResource AppCornerRadius}">
             <StackPanel Spacing="4">
-                <TextBlock Text="Ingresos (Ventas)" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}" ToolTip.Tip="Total bruto de ventas del turno activo (Efectivo + Tarjetas)" />
+                <TextBlock Text="Ventas netas" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}" ToolTip.Tip="Ventas menos devoluciones del período, incluidos crédito y monedero. Los abonos no vuelven a contarse como ventas." />
                 <TextBlock Text="{Binding Ingresos, StringFormat='${0:N2}'}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource AccentSuccessBrush}" />
             </StackPanel>
         </Border>
@@ -26,7 +26,7 @@
         <!-- 3. EGRESOS (GASTOS) -->
         <Border Margin="2,0" Padding="10" Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="{DynamicResource AppCornerRadius}">
             <StackPanel Spacing="4">
-                <TextBlock Text="Egresos (Gastos)" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}" ToolTip.Tip="Gastos operativos registrados en el turno" />
+                <TextBlock Text="Gastos operativos netos" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}" ToolTip.Tip="Gastos menos cancelaciones del período. No incluye compras de inventario ni retiros de caja." />
                 <TextBlock Text="{Binding Egresos, StringFormat='${0:N2}'}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource AccentDangerBrush}" />
             </StackPanel>
         </Border>
@@ -34,7 +34,7 @@
         <!-- 4. PAGOS CON TARJETA / TRANSF. -->
         <Border Margin="2,0" Padding="10" Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="{DynamicResource AppCornerRadius}">
             <StackPanel Spacing="4">
-                <TextBlock Text="Pagos con Tarjeta / Transf." FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}" ToolTip.Tip="Ventas cobradas con Tarjeta, Débito, Crédito o Transferencias" />
+                <TextBlock Text="Cobros netos tarjeta / transf." FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}" ToolTip.Tip="Cobros de ventas y abonos confirmados, menos reembolsos confirmados a clientes. No equivale a utilidad ni al saldo bancario; excluye compras, gastos, comisiones y recargas de monedero." />
                 <TextBlock Text="{Binding PagosConTarjeta, StringFormat='${0:N2}'}" FontSize="15" FontWeight="Bold" Foreground="#3B82F6" />
             </StackPanel>
         </Border>
@@ -43,7 +43,7 @@
         <Border Margin="2,0" Padding="10" Background="{DynamicResource BgTertiaryBrush}" BorderBrush="{DynamicResource AccentPrimaryBrush}" BorderThickness="2" CornerRadius="{DynamicResource AppCornerRadius}">
             <StackPanel Spacing="4">
                 <TextBlock Text="Efectivo esperado: turno actual" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" ToolTip.Tip="Fondo inicial más todos los movimientos del turno. No sustituye el arqueo físico." />
-                <TextBlock Text="{Binding TotalEnCaja, StringFormat='${0:N2}'}" FontSize="15" FontWeight="ExtraBold" Foreground="{DynamicResource AccentPrimaryBrush}" />
+                <TextBlock Text="{Binding CashBalanceDisplay}" FontSize="15" FontWeight="ExtraBold" Foreground="{DynamicResource AccentPrimaryBrush}" />
             </StackPanel>
         </Border>
 
@@ -58,7 +58,7 @@
         <!-- 7. UTILIDAD NETA (GANANCIA) -->
         <Border Margin="2,0,0,0" Padding="10" Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{Binding UtilidadNetaColor}" BorderThickness="2" CornerRadius="{DynamicResource AppCornerRadius}">
             <StackPanel Spacing="4">
-                <TextBlock Text="Utilidad Neta (Ganancia)" FontSize="11" FontWeight="Bold" Foreground="{Binding UtilidadNetaColor}" ToolTip.Tip="Ventas - Costo de Productos - Gastos Operativos" />
+                <TextBlock Text="Resultado comercial" FontSize="11" FontWeight="Bold" Foreground="{Binding UtilidadNetaColor}" ToolTip.Tip="Ventas netas menos costo histórico y gastos registrados. No sustituye utilidad contable, impuestos, comisiones bancarias ni depreciaciones no registradas." />
                 <TextBlock Text="{Binding UtilidadNeta, StringFormat='${0:N2}'}" FontSize="15" FontWeight="Bold" Foreground="{Binding UtilidadNetaColor}" />
             </StackPanel>
         </Border>

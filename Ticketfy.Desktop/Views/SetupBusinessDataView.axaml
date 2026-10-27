@@ -19,11 +19,11 @@
                     <TextBlock Text="Configure la información principal de su comercio" FontSize="13" Foreground="{DynamicResource TextMutedBrush}" HorizontalAlignment="Center" />
                 </StackPanel>
 
-                <StackPanel Spacing="14">
+                <StackPanel Spacing="14" IsEnabled="{Binding CanEdit}">
                     <!-- 1. Nombre del Negocio -->
                     <StackPanel Spacing="4">
                         <TextBlock Text="Nombre del Negocio *" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                        <TextBox Text="{Binding BusinessName, Mode=TwoWay}" Watermark="Ej. Abarrotes San José" Background="{DynamicResource BgTertiaryBrush}" Padding="10,8" />
+                        <TextBox Text="{Binding BusinessName, Mode=TwoWay}" MaxLength="256" Watermark="Ej. Abarrotes San José" Background="{DynamicResource BgTertiaryBrush}" Padding="10,8" />
                     </StackPanel>
 
                     <!-- 2. Teléfono del Negocio (10 dígitos obligatorio) -->
@@ -35,17 +35,18 @@
                     <!-- 3. Correo Electrónico Principal -->
                     <StackPanel Spacing="4">
                         <TextBlock Text="Correo Electrónico Principal (Opcional)" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                        <TextBox Text="{Binding Email, Mode=TwoWay}" Watermark="contacto@negocio.com" Background="{DynamicResource BgTertiaryBrush}" Padding="10,8" />
+                        <TextBox Text="{Binding Email, Mode=TwoWay}" MaxLength="254" Watermark="contacto@negocio.com" Background="{DynamicResource BgTertiaryBrush}" Padding="10,8" />
                     </StackPanel>
 
                     <!-- 4. Dirección del Negocio -->
                     <StackPanel Spacing="4">
                         <TextBlock Text="Dirección / Ubicación (Opcional)" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                        <TextBox Text="{Binding Address, Mode=TwoWay}" Watermark="Ej. Av. Hidalgo #123, Col. Centro" Background="{DynamicResource BgTertiaryBrush}" Padding="10,8" />
+                        <TextBox Text="{Binding Address, Mode=TwoWay}" MaxLength="512" Watermark="Ej. Av. Hidalgo #123, Col. Centro" Background="{DynamicResource BgTertiaryBrush}" Padding="10,8" />
                     </StackPanel>
 
-                    <controls:AlertBannerControl Message="{Binding ErrorMessage}" IsError="True" />
                 </StackPanel>
+                <controls:AlertBannerControl Message="{Binding ErrorMessage}" IsError="True" />
+                <Button Command="{Binding ReloadCommand}" Content="Reintentar carga" IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
                 <Grid ColumnDefinitions="*,12,*">
                     <Button Grid.Column="0" Command="{Binding GoBackCommand}" Background="{DynamicResource BgTertiaryBrush}" Foreground="{DynamicResource TextPrimaryBrush}" Height="44" HorizontalAlignment="Stretch">

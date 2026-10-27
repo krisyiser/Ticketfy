@@ -1,0 +1,51 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:vm="using:Ticketfy.ViewModels.Directories" x:Class="Ticketfy.Views.KitDirectoryView" x:DataType="vm:KitDirectoryViewModel">
+ <Grid RowDefinitions="Auto,Auto,*,Auto,*">
+  <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
+   <TextBox Text="{Binding SearchQuery}" Watermark="Nombre, código o identificador de combo" />
+   <Button Grid.Column="1" Content="Buscar" Command="{Binding SearchCommand}" />
+   <Button Grid.Column="2" Content="Anterior" Command="{Binding PreviousCommand}" />
+   <Button Grid.Column="3" Content="Siguiente" Command="{Binding NextCommand}" />
+   <Button Grid.Column="4" Content="Actualizar" Command="{Binding RefreshCommand}" />
+  </Grid>
+  <StackPanel Grid.Row="1" Spacing="4" Margin="0,8">
+   <CheckBox Content="Incluir inactivos y vínculos por revisar" IsChecked="{Binding IncludeInactive}" />
+   <TextBlock Text="{Binding PageLabel}" />
+   <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
+   <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" />
+  </StackPanel>
+  <DataGrid Grid.Row="2" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedItem}"
+            AutoGenerateColumns="False" IsReadOnly="True" MinHeight="100">
+   <DataGrid.Columns>
+    <DataGridTextColumn Header="Código" Binding="{Binding Barcode}" Width="*" />
+    <DataGridTextColumn Header="Combo" Binding="{Binding Name}" Width="2*" />
+    <DataGridTextColumn Header="Precio POS" Binding="{Binding Price, StringFormat='{}{0:C2}'}" Width="*" />
+    <DataGridTextColumn Header="Partidas" Binding="{Binding ComponentCount}" Width="*" />
+    <DataGridTextColumn Header="Estado" Binding="{Binding Status}" Width="2*" />
+   </DataGrid.Columns>
+  </DataGrid>
+  <StackPanel Grid.Row="3" Spacing="6" Margin="0,8">
+   <StackPanel Orientation="Horizontal" Spacing="8">
+    <Button Content="Nuevo combo" Command="{Binding CreateCommand}" />
+    <Button x:Name="EditKitButton" Content="Editar combo" Command="{Binding EditCommand}" />
+    <Button x:Name="KitStatusButton" Content="{Binding StatusButtonText}" Command="{Binding ToggleStatusCommand}" />
+   </StackPanel>
+   <TextBlock Text="{Binding ActionMessage}" TextWrapping="Wrap" />
+   <StackPanel Orientation="Horizontal" Spacing="8" IsEnabled="{Binding !IsReadingComponents}">
+    <Button Content="Consultar composición" Command="{Binding ReadComponentsCommand}" />
+    <Button Content="Componentes anteriores" Command="{Binding PreviousComponentsCommand}" IsEnabled="{Binding HasPreviousComponents}" />
+    <Button Content="Más componentes" Command="{Binding OlderComponentsCommand}" IsEnabled="{Binding HasMoreComponents}" />
+   </StackPanel>
+   <ScrollViewer MaxHeight="90">
+    <TextBlock Text="{Binding CompositionSummary}" TextWrapping="Wrap" />
+   </ScrollViewer>
+  </StackPanel>
+  <DataGrid Grid.Row="4" ItemsSource="{Binding Components}" AutoGenerateColumns="False" IsReadOnly="True" MinHeight="100">
+   <DataGrid.Columns>
+    <DataGridTextColumn Header="Producto (ID)" Binding="{Binding ProductId}" Width="*" />
+    <DataGridTextColumn Header="Componente" Binding="{Binding ProductName}" Width="2*" />
+    <DataGridTextColumn Header="Cantidad" Binding="{Binding Quantity, StringFormat='{}{0:N3}'}" Width="*" />
+   </DataGrid.Columns>
+  </DataGrid>
+ </Grid>
+</UserControl>

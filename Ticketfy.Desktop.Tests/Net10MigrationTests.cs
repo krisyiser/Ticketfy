@@ -11,6 +11,60 @@ namespace Ticketfy.Desktop.Tests;
 
 public sealed class Net10MigrationTests
 {
+    [Fact]
+    public async Task AttendanceUpgradePreservesDuplicateHistoryForReviewAndPreventsNewActiveDuplicates()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        var migrator = db.GetService<IMigrator>();
+        await migrator.MigrateAsync("20261019110700_ProtectInventorySnapshots");
+        var user = new UserEntity { Id = Guid.NewGuid(), Username = "attendance-upgrade", FullName = "Synthetic duplicate" };
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO usuarios (id,nombre,username,rol,role_string,password_hash,pin_checador_hash,estatus,password_hint)
+            VALUES ({user.Id},{user.FullName},{user.Username},2,'CAJERO','','',1,'');
+            """);
+        var originalStart = new DateTime(2025, 1, 1, 8, 0, 0);
+        db.Attendances.AddRange(
+            new AttendanceEntity { Id = "DUP-A", UserId = user.Id, CheckInTime = originalStart, TerminalName = "TEST-A" },
+            new AttendanceEntity { Id = "DUP-B", UserId = user.Id, CheckInTime = originalStart, TerminalName = "TEST-B" });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        await migrator.MigrateAsync();
+        await migrator.MigrateAsync();
+        var preserved = await db.Attendances.AsNoTracking().ToListAsync();
+        Assert.Equal(2, preserved.Count);
+        Assert.All(preserved, entry =>
+        {
+            Assert.Equal(Ticketfy.Core.Enums.AttendanceStatus.IncompleteAnomaly, entry.Status);
+            Assert.Equal(originalStart, entry.CheckInTime);
+            Assert.Null(entry.CheckOutTime);
+        });
+        Assert.Equal(2, await db.TransactionJournal.CountAsync(j => j.EventType == "ATTENDANCE_DUPLICATE_REVIEW"));
+        db.Attendances.Add(new AttendanceEntity { Id = "NEW-A", UserId = user.Id, TerminalName = "TEST-A" });
+        await db.SaveChangesAsync();
+        db.Attendances.Add(new AttendanceEntity { Id = "NEW-B", UserId = user.Id, TerminalName = "TEST-B" });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task InventoryCaptureUpgradePreservesLegacyQuantityAndMakesSnapshotsImmutable()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        var migrator = db.GetService<IMigrator>();
+        await migrator.MigrateAsync("20261019102724_DurableCreditRefundRequests");
+        await db.Database.ExecuteSqlRawAsync("INSERT INTO InventorySnapshots (Id, CreatedAt, Notes, TotalItems, TotalValue) VALUES ('OLD-CAPTURE','2025-01-01','Synthetic',1,125);");
+        await db.Database.ExecuteSqlRawAsync("INSERT INTO InventorySnapshotItems (Id, SnapshotId, ProductId, Barcode, Name, Quantity, CostPrice, SellingPrice) VALUES ('OLD-ITEM','OLD-CAPTURE','P','P','Synthetic',125,100,200);");
+        await migrator.MigrateAsync();
+        await migrator.MigrateAsync();
+        Assert.Equal(1.25m, (await db.InventorySnapshotItems.SingleAsync()).Quantity);
+        Assert.Equal(1.25m, (await db.InventorySnapshots.SingleAsync()).TotalValue);
+        await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlRawAsync("UPDATE InventorySnapshotItems SET Quantity=0 WHERE Id='OLD-ITEM';"));
+        await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlRawAsync("DELETE FROM InventorySnapshots WHERE Id='OLD-CAPTURE';"));
+    }
+
     public static IEnumerable<object[]> MigrationCheckpoints()
     {
         using var context = new AppDbContextFactory().CreateDbContext([]);

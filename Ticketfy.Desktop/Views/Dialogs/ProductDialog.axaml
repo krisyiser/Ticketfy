@@ -15,7 +15,7 @@
         <DockPanel LastChildFill="True">
             <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,20">
                 <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
-                <TextBlock Text="Ingrese el código de barras, descripción, precios, número de serie y atributos del producto." FontSize="12" Foreground="{DynamicResource TextMutedBrush}" />
+                <TextBlock Text="Código, descripción, precios y niveles de inventario del producto." FontSize="12" Foreground="{DynamicResource TextMutedBrush}" />
             </StackPanel>
 
             <StackPanel DockPanel.Dock="Bottom" Margin="0,20,0,0" Spacing="12">
@@ -81,8 +81,15 @@
                                 </StackPanel>
                             </Grid>
 
+                            <Grid ColumnDefinitions="*,Auto,Auto">
+                                <TextBox Text="{Binding SupplierSearch}" Watermark="Buscar proveedor por nombre" />
+                                <Button Grid.Column="1" Content="Buscar" Command="{Binding SearchSuppliersCommand}" Margin="6,0" />
+                                <Button Grid.Column="2" Content="Sin proveedor" Command="{Binding ClearSupplierCommand}" />
+                            </Grid>
+                            <TextBlock Text="{Binding SupplierLookupMessage}" TextWrapping="Wrap" FontSize="11" />
+
                             <!-- BULK / GRANEL INFORMATIVE BANNER (SIN CHECKBOX REDUNDANTE) -->
-                            <Border IsVisible="{Binding IsBulkAllowed}" Margin="0,6,0,0" Padding="12,10" CornerRadius="6" Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                            <Border IsVisible="{Binding IsBulk}" Margin="0,6,0,0" Padding="12,10" CornerRadius="6" Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                                 <StackPanel Orientation="Horizontal" Spacing="10">
                                     <mi:MaterialIcon Kind="ScaleBalance" Width="20" Height="20" Foreground="{DynamicResource AccentPrimaryBrush}" VerticalAlignment="Center" />
                                     <StackPanel VerticalAlignment="Center" Spacing="2">
@@ -102,7 +109,7 @@
                             <Grid ColumnDefinitions="*,*">
                                 <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,6,0">
                                     <TextBlock Text="Costo ($) *" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                                    <controls:NumericTextBox AllowDecimals="True" Text="{Binding CostPrice, Mode=TwoWay, Converter={StaticResource StringToDoubleConverter}}" Watermark="0.00" Background="{DynamicResource BgSecondaryBrush}" Padding="8" />
+                                    <controls:NumericTextBox IsEnabled="{Binding CostsVisible}" AllowDecimals="True" Text="{Binding CostPrice, Mode=TwoWay, Converter={StaticResource StringToDoubleConverter}}" Watermark="0.00" Background="{DynamicResource BgSecondaryBrush}" Padding="8" />
                                 </StackPanel>
 
                                 <StackPanel Grid.Column="1" Spacing="4" Margin="6,0,0,0">

@@ -30,11 +30,22 @@ public sealed class Stage2SecurityTests
         await using var context = new AppDbContext(options);
         await context.Database.EnsureCreatedAsync();
 
-        var entity = new UserEntity { Id = Guid.NewGuid(), Username = "cashier", FullName = "Cashier", PinCode = "1234", IsActive = true };
+        var entity = new UserEntity
+        {
+            Id = Guid.NewGuid(),
+            Username = "cashier",
+            FullName = "Cashier",
+            PasswordHash = SecurityManager.HashPassword("Legacy-primary-password"),
+            PinCode = "1234",
+            IsActive = true
+        };
         context.Users.Add(entity);
         await context.SaveChangesAsync();
 
-        var repository = new UserRepository(context);
+        var quickAccess = new QuickAccessSession();
+        var repository = new UserRepository(context, quickAccess: quickAccess);
+        Assert.Null(await repository.ValidatePinAsync("cashier", "1234"));
+        Assert.NotNull(await new UserService(context, quickAccess: quickAccess).AuthenticateAsync("cashier", "Legacy-primary-password"));
         var result = await repository.ValidatePinAsync("cashier", "1234");
 
         Assert.NotNull(result);
@@ -53,9 +64,20 @@ public sealed class Stage2SecurityTests
         await using var context = new AppDbContext(options);
         await context.Database.EnsureCreatedAsync();
         string username = $"locked-{Guid.NewGuid():N}";
-        context.Users.Add(new UserEntity { Id = Guid.NewGuid(), Username = username, FullName = "Locked", PinCode = "4321", IsActive = true });
+        context.Users.Add(new UserEntity
+        {
+            Id = Guid.NewGuid(),
+            Username = username,
+            FullName = "Locked",
+            PasswordHash = SecurityManager.HashPassword("Primary-test-credential"),
+            PinCode = "4321",
+            IsActive = true
+        });
         await context.SaveChangesAsync();
-        var repository = new UserRepository(context);
+        var quickAccess = new QuickAccessSession();
+        var repository = new UserRepository(context, quickAccess: quickAccess);
+        Assert.NotNull(await new UserService(context, quickAccess: quickAccess).AuthenticateAsync(username, "Primary-test-credential"));
+        Assert.NotNull(await repository.ValidatePinAsync(username, "4321"));
 
         for (int i = 0; i < 5; i++) Assert.Null(await repository.ValidatePinAsync(username, "0000"));
         Assert.Null(await repository.ValidatePinAsync(username, "4321"));

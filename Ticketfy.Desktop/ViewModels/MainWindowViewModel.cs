@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Ticketfy.Data;
 using Ticketfy.Services;
 using Ticketfy.Services.Implementations;
@@ -18,6 +19,7 @@ using Ticketfy.Core.Models;
 using Ticketfy.Core.Repositories;
 using Serilog;
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Ticketfy.Core.Configuration;
 
@@ -29,6 +31,7 @@ namespace Ticketfy.ViewModels;
 /// </summary>
 public partial class MainWindowViewModel : ObservableObject
 {
+    private readonly ISettingsService _settingsService;
     // ── Sub-VM Composition ──────────────────────────────────────────────────
     public NavigationService Navigation { get; }
     public DialogCoordinator Dialogs { get; }
@@ -36,6 +39,7 @@ public partial class MainWindowViewModel : ObservableObject
     public LockScreenViewModel LockScreen { get; }
     public TutorialCoordinatorViewModel Tutorial { get; }
     public HardwareStatusViewModel Hardware { get; }
+    public MaintenanceStatusViewModel Maintenance { get; }
 
     // ── Passthrough bindings for MainWindow.axaml compatibility ─────────────
     public ObservableObject ActiveViewModel => Navigation.ActiveViewModel;
@@ -81,66 +85,49 @@ public partial class MainWindowViewModel : ObservableObject
         };
 
         // ── Database setup ───────────────────────────────────────────────────
-        AppDataPaths.EnsureRequiredDirectories();
-
-        string securePassword = SecurityManager.GetMasterKey();
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite($"Data Source={AppDataPaths.DatabaseFile};Password={securePassword};Cache=Shared;Mode=ReadWriteCreate;")
-            .AddInterceptors(new Ticketfy.Data.Interceptors.SlowQueryInterceptor())
-            .Options;
-
-        var db = new AppDbContext(options);
-        var dbContextFactory = new Ticketfy.Data.AppDbContextFactoryImpl<AppDbContext>(options);
-
-        var auditOptions = new DbContextOptionsBuilder<AuditDbContext>()
-            .UseSqlite($"Data Source={AppDataPaths.AuditDatabaseFile};")
-            .Options;
-        var auditContextFactory = new Ticketfy.Data.AppDbContextFactoryImpl<AuditDbContext>(auditOptions);
-
-        // ── Background workers ───────────────────────────────────────────────
-        _ = new AuditArchivingWorker(auditContextFactory).StartAsync(default);
-        var coOccurrenceQueue = new CoOccurrenceQueue();
-        _ = new CoOccurrenceWorker(coOccurrenceQueue, dbContextFactory).StartAsync(default);
-        _ = new AlertBackgroundWorker(dbContextFactory).StartAsync(default);
+        // Factories and workers belong to the application container, not to a window instance.
+        var runtime = App.Current?.Services ?? throw new InvalidOperationException("Los servicios de la aplicación no se han inicializado.");
+        var dbContextFactory = runtime.GetRequiredService<IDbContextFactory<AppDbContext>>();
+        var coOccurrenceQueue = runtime.GetRequiredService<CoOccurrenceQueue>();
 
         // ── Services ─────────────────────────────────────────────────────────
-        var backupService =
-            (App.Current?.Services?.GetService(typeof(IBackupService)) as IBackupService)
-            ?? new BackupService();
-        var diagnosticService =
-            (App.Current?.Services?.GetService(typeof(IDiagnosticExportService)) as IDiagnosticExportService)
-            ?? new DiagnosticExportService();
-        var operationalTelemetry =
-            (App.Current?.Services?.GetService(typeof(IOperationalTelemetry)) as IOperationalTelemetry)
-            ?? new LocalOperationalTelemetry();
+        var backupService = runtime.GetRequiredService<IBackupService>();
+        var diagnosticService = runtime.GetRequiredService<IDiagnosticExportService>();
+        var operationalTelemetry = runtime.GetRequiredService<IOperationalTelemetry>();
+        Maintenance = new MaintenanceStatusViewModel(runtime.GetRequiredService<Ticketfy.Core.Operations.MaintenanceHealth>(),
+            runtime.GetRequiredService<AuditVerificationCoordinator>(), diagnosticService);
         var permissionEngine = new UserRolePermissionEngine(new SettingsService(dbContextFactory));
         var sessionManager = new SessionManager();
+        var quickAccess = new Ticketfy.Services.Security.QuickAccessSession();
+        sessionManager.CashierChanged += user => { if (user is null) quickAccess.Clear(); };
         var operations = new Ticketfy.Services.CommercialOperationContext(sessionManager, permissionEngine,
             Environment.GetEnvironmentVariable("TICKETFY_REGISTER_ID") ?? "POS-" + Environment.MachineName);
         var settingsService = new SettingsService(dbContextFactory, operations);
+        _settingsService = settingsService;
         var printerService = new EscPosPrinterService(settingsService);
         Hardware = new HardwareStatusViewModel(settingsService);
         var productService = new ProductService(dbContextFactory, operations);
         var customerService = new CustomerService(dbContextFactory, operations);
-        var auditService = new AuditService(auditContextFactory);
+        var auditService = runtime.GetRequiredService<IAuditService>();
         var saleService = new SaleService(dbContextFactory, coOccurrenceQueue, auditService, operations);
         var promotionService = new PromotionService(dbContextFactory, operations);
-        var giftcardService = new GiftcardService(db, operations);
+        var giftcardService = new GiftcardService(dbContextFactory, operations);
         var supplierService = new SupplierService(dbContextFactory, operations);
         var purchaseService = new PurchaseService(dbContextFactory, operations);
         var expenseService = new ExpenseService(dbContextFactory, operations);
         Func<string> auditActor = () => sessionManager.CurrentCashier?.Id.ToString() ?? "SYSTEM";
-        var userService = new UserService(db, auditService, auditActor, operations);
-        var terminalService = new MercadoPagoTerminalService(new System.Net.Http.HttpClient(), settingsService, contextFactory: dbContextFactory);
-        var shiftNoteService = new ShiftNoteService(db);
-        var kitService = new ItemKitService(db, operations);
-        var predictiveService = new PredictiveIntelligenceService(dbContextFactory);
+        var userService = new UserService(dbContextFactory, auditService, auditActor, operations, quickAccess: quickAccess);
+        var terminalService = new MercadoPagoTerminalService(new System.Net.Http.HttpClient(), settingsService, contextFactory: dbContextFactory,
+            maintenance: runtime.GetRequiredService<Ticketfy.Core.Operations.MaintenanceHealth>(), operations: operations);
+        var shiftNoteService = new ShiftNoteService(dbContextFactory, operations);
+        var kitService = new ItemKitService(dbContextFactory, operations);
+        var predictiveService = new PredictiveIntelligenceService(dbContextFactory, operations);
         var externalCatalogService = new ExternalCatalogService(new System.Net.Http.HttpClient());
-        var performanceAnalyticsService = new PerformanceAnalyticsService(db, operations);
-        var attendanceService = new AttendanceService(db);
+        var performanceAnalyticsService = new PerformanceAnalyticsService(dbContextFactory, operations);
+        var attendanceService = new AttendanceService(dbContextFactory, operations);
         var authService = new AuthService(userService, permissionEngine);
         var shiftService = new ShiftService(dbContextFactory, operations);
-        var userRepository = new UserRepository(db, permissionEngine, auditService, auditActor, operations);
+        var userRepository = new UserRepository(dbContextFactory, permissionEngine, auditService, auditActor, operations, quickAccess: quickAccess);
 
         var certificateGenerator = new CertificateGeneratorService();
         var printDispatcherService = new PrintDispatcherService(printerService, certificateGenerator, dbContextFactory, settingsService);
@@ -149,7 +136,12 @@ public partial class MainWindowViewModel : ObservableObject
         var securityService = new SecurityInterceptionService(userRepository);
         securityService.RequestSupervisorPinDialog += (title, callback) =>
         {
-            var dialog = new SupervisorPinDialogViewModel(userRepository, title, callback);
+            SupervisorPinDialogViewModel? dialog = null;
+            dialog = new SupervisorPinDialogViewModel(userRepository, title, (authorized, user) =>
+            {
+                bool current = Dialogs.TryCloseDialog(dialog);
+                callback(current && authorized, current ? user : null);
+            });
             Dialogs.ShowDialog(dialog);
         };
 
@@ -163,19 +155,25 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         // ── Module ViewModels ─────────────────────────────────────────────────
-        var posVm = new PosViewModel(productService, db, shiftNoteService, kitService, customerService,
-            sessionManager, userRepository, promotionService, auditService, attendanceService,
-            predictiveService, externalCatalogService);
-        var inventoryVm = new InventoryViewModel(productService, externalCatalogService, purchaseService, predictiveService, printerService);
-        var customersVm = new CustomersViewModel(customerService);
-        var historyVm = new HistoryViewModel(saleService, printerService, db, settingsService, shiftService);
-        var promotionsVm = new PromotionsViewModel(promotionService, kitService);
-        var fiscalVm = new FiscalViewModel(saleService, fiscalQueue);
-        var cashierPerformanceVm = new CashierPerformanceViewModel(performanceAnalyticsService, attendanceService);
+        var posVm = new PosViewModel(productService, shiftNoteService, customerService,
+            sessionManager, promotionService,
+            predictiveService, externalCatalogService, loadOnCreate: false);
+        var inventoryVm = new InventoryViewModel(productService, externalCatalogService, purchaseService, predictiveService, printerService,
+            new InventorySnapshotService(dbContextFactory, operations), loadOnCreate: false);
+        var customersVm = new CustomersViewModel(customerService, loadOnCreate: false);
+        var historyVm = new HistoryViewModel(saleService, printerService, settingsService, shiftService, loadOnCreate: false);
+        var promotionsVm = new PromotionsViewModel(promotionService, kitService, loadOnCreate: false);
+        var fiscalVm = new FiscalViewModel(saleService, fiscalQueue, loadOnCreate: false);
+        var cashierPerformanceVm = new CashierPerformanceViewModel(performanceAnalyticsService, attendanceService, loadOnCreate: false);
+        async Task AuthorizeSettingsSection(string permission)
+        {
+            await using var db = await dbContextFactory.CreateDbContextAsync();
+            await operations.RequireAsync(db, permission, false);
+        }
         var settingsVm = new SettingsViewModel(userService, settingsService, backupService, auditService, auditActor,
-            diagnosticService, operationalTelemetry);
-        var suppliersVm = new SuppliersViewModel(supplierService, purchaseService, productService, printerService);
-        var expensesVm = new ExpensesViewModel(expenseService, shiftService);
+            diagnosticService, operationalTelemetry, new RecoveryBundleService(dbContextFactory, operations), AuthorizeSettingsSection);
+        var suppliersVm = new SuppliersViewModel(supplierService, purchaseService, productService, printerService, loadOnCreate: false);
+        var expensesVm = new ExpensesViewModel(expenseService, loadOnCreate: false);
         var loginVm = new LoginViewModel(authService, sessionManager,
             new DialogService((vmObj) =>
             {
@@ -186,9 +184,22 @@ public partial class MainWindowViewModel : ObservableObject
 
         // ── Navigation Service ───────────────────────────────────────────────
         Navigation = new NavigationService(loginVm, posVm, inventoryVm, customersVm, historyVm,
-            promotionsVm, fiscalVm, settingsVm, suppliersVm, expensesVm, cashierPerformanceVm, operations, dbContextFactory);
-        Navigation.CommercialControl = new CommercialControlViewModel(productService, customerService, supplierService,
-            purchaseService, shiftService, giftcardService, new CommercialReconciliationService(dbContextFactory, operations), dbContextFactory, operations, saleService);
+            promotionsVm, fiscalVm, settingsVm, suppliersVm, expensesVm, cashierPerformanceVm, operations, dbContextFactory, sessionManager);
+        CommercialControlViewModel CreateCommercialControl() => new(productService, customerService, supplierService,
+            purchaseService, shiftService, giftcardService, new CommercialReconciliationService(dbContextFactory, operations), dbContextFactory, operations, saleService, terminalService);
+        Navigation.CommercialControl = CreateCommercialControl();
+        Navigation.SessionInvalidated += () =>
+        {
+            Dialogs.CloseDialog();
+            CloseSecondaryWindows();
+            Navigation.CommercialControl = CreateCommercialControl();
+        };
+        sessionManager.LockStateChanged += locked =>
+        {
+            if (!locked) return;
+            Dialogs.CloseDialog();
+            CloseSecondaryWindows();
+        };
         Navigation.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(NavigationService.ActiveViewModel))
@@ -219,7 +230,7 @@ public partial class MainWindowViewModel : ObservableObject
         Tutorial.PropertyChanged += (_, _) => OnPropertyChanged(nameof(ActiveTutorialVm));
 
         // ── ShiftCoordinator ─────────────────────────────────────────────────
-        var shiftCoordinator = new ShiftCoordinatorViewModel(db, shiftService, sessionManager,
+        var shiftCoordinator = new ShiftCoordinatorViewModel(shiftService, sessionManager,
             printerService, backupService, attendanceService);
         shiftCoordinator.ShowDialogRequested += Dialogs.ShowDialog;
         shiftCoordinator.CloseDialogRequested += Dialogs.CloseDialog;
@@ -227,7 +238,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         // ── DialogWirer ──────────────────────────────────────────────────────
         var wirer = new DialogWirer(Dialogs, productService, customerService, saleService,
-            printerService, printDispatcherService, giftcardService, db, shiftService,
+            printerService, printDispatcherService, giftcardService, shiftService,
             sessionManager, userRepository, backupService, attendanceService, auditService,
             terminalService, kitService, shiftNoteService, new CommercialReconciliationService(dbContextFactory, operations), new CategoryService(dbContextFactory, operations));
 
@@ -254,15 +265,37 @@ public partial class MainWindowViewModel : ObservableObject
         // ── Login post-action ─────────────────────────────────────────────────
         loginVm.LoginSuccessful += async () =>
         {
-            Navigation.GoToPos();
-            posVm.RegisterMessages();
-            _ = posVm.LoadProductsAsync();
-
-            var shiftSuccess = await shiftCoordinator.ValidateShiftStatusAsync();
-            if (shiftSuccess)
+            var loginVersion = sessionManager.SessionVersion;
+            try
             {
-                WeakReferenceMessenger.Default.Send(new Ticketfy.Core.Messages.FocusSearchMessage());
-                _ = Tutorial.TryStartSidebarTourAsync();
+                var stage = await settingsService.GetInitialSetupStageAsync();
+                if (loginVersion != sessionManager.SessionVersion) return;
+                if (stage is InitialSetupStage.Business or InitialSetupStage.Staff)
+                {
+                    await settingsService.GetInitialBusinessAsync(); // Resuming requires the persisted administrator, never an automatic session.
+                    if (loginVersion == sessionManager.SessionVersion)
+                        BeginInitialSetup(userRepository, settingsService, sessionManager, stage);
+                    return;
+                }
+                if (stage == InitialSetupStage.NotStarted) throw new InvalidOperationException("La cuenta inicial no está disponible.");
+                Navigation.GoToPos();
+                posVm.RegisterMessages();
+                await posVm.LoadSessionAsync();
+                if (loginVersion != sessionManager.SessionVersion) return;
+
+                var shiftSuccess = await shiftCoordinator.ValidateShiftStatusAsync();
+                if (shiftSuccess && loginVersion == sessionManager.SessionVersion)
+                {
+                    WeakReferenceMessenger.Default.Send(new Ticketfy.Core.Messages.FocusSearchMessage());
+                    _ = Tutorial.TryStartSidebarTourAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Post-login routing failed");
+                if (loginVersion != sessionManager.SessionVersion) return;
+                Navigation.GoToLogin();
+                loginVm.ErrorMessage = "No se pudo preparar la sesión. " + ex.Message;
             }
         };
 
@@ -275,16 +308,26 @@ public partial class MainWindowViewModel : ObservableObject
 
         // ── Global messages ───────────────────────────────────────────────────
         WeakReferenceMessenger.Default.Register<ForceLogoutMessage>(this, (r, m) =>
-            Dispatcher.UIThread.Post(() => { Navigation.GoToLogin(); Dialogs.CloseDialog(); }));
+        {
+            long expectedVersion = m.SessionVersion ?? sessionManager.SessionVersion;
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (expectedVersion != sessionManager.SessionVersion) return;
+                Navigation.GoToLogin(); Dialogs.CloseDialog();
+            });
+        });
 
         WeakReferenceMessenger.Default.Register<Ticketfy.Core.Messages.UserDeletedMessage>(this, (r, m) =>
         {
             if (sessionManager.CurrentCashier?.Id.ToString() == m.UserId)
                 Dispatcher.UIThread.Post(() =>
-                    WeakReferenceMessenger.Default.Send(new ForceLogoutMessage()));
+                {
+                    if (sessionManager.CurrentCashier?.Id.ToString() == m.UserId)
+                        WeakReferenceMessenger.Default.Send(new ForceLogoutMessage(sessionManager.SessionVersion));
+                });
         });
 
-        _ = InitializeApplicationStateAsync(userRepository, settingsService, db, sessionManager, permissionEngine);
+        _ = InitializeApplicationStateAsync(userRepository, settingsService, sessionManager);
     }
 
     // ── Commands delegated to sub-VMs ────────────────────────────────────────
@@ -304,6 +347,14 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private async Task UnlockTerminalAsync()
         => await LockScreen.UnlockTerminalCommand.ExecuteAsync(null);
+
+    [RelayCommand]
+    private void EndLockedSession()
+    {
+        if (!LockScreen.IsLocked) return;
+        Dialogs.CloseDialog();
+        Navigation.GoToLogin();
+    }
 
     [RelayCommand]
     private void TriggerPosCheckout()
@@ -339,7 +390,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     // ── App startup routing ───────────────────────────────────────────────────
     private async Task InitializeApplicationStateAsync(IUserRepository userRepository,
-        ISettingsService settingsService, AppDbContext db, ISessionManager sessionManager, IUserRolePermissionEngine permissionEngine)
+        ISettingsService settingsService, ISessionManager sessionManager)
     {
         try
         {
@@ -354,49 +405,44 @@ public partial class MainWindowViewModel : ObservableObject
                 return;
             }
 
-            string? setupDone = await settingsService.GetAsync("IsOnboardingCompleted");
-            bool hasUsers = await userRepository.HasAnyUsersAsync();
-            if (!hasUsers)
-            {
-                var dialogService = new DialogService((vm) => Task.FromResult<object?>(null), () => { });
-                Action finishSetup = async () =>
-                {
-                    await settingsService.SetAsync("IsOnboardingCompleted", "true");
-                    sessionManager.ClearSession();
-                    Navigation.GoToLogin();
-                };
-
-                Action goToWelcome = null!;
-                Action goToAdminAccount = null!;
-                Action goToBusinessData = null!;
-                Action goToAdditionalUsers = null!;
-
-                goToWelcome = () =>
-                    Navigation.GoTo(new WelcomeLicenseViewModel(licenseService, goToAdminAccount));
-
-                goToAdminAccount = () =>
-                    Navigation.GoTo(new FirstTimeSetupViewModel(userRepository, dialogService, goToBusinessData, goToWelcome,
-                        user => sessionManager.StartSession(permissionEngine.MapToModel(user))));
-
-                goToBusinessData = () =>
-                    Navigation.GoTo(new SetupBusinessDataViewModel(settingsService, goToAdditionalUsers, goToAdminAccount));
-
-                goToAdditionalUsers = () =>
-                    Navigation.GoTo(new SetupAdditionalUsersViewModel(userRepository, finishSetup, goToBusinessData));
-
-                // OOBE Onboarding Step 1: Friendly Welcome & License Activation Screen
-                goToWelcome();
-            }
+            var stage = await settingsService.GetInitialSetupStageAsync();
+            if (stage == InitialSetupStage.NotStarted)
+                BeginInitialSetup(userRepository, settingsService, sessionManager, stage);
             else
             {
                 Navigation.GoToLogin();
+                if (stage is InitialSetupStage.Business or InitialSetupStage.Staff)
+                    Navigation.LoginVm.InformationMessage = "Configuración pendiente. Entre con la cuenta administradora creada para continuar.";
             }
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to initialize application state");
+            Navigation.GoToLogin();
+            Navigation.LoginVm.ErrorMessage = "No se pudo verificar la configuración inicial. Conserve los datos y vuelva a iniciar la aplicación.";
             _ = DismissSplashScreenAsync();
         }
+    }
+
+    private void BeginInitialSetup(IUserRepository users, ISettingsService settings, ISessionManager session, InitialSetupStage stage)
+    {
+        var dialogs = new DialogService(_ => Task.FromResult<object?>(null), () => { });
+        var license = new LicenseEnforcementService();
+        Action welcome = null!, admin = null!, business = null!, staff = null!;
+        Func<Task> finish = async () =>
+        {
+            var version = session.SessionVersion;
+            await settings.CompleteInitialSetupAsync();
+            if (version == session.SessionVersion) Navigation.GoToLogin();
+        };
+        welcome = () => Navigation.GoTo(new WelcomeLicenseViewModel(license, admin));
+        admin = () => Navigation.GoTo(new FirstTimeSetupViewModel(users, dialogs, business, welcome, session.StartSession));
+        business = () => Navigation.GoTo(new SetupBusinessDataViewModel(settings, staff,
+            stage == InitialSetupStage.NotStarted ? admin : Navigation.GoToLogin));
+        staff = () => Navigation.GoTo(new SetupAdditionalUsersViewModel(users, finish, business));
+        if (stage == InitialSetupStage.NotStarted) welcome();
+        else if (stage == InitialSetupStage.Staff) staff();
+        else business();
     }
 
     private async Task DismissSplashScreenAsync()
@@ -407,13 +453,16 @@ public partial class MainWindowViewModel : ObservableObject
 
     public async Task<int> GetIdleTimeoutMinutesAsync()
     {
-        var settingsSvc = new SettingsService(
-            new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
-                .UseSqlite($"Data Source={AppDataPaths.DatabaseFile};Password={SecurityManager.GetMasterKey()};")
-                .Options));
-        var val = await settingsSvc.GetAsync("IdleTimeoutMinutes");
+        var val = await _settingsService.GetAsync("IdleTimeoutMinutes");
         return int.TryParse(val, out var m) && m > 0 ? m : 5;
     }
 
     public void TriggerAutoLock() => LockScreen.TriggerAutoLock();
+
+    private static void CloseSecondaryWindows()
+    {
+        if (Avalonia.Application.Current?.ApplicationLifetime is not Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop) return;
+        foreach (var window in desktop.Windows.Where(window => window != desktop.MainWindow).ToArray())
+            window.Close();
+    }
 }

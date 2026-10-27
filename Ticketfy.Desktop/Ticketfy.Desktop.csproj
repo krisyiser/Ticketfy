@@ -82,6 +82,8 @@
 
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
+    <EmbeddedResource Include="SecurityData\common-passwords-v2.sha256" LogicalName="Ticketfy.Security.CommonPasswordsV2" />
+    <Content Include="ThirdPartyNotices\SecLists-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

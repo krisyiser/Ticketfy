@@ -17,6 +17,7 @@ try {
     if ($RequireClean -and (git status --porcelain)) {
         throw "La canalización reproducible requiere un checkout limpio."
     }
+    & (Join-Path $PSScriptRoot 'assert-release-safety.ps1')
 
     $locked = if ($LockedRestore) { "--locked-mode" } else { $null }
     $restoreArgs = @("restore", "Ticketfy.Desktop.Tests/Ticketfy.Desktop.Tests.csproj", "-p:RuntimeIdentifier=win-x64", "-p:Configuration=Release")
@@ -92,6 +93,7 @@ try {
     }
 
     $first = & (Join-Path $PSScriptRoot "package-ci.ps1") -OutputDirectory "$runDirectory/package-a" -NoRestore
+    & (Join-Path $PSScriptRoot "assert-packaged-startup.ps1") -PackageDirectory "$runDirectory/package-a/publish-win-x64" -ResultsDirectory $results
     if ($VerifyReproducible) {
         $second = & (Join-Path $PSScriptRoot "package-ci.ps1") -OutputDirectory "$runDirectory/package-b" -NoRestore
         if ($first.Sha256 -ne $second.Sha256) {

@@ -59,15 +59,13 @@ public sealed class CustomerAndAuthServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task AuthService_Login_ShouldAuthenticateValidUserWithBCrypt()
+    public async Task AuthService_Login_ShouldAuthenticateValidUserWithPbkdf2()
     {
-        var passwordHash = CryptoHelper.HashSecret("securePass123");
         var guidId = "00000000-0000-0000-0000-000000000001";
-        // Correct signature: id, nombre, username, rol, passwordHash?, pinHash?, hint?
-        await _userService.SaveAsync(guidId, "AdminUser", "ADMIN", "Admin", passwordHash, null);
+        await _userService.SaveAsync(guidId, "AdminUser", "ADMIN", "Admin", "Synthetic securePass123", null);
 
         // Valid Login
-        var success = await _authService.LoginAsync("ADMIN", "securePass123");
+        var success = await _authService.LoginAsync("ADMIN", "Synthetic securePass123");
         Assert.True(success);
         Assert.True(_authService.IsAuthenticated);
         Assert.Equal("ADMINISTRADOR", _authService.CurrentUser?.Rol);
@@ -87,10 +85,8 @@ public sealed class CustomerAndAuthServiceTests : IDisposable
     [Fact]
     public async Task AuthService_Login_ShouldFailForInactiveUser()
     {
-        var passwordHash = CryptoHelper.HashSecret("pass123");
         var guidId = "00000000-0000-0000-0000-000000000002";
-        // Correct signature: id, nombre, username, rol, passwordHash?, pinHash?, hint?
-        await _userService.SaveAsync(guidId, "DisabledUser", "CAJERO_DIS", "Cajero", passwordHash, null);
+        await _userService.SaveAsync(guidId, "DisabledUser", "CAJERO_DIS", "Cajero", "Synthetic pass123", null);
 
         // Deactivate user in DB
         var userEntity = await _context.Users.FindAsync(Guid.Parse(guidId));
@@ -100,19 +96,20 @@ public sealed class CustomerAndAuthServiceTests : IDisposable
             await _context.SaveChangesAsync();
         }
 
-        var result = await _authService.LoginAsync("CAJERO_DIS", "pass123");
+        var result = await _authService.LoginAsync("CAJERO_DIS", "Synthetic pass123");
         Assert.False(result);
     }
 
     [Fact]
-    public async Task AuthService_VerifyManagerPin_ShouldReturnTrueForValidPin()
+    public async Task AuthService_ManagerApprovalRequiresPasswordEvenForCorrectPin()
     {
         var guidId = "00000000-0000-0000-0000-000000000003";
-        // Both credentials are hashed on write; PIN verification requires an active manager.
+        // A manager's valid quick-access PIN is not a primary credential for an approval.
         await _userService.SaveAsync(guidId, "Manager", "GERENTE_01", "Gerente", "manager-test-password", "9999");
 
         var valid = await _authService.VerifyManagerPinAsync(guidId, "9999");
-        Assert.True(valid);
+        Assert.False(valid);
+        Assert.True(await _authService.VerifyManagerPasswordAsync(guidId, "manager-test-password"));
 
         var invalid = await _authService.VerifyManagerPinAsync(guidId, "0000");
         Assert.False(invalid);

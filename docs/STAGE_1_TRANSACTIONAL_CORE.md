@@ -1,6 +1,8 @@
 # Etapa 1 — Estabilización del núcleo transaccional
 
-Estado: completada localmente el 18 de octubre de 2026.
+Línea de base implementada localmente el 18 de octubre de 2026. Recuperación
+actualizada el 20 de octubre: consultar el [estado del candidato empresarial](ENTERPRISE_REMEDIATION_PROGRESS.md)
+para los hallazgos posteriores y las puertas de aprobación aún abiertas.
 
 El alcance fiscal remoto (Facturama), servidor, sitio de descargas y publicación en Forgejo continúa suspendido por decisión del proyecto. La idempotencia fiscal externa se retomará cuando ese módulo vuelva al alcance; ningún servicio remoto es necesario para operar o probar el núcleo local descrito aquí.
 
@@ -42,11 +44,17 @@ La base de auditoría separada también se crea mediante su propia migración ve
 
 Antes de llamar a una terminal se guarda una intención en `checkout_operations` con la venta completa y su clave idempotente.
 
-1. `Started`: existe intención local, pero no hay autorización confirmada. Tras reiniciar se marca fallida y no se registra una venta.
-2. `PaymentAuthorized`: la terminal confirmó el cargo. Tras reiniciar se reproduce `SaveAsync` con la misma `OperationId`.
+1. `Started`: existe intención local. Al reiniciar se revisa la evidencia bancaria; un pago confirmado puede continuar hacia recuperación. Efectivo sin comprobar o un resultado bancario incierto requieren conciliación, no un descarte automático.
+2. `PaymentAuthorized`: existe autorización para recuperar con la misma `OperationId`. El efectivo, incluido el de un pago mixto, requiere comprobación supervisada; todavía se validan identidad, turno, composición e inventario antes de confirmar.
 3. `Completed`: venta, stock, deuda, caja y diario ya se confirmaron. Repetir la recuperación es un no-op.
-4. `RequiresReconciliation`: hubo autorización, pero no se pudo completar la persistencia. El arranque vuelve a intentar la misma operación sin duplicarla; si persiste el error, conserva el estado y motivo para intervención.
-5. `Failed`: no se realiza ninguna mutación automática.
+4. `RequiresReconciliation`: el resultado o su registro requieren revisión. El arranque conserva la intención para intervención supervisada; no vuelve a cobrar ni ignora el estado para registrar una venta.
+5. `Failed`: una intención descartada o rechazada no puede reutilizarse para vender. Si un registro heredado contradice evidencia bancaria persistida, vuelve a la lista de pendientes para conciliación.
+
+Un aviso tardío de fallo se clasifica dentro de una transacción usando los registros
+persistidos. No sustituye una venta confirmada por un fallo ni borra incertidumbre
+porque la interfaz haya enviado un indicador distinto. Un pendiente bloquea otro
+cobro y el cierre del mismo turno; la intención original conserva su identidad.
+Detener la espera local no equivale a cancelar el pago en el proveedor.
 
 La recuperación se ejecuta después de migrar ambas bases y antes de permitir que el arranque continúe. Cualquier fallo de migración sigue siendo fatal.
 

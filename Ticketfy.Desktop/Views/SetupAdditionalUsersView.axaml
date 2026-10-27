@@ -20,11 +20,12 @@
                     <TextBlock Text="Cree cuentas para su personal (Opcional)" FontSize="13" Foreground="{DynamicResource TextMutedBrush}" HorizontalAlignment="Center" />
                 </StackPanel>
 
-                <StackPanel Spacing="12">
+                <StackPanel Spacing="12" IsEnabled="{Binding CanEdit}">
                     <ComboBox ItemsSource="{Binding AvailableRoles}" SelectedItem="{Binding SelectedRole, Mode=TwoWay}" HorizontalAlignment="Stretch" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
-                    <TextBox Text="{Binding FullName, Mode=TwoWay}" Watermark="Nombre Completo *" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
-                    <TextBox Text="{Binding Username, Mode=TwoWay}" Watermark="Nombre de Usuario *" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
-                    <TextBox Text="{Binding Password, Mode=TwoWay}" PasswordChar="•" Watermark="Contraseña *" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
+                    <TextBox Text="{Binding FullName, Mode=TwoWay}" MaxLength="256" Watermark="Nombre Completo *" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
+                    <TextBox Text="{Binding Username, Mode=TwoWay}" MaxLength="128" Watermark="Nombre de Usuario *" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
+                    <TextBox Text="{Binding Password, Mode=TwoWay}" MaxLength="1024" PasswordChar="•" Watermark="Contraseña *" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
+                    <TextBlock Text="Use una frase de al menos 15 caracteres. Se admiten espacios." TextWrapping="Wrap" FontSize="12" />
                     <StackPanel Spacing="4">
                         <TextBlock Text="PIN rápido de 4 Dígitos *" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
                         <controls:PinInputControl Pin1="{Binding Pin1, Mode=TwoWay}" Pin2="{Binding Pin2, Mode=TwoWay}" Pin3="{Binding Pin3, Mode=TwoWay}" Pin4="{Binding Pin4, Mode=TwoWay}" HorizontalAlignment="Left" />

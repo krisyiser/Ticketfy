@@ -133,24 +133,28 @@ public sealed class Stage4ReliabilityTests
     }
 
     [Fact]
-    public async Task PaymentNetworkFailure_ReusesIdempotencyKeyOnUserRetry()
+    public async Task PaymentNetworkFailure_ReconcilesOriginalOrderWithoutRepostingCreation()
     {
         await using var fixture = await IntegrationFixture.CreateAsync();
         var handler = new TransientPaymentHandler();
         using var client = new HttpClient(handler) { BaseAddress = new Uri("https://api.mercadopago.com") };
         var settings = new MemorySettings();
         await settings.SetAsync("TerminalDeviceId", "NEWLAND_N950__TEST123");
+        var actor = await CommercialTestSession.PrepareCardCheckoutAsync(fixture.Factory, "sale_network_retry", 48m);
         var service = new MercadoPagoTerminalService(
             client, settings, contextFactory: fixture.Factory,
             accessTokenProvider: () => Task.FromResult<string?>("TEST_TOKEN"),
-            pollingInterval: TimeSpan.Zero, maxPollingAttempts: 1);
+            pollingInterval: TimeSpan.Zero, maxPollingAttempts: 1, operations: actor);
 
         var failed = await service.ProcessPaymentAsync(48m, "sale_network_retry", CancellationToken.None);
-        var recovered = await service.ProcessPaymentAsync(48m, "sale_network_retry", CancellationToken.None);
+        var retry = await service.ProcessPaymentAsync(48m, "sale_network_retry", CancellationToken.None);
+        var recovered = await service.RefreshPaymentAsync("sale_network_retry", "ORD-RETRY");
 
         Assert.False(failed.IsSuccess);
+        Assert.False(retry.IsSuccess);
         Assert.True(recovered.IsSuccess, recovered.ErrorMessage);
-        Assert.Equal(2, handler.PostCalls);
+        Assert.True(recovered.Data!.CanComplete);
+        Assert.Equal(1, handler.PostCalls);
         Assert.Single(handler.IdempotencyKeys.Distinct(StringComparer.Ordinal));
         await using var verify = fixture.CreateContext();
         Assert.Single(await verify.PaymentTerminalOperations.ToListAsync());
@@ -282,7 +286,7 @@ public sealed class Stage4ReliabilityTests
                     """));
             }
             return Task.FromResult(Json(HttpStatusCode.OK, """
-                {"id":"ORD-RETRY","external_reference":"sale_network_retry","status":"processed","transactions":{"payments":[{"id":"PAY-RETRY","amount":"48.00","status":"processed"}]}}
+                {"id":"ORD-RETRY","type":"point","country_code":"MEX","external_reference":"sale_network_retry","status":"processed","status_detail":"processed","last_updated_date":"2026-10-20T12:00:00Z","config":{"point":{"terminal_id":"NEWLAND_N950__TEST123"}},"transactions":{"payments":[{"id":"PAY-RETRY","amount":"48.00","paid_amount":"48.00","status":"processed","status_detail":"accredited"}]}}
                 """));
         }
 

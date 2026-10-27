@@ -7,7 +7,7 @@
              x:Class="Ticketfy.Views.CustomersView"
              x:DataType="vm:CustomersViewModel">
 
-    <Grid RowDefinitions="Auto,Auto,Auto,*" Margin="16">
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="16">
 
         <!-- ═══ TOP FUNCTION BANNER BAR ═══ -->
         <Border Grid.Row="0" Margin="0,0,0,12" Padding="16,12"
@@ -104,6 +104,11 @@
 
             </DataGrid>
         </Border>
+        <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center" Margin="0,8,0,0">
+            <Button Content="Anterior" Command="{Binding PreviousPageCommand}" IsEnabled="{Binding HasPreviousPage}" />
+            <TextBlock Text="{Binding PageDescription}" VerticalAlignment="Center" />
+            <Button Content="Siguiente" Command="{Binding NextPageCommand}" IsEnabled="{Binding HasNextPage}" />
+        </StackPanel>
     </Grid>
 </UserControl>
 

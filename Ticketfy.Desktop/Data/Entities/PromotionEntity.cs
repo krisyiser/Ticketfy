@@ -67,4 +67,8 @@ public class PromotionEntity
 
     [Column("priority")]
     public int Priority { get; set; } = 0;
+
+    [ConcurrencyCheck]
+    [Column("revision")]
+    public long Revision { get; set; }
 }

@@ -37,10 +37,10 @@ RestartApplications=no
 
 ; Metadatos Empresariales de Firma e Identidad Windows PE - VALCORE
 VersionInfoCompany=Valcore
-VersionInfoDescription=Valcore TICKETFY! Punto de Venta - Instalador Nivel Industrial
+VersionInfoDescription=Valcore TICKETFY! Punto de Venta
 VersionInfoVersion={#MyAppVersion}.0
 VersionInfoCopyright=Copyright © 2026 Valcore. Todos los derechos reservados.
-VersionInfoProductName=Valcore TICKETFY! POS Enterprise System
+VersionInfoProductName=Valcore TICKETFY! Punto de Venta
 VersionInfoProductVersion={#MyAppVersion}.0
 VersionInfoOriginalFileName=Ticketfy-Setup-v{#MyAppVersion}-x64.exe
 

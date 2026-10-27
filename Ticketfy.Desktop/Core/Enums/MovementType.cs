@@ -13,6 +13,8 @@ public enum MovementType
     IngresoExtraordinario = 8,
     RecargaMonedero = 9,
     CancelacionGasto = 10,
+    ReembolsoSaldoCliente = 11,
+    ReembolsoProveedor = 12,
 
     // Backward compatibility aliases
     Venta = 1,

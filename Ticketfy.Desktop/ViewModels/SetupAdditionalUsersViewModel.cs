@@ -14,8 +14,21 @@ namespace Ticketfy.ViewModels;
 public partial class SetupAdditionalUsersViewModel : ValidatableViewModelBase
 {
     private readonly IUserRepository _userRepository;
-    private readonly Action _finishSetup;
+    private readonly Func<Task> _finishSetup;
     private readonly Action? _navigateToPreviousStep;
+    private bool _departed;
+    [ObservableProperty] private bool _isWorking;
+    public bool CanEdit => !IsWorking && !_departed;
+    partial void OnIsWorkingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanEdit)); CreateUserCommand.NotifyCanExecuteChanged();
+        SkipCommand.NotifyCanExecuteChanged(); GoBackCommand.NotifyCanExecuteChanged();
+    }
+    public void Deactivate()
+    {
+        _departed = true; FullName = Username = Password = PasswordHint = Pin1 = Pin2 = Pin3 = Pin4 = ErrorMessage = SuccessMessage = "";
+        OnIsWorkingChanged(IsWorking);
+    }
 
     [ObservableProperty] private string _fullName = string.Empty;
     [ObservableProperty] private string _username = string.Empty;
@@ -35,22 +48,23 @@ public partial class SetupAdditionalUsersViewModel : ValidatableViewModelBase
     [ObservableProperty] private string _errorMessage = string.Empty;
     [ObservableProperty] private string _successMessage = string.Empty;
 
-    public SetupAdditionalUsersViewModel(IUserRepository userRepository, Action finishSetup, Action? navigateToPreviousStep = null)
+    public SetupAdditionalUsersViewModel(IUserRepository userRepository, Func<Task> finishSetup, Action? navigateToPreviousStep = null)
     {
         _userRepository = userRepository;
         _finishSetup = finishSetup;
         _navigateToPreviousStep = navigateToPreviousStep;
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanEdit))]
     private void GoBack()
     {
-        _navigateToPreviousStep?.Invoke();
+        if (CanEdit) _navigateToPreviousStep?.Invoke();
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanEdit))]
     private async Task CreateUserAsync()
     {
+        if (!CanEdit) return;
         ErrorMessage = string.Empty;
         SuccessMessage = string.Empty;
 
@@ -63,7 +77,7 @@ public partial class SetupAdditionalUsersViewModel : ValidatableViewModelBase
             return;
         }
 
-        if (Pin.Length != 4 || !int.TryParse(Pin, out _))
+        if (Pin.Length != 4 || !Pin.All(char.IsAsciiDigit))
         {
             ErrorMessage = "El PIN debe ser de exactamente 4 dígitos numéricos.";
             return;
@@ -71,22 +85,20 @@ public partial class SetupAdditionalUsersViewModel : ValidatableViewModelBase
 
         try
         {
-            string hash = CryptoHelper.HashPassword(Password);
-
-            var user = new UserEntity
+            IsWorking = true;
+            var user = new UserAccountDraft
             {
                 Id = Guid.NewGuid(),
                 FullName = FullName,
                 Username = Username,
-                PasswordHash = hash,
-                PasswordHint = string.Empty,
-                PinCode = Pin,
-                Role = SelectedRole,
-                RoleString = SelectedRole == UserRole.Admin ? "ADMINISTRADOR" : (SelectedRole == UserRole.Gerente ? "GERENTE" : "CAJERO"),
+                Password = Password,
+                Pin = Pin,
+                Role = SelectedRole == UserRole.Admin ? "ADMINISTRADOR" : (SelectedRole == UserRole.Gerente ? "GERENTE" : "CAJERO"),
                 IsActive = true
             };
 
             await _userRepository.CreateUserAsync(user);
+            if (_departed) return;
 
             SuccessMessage = $"Usuario {Username} creado exitosamente.";
 
@@ -102,13 +114,18 @@ public partial class SetupAdditionalUsersViewModel : ValidatableViewModelBase
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Error al crear el usuario: {ex.Message}";
+            if (!_departed) ErrorMessage = $"Error al crear el usuario: {ex.Message}";
         }
+        finally { IsWorking = false; }
     }
 
-    [RelayCommand]
-    private void Skip()
+    [RelayCommand(CanExecute = nameof(CanEdit))]
+    private async Task SkipAsync()
     {
-        _finishSetup();
+        if (!CanEdit) return;
+        IsWorking = true; ErrorMessage = "";
+        try { await _finishSetup(); }
+        catch (Exception ex) { if (!_departed) ErrorMessage = "No se confirmó la finalización. Puede reintentar. " + ex.Message; }
+        finally { IsWorking = false; }
     }
 }

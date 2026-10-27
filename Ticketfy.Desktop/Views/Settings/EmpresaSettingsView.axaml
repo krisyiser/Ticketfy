@@ -8,6 +8,7 @@
 
     <StackPanel Spacing="20">
         <TextBlock Text="Datos &amp; Configuración de la Empresa" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
+        <TextBlock Text="{Binding FeedbackMessage}" TextWrapping="Wrap" Foreground="{DynamicResource TextPrimaryBrush}" />
 
         <!-- Horizontal Sub-tab Navigation Bar -->
         <Border Background="{DynamicResource BgTertiaryBrush}" CornerRadius="{DynamicResource AppCornerRadius}" Padding="4">
@@ -50,9 +51,9 @@
         </Border>
 
         <!-- Sub-tabs Container -->
-        <tabs:EmpresaGeneralesTab IsVisible="{Binding IsSubEmpresaGenerales}" />
+        <tabs:EmpresaGeneralesTab x:Name="BusinessGeneralTab" IsVisible="{Binding IsSubEmpresaGenerales}" />
         <tabs:EmpresaIdentidadTab IsVisible="{Binding IsSubEmpresaIdentidad}" />
-        <tabs:EmpresaFiscalTab IsVisible="{Binding IsSubEmpresaFiscal}" />
+        <tabs:EmpresaFiscalTab x:Name="BusinessFiscalTab" IsVisible="{Binding IsSubEmpresaFiscal}" />
         <tabs:EmpresaSucursalTab IsVisible="{Binding IsSubEmpresaSucursal}" />
         <tabs:EmpresaRedesTab IsVisible="{Binding IsSubEmpresaRedes}" />
     </StackPanel>

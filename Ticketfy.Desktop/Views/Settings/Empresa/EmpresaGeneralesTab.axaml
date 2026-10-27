@@ -33,7 +33,8 @@
 
             <StackPanel Grid.Row="2" Grid.Column="1" Margin="8,0,0,0" Spacing="6">
                 <TextBlock Text="Zona Horaria" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                <ComboBox ItemsSource="{Binding ZonaHorariaOptions}" SelectedItem="{Binding EmpresaZonaHoraria, Mode=TwoWay}" HorizontalAlignment="Stretch" Padding="10,8" />
+                <TextBox Text="{Binding EmpresaZonaHoraria}" IsReadOnly="True" Padding="10,8" />
+                <TextBlock Text="Para cambiarla, use Sistema y Seguridad con los turnos cerrados." TextWrapping="Wrap" FontSize="11" />
             </StackPanel>
         </Grid>
     </StackPanel>

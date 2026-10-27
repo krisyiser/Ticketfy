@@ -47,7 +47,7 @@ internal sealed class SpyAuditService : IAuditService
     public Task<List<AuditLogEntity>> GetRecentLogsAsync(int limit = 100) =>
         Task.FromResult(CapturedLogs.Take(limit).ToList());
 
-    public Task<bool> VerifyIntegrityAsync() => Task.FromResult(true);
+    public Task<bool> VerifyIntegrityAsync(CancellationToken cancellationToken = default) => Task.FromResult(true);
 }
 
 // ── SaleService Tests ────────────────────────────────────────────────────────
@@ -849,9 +849,9 @@ public sealed class SaleServiceTests : IDisposable
     }
 
     [Fact]
-    public void DateTimeExtensions_ShouldRoundTripUtcUsingConfiguredLocalTimezone()
+    public void DateTimeExtensions_ShouldRoundTripUtcUsingConfiguredBusinessTimezone()
     {
-        // The current contract uses the workstation's zone, not a hardcoded Mexican zone.
+        // The business calendar is explicit and independent of the workstation zone.
         // Exercise winter/summer and instants near a calendar-day boundary on any CI host.
         foreach (var utcDate in new[]
         {
@@ -861,11 +861,11 @@ public sealed class SaleServiceTests : IDisposable
             new DateTime(2026, 8, 10, 23, 30, 0, DateTimeKind.Utc)
         })
         {
-            var expectedLocal = TimeZoneInfo.ConvertTimeFromUtc(utcDate, TimeZoneInfo.Local);
+            var expectedLocal = TimeZoneInfo.ConvertTimeFromUtc(utcDate, Ticketfy.Core.Helpers.BusinessTime.Zone);
             var localDate = Ticketfy.Core.Helpers.DateTimeExtensions.ToBusinessLocalTime(utcDate);
 
             Assert.Equal(expectedLocal, localDate);
-            Assert.Equal(DateTimeKind.Local, localDate.Kind);
+            Assert.Equal(DateTimeKind.Unspecified, localDate.Kind);
             Assert.Equal(localDate, Ticketfy.Core.Helpers.DateTimeExtensions.ToBusinessLocalTime(localDate));
 
             var utcBack = Ticketfy.Core.Helpers.DateTimeExtensions.ToBusinessUtcTime(localDate);

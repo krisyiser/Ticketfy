@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Ticketfy.Data.Entities;
 
-public class InventorySnapshotItemEntity
+public class InventorySnapshotItemEntity : IImmutableRecord
 {
     [Key]
     public string Id { get; set; } = Guid.NewGuid().ToString();

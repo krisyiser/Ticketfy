@@ -34,11 +34,11 @@ public sealed class Stage4UiFlowTests
         var window = new Window { Content = view };
         window.Show();
 
-        var textBoxes = view.GetVisualDescendants().OfType<TextBox>().ToArray();
+        var textBoxes = view.GetVisualDescendants().OfType<TextBox>().Where(t => t.IsEffectivelyVisible).ToArray();
         Assert.Equal(2, textBoxes.Length);
         textBoxes[0].Text = "cajero";
         textBoxes[1].Text = string.Empty;
-        var button = Assert.Single(view.GetVisualDescendants().OfType<Button>());
+        var button = Assert.Single(view.GetVisualDescendants().OfType<Button>(), b => b.Command == viewModel.LoginCommand);
         button.Command!.Execute(button.CommandParameter);
         await viewModel.LoginCommand.ExecutionTask!;
         await Dispatcher.UIThread.InvokeAsync(() => { });

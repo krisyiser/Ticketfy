@@ -6,9 +6,11 @@
              x:DataType="vm:LoginViewModel">
 
     <Grid Background="{DynamicResource BgPrimaryBrush}">
-        <Border Width="400" Padding="32" CornerRadius="12"
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      VerticalContentAlignment="Center">
+        <Border MaxWidth="400" Margin="16" Padding="32" CornerRadius="12"
                 Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                HorizontalAlignment="Center" VerticalAlignment="Center">
+                HorizontalAlignment="Stretch" VerticalAlignment="Center">
             <StackPanel Spacing="20">
                 <StackPanel HorizontalAlignment="Center" Spacing="8">
                     <Border Width="56" Height="56" CornerRadius="8" Background="{DynamicResource AccentPrimaryBrush}" HorizontalAlignment="Center">
@@ -19,16 +21,25 @@
                 </StackPanel>
 
                 <StackPanel Spacing="12">
-                    <TextBox Text="{Binding Username, Mode=TwoWay}" Watermark="Usuario" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
-                    <TextBox Text="{Binding Password, Mode=TwoWay}" PasswordChar="•" Watermark="Contraseña" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
-                    <TextBlock Text="{Binding ErrorMessage}" Foreground="{DynamicResource AccentDangerBrush}" FontSize="12" HorizontalAlignment="Center" IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <TextBox Text="{Binding Username, Mode=TwoWay}" MaxLength="128" Watermark="Usuario" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
+                    <TextBlock Text="{Binding InformationMessage}" TextWrapping="Wrap"
+                               IsVisible="{Binding InformationMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <TextBox Text="{Binding Password, Mode=TwoWay}" MaxLength="1024" PasswordChar="•" Watermark="Contraseña actual" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
+                    <StackPanel IsVisible="{Binding PasswordChangeRequired}" Spacing="12">
+                        <TextBox Text="{Binding NewPassword}" MaxLength="1024" PasswordChar="•" Watermark="Nueva frase: mínimo 15 caracteres" />
+                        <TextBox Text="{Binding ConfirmNewPassword}" MaxLength="1024" PasswordChar="•" Watermark="Confirmar nueva contraseña" />
+                        <Button Command="{Binding UpgradePasswordCommand}" Content="ACTUALIZAR CONTRASEÑA" />
+                        <Button Command="{Binding CancelPasswordChangeCommand}" Content="Volver al acceso" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" Foreground="{DynamicResource AccentDangerBrush}" FontSize="12" HorizontalAlignment="Center" IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
 
-                <Button Command="{Binding LoginCommand}" Classes="primary-action" Height="44" HorizontalAlignment="Stretch">
+                <Button Command="{Binding LoginCommand}" IsVisible="{Binding !PasswordChangeRequired}" Classes="primary-action" Height="44" HorizontalAlignment="Stretch">
                     <TextBlock Text="INICIAR SESIÓN" FontWeight="Bold" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Button>
             </StackPanel>
         </Border>
+        </ScrollViewer>
     </Grid>
 </UserControl>
 

@@ -17,93 +17,124 @@ public class UserService : IUserService
     private readonly IDbContextFactory<AppDbContext> _factory;
     private readonly CommercialOperationContext? _operations;
     private readonly IAuditService? _auditService;
-    private readonly Func<string>? _auditActor;
+    private readonly CredentialVerifier _credentials;
+    private readonly QuickAccessSession? _quickAccess;
+    public void ClearQuickAccess() => _quickAccess?.Clear();
 
-    public UserService(AppDbContext context, IAuditService? auditService = null, Func<string>? auditActor = null, CommercialOperationContext? operations = null)
+    public UserService(AppDbContext context, IAuditService? auditService = null, Func<string>? auditActor = null,
+        CommercialOperationContext? operations = null, TimeProvider? clock = null, QuickAccessSession? quickAccess = null)
+        : this(new AppDbContextFactoryImpl<AppDbContext>(context.Options), auditService, auditActor, operations, clock, quickAccess) { }
+
+    public UserService(IDbContextFactory<AppDbContext> factory, IAuditService? auditService = null, Func<string>? auditActor = null,
+        CommercialOperationContext? operations = null, TimeProvider? clock = null, QuickAccessSession? quickAccess = null)
     {
-        _factory = new AppDbContextFactoryImpl<AppDbContext>(context.Options);
+        _factory = factory;
         _operations = operations;
         _auditService = auditService;
-        _auditActor = auditActor;
-    }
-
-    public async Task<int> GetCountAsync()
-    {
-        await using var _context = await _factory.CreateDbContextAsync();
-        return await _context.Users.CountAsync();
+        _credentials = new(_factory, clock, quickAccess);
+        _quickAccess = quickAccess;
     }
 
     public async Task<List<UserDto>> GetAllAsync()
     {
         await using var _context = await _factory.CreateDbContextAsync();
-        var entities = await _context.Users.AsNoTracking().ToListAsync();
+        await RequireAdminAsync(_context, Guid.Empty);
+        var entities = await _context.Users.AsNoTracking().Select(u => new UserEntity
+        {
+            Id = u.Id,
+            FullName = u.FullName,
+            Username = u.Username,
+            Role = u.Role,
+            RoleString = u.RoleString,
+            IsActive = u.IsActive
+        }).ToListAsync();
         return entities.Select(MapToDto).ToList();
     }
 
-    public async Task<UserDto?> GetByNameAsync(string name)
+    public async Task<UserDto?> AuthenticateAsync(string username, string password)
     {
-        await using var _context = await _factory.CreateDbContextAsync();
-        // Explicitly ONLY match the exact Username credential, never the FullName
-        var entity = await _context.Users.FirstOrDefaultAsync(u => u.Username.ToLower() == name.ToLower());
-        return entity == null ? null : MapToDto(entity);
+        return (await SignInAsync(username, password)).User;
     }
 
-    public async Task<List<UserDto>> GetManagersAsync()
+    public async Task<SignInResult> SignInAsync(string username, string password, Func<bool>? isRequestCurrent = null)
     {
-        await using var _context = await _factory.CreateDbContextAsync();
-        var entities = await _context.Users.Where(u => u.Role == UserRole.Admin || u.Role == UserRole.Gerente).AsNoTracking().ToListAsync();
-        return entities.Select(MapToDto).ToList();
+        var result = await _credentials.SignInAsync(username, password, isRequestCurrent);
+        return new(result.User is null ? null : MapToDto(result.User), result.PasswordChangeRequired);
     }
 
-    public async Task SaveAsync(string id, string nombre, string username, string rol, string? passwordHash, string? pinHash, string? passwordHint = null)
+    public Task<bool> UpgradeOwnPasswordAsync(string username, string currentPassword, string newPassword) =>
+        _credentials.UpgradeOwnPasswordAsync(username, currentPassword, newPassword);
+
+    public async Task<bool> VerifyManagerCredentialAsync(string userId, string secret, bool pin = false) =>
+        Guid.TryParse(userId, out var id) && await _credentials.ByIdAsync(id, secret, pin, CredentialRole.Manager) is not null;
+
+    public async Task<bool> ConfirmCurrentAdministratorAsync(string password)
+    {
+        await using var db = await _factory.CreateDbContextAsync();
+        var actor = await RequireAdminAsync(db, Guid.Empty);
+        bool valid = await _credentials.ByIdAsync(Guid.Parse(actor.UserId), password, role: CredentialRole.Administrator) is not null;
+        var current = await RequireAdminAsync(db, Guid.Empty);
+        return valid && current.UserId == actor.UserId;
+    }
+
+    public async Task SaveAsync(string id, string nombre, string username, string rol, string? password, string? pin, string? passwordHint = null)
     {
         await using var _context = await _factory.CreateDbContextAsync();
         await using var tx = await _context.Database.BeginTransactionAsync();
         Guid guidId = Guid.TryParse(id, out var parsed) ? parsed : Guid.NewGuid();
-        if (string.IsNullOrWhiteSpace(nombre) || string.IsNullOrWhiteSpace(username)) throw new InvalidOperationException("Nombre y usuario requeridos.");
+        nombre = AccountInputPolicy.FullName(nombre);
+        username = AccountInputPolicy.Username(username);
         var actor = await RequireAdminAsync(_context, guidId);
-        if (await _context.Users.AnyAsync(u => u.Id != guidId && u.Username.ToLower() == username.Trim().ToLower()))
+        if (await AccountInputPolicy.Named(_context, username).AnyAsync(u => u.Id != guidId))
             throw new InvalidOperationException("El nombre de usuario ya existe.");
         var entity = await _context.Users.FindAsync(guidId);
         bool isNew = entity == null;
 
-        var enumRole = ParseRole(rol);
+        string normalizedRole = UserAccountPolicy.NormalizeRole(rol);
+        var enumRole = UserAccountPolicy.StorageRole(normalizedRole);
         if (!await _context.Users.AnyAsync() && enumRole != UserRole.Admin)
             throw new InvalidOperationException("La primera cuenta debe ser un administrador.");
-        string normalizedRole = string.IsNullOrWhiteSpace(rol)
-            ? (enumRole == UserRole.Admin ? "ADMINISTRADOR" : (enumRole == UserRole.Gerente ? "GERENTE" : "CAJERO"))
-            : (rol.Trim().Equals("ADMIN", StringComparison.OrdinalIgnoreCase) ? "ADMINISTRADOR" : rol.Trim().ToUpperInvariant());
+        if (entity?.IsActive == true && UserAccountPolicy.EffectiveRole(entity) == "ADMINISTRADOR" && normalizedRole != "ADMINISTRADOR"
+            && !await UserAccountPolicy.ActiveAdministrators(_context).AnyAsync(u => u.Id != guidId))
+            throw new InvalidOperationException("Debe conservar un administrador activo.");
 
-        if ((entity is not null && entity.RoleString != normalizedRole) || enumRole != UserRole.Cajero)
+        if ((entity is not null && UserAccountPolicy.EffectiveRole(entity) != normalizedRole) || normalizedRole != "CAJERO")
         {
             if (await _context.Users.AnyAsync())
                 await (_operations ?? throw new UnauthorizedAccessException()).RequireAsync(_context, Ticketfy.Core.Security.PermissionCatalog.UsersRoles, false);
         }
+        await UserAccountPolicy.RequireAssignableRoleAsync(_context, normalizedRole, entity);
         if (entity == null)
         {
-            if (string.IsNullOrWhiteSpace(passwordHash)) throw new InvalidOperationException("La cuenta requiere contraseña.");
             entity = new UserEntity
             {
                 Id = guidId,
                 FullName = nombre,
-                Username = username,
+                Username = username.Trim(),
                 Role = enumRole,
                 RoleString = normalizedRole,
-                PasswordHash = NormalizePassword(passwordHash),
+                PasswordHash = AccountInputPolicy.PasswordHash(password, username),
+                PasswordPolicyVersion = PasswordPolicy.CurrentVersion,
                 PasswordHint = string.Empty,
-                PinCode = NormalizePin(pinHash),
+                PinCode = AccountInputPolicy.PinHash(pin),
                 IsActive = true
             };
             _context.Users.Add(entity);
         }
         else
         {
+            if (!string.Equals(entity.Username, username, StringComparison.OrdinalIgnoreCase))
+                entity.PasswordPolicyVersion = Math.Min(0, entity.PasswordPolicyVersion);
             entity.FullName = nombre;
             entity.Username = username.Trim();
             entity.Role = enumRole;
             entity.RoleString = normalizedRole;
-            if (!string.IsNullOrEmpty(pinHash)) entity.PinCode = NormalizePin(pinHash);
-            if (!string.IsNullOrEmpty(passwordHash)) entity.PasswordHash = NormalizePassword(passwordHash);
+            if (pin is not null) entity.PinCode = AccountInputPolicy.PinHash(pin);
+            if (!string.IsNullOrEmpty(password))
+            {
+                entity.PasswordHash = AccountInputPolicy.PasswordHash(password, username);
+                entity.PasswordPolicyVersion = PasswordPolicy.CurrentVersion;
+            }
             entity.PasswordHint = string.Empty;
         }
         if (_auditService != null)
@@ -123,26 +154,20 @@ public class UserService : IUserService
         await tx.CommitAsync();
     }
 
-    private static UserRole ParseRole(string rol)
-    {
-        if (string.IsNullOrWhiteSpace(rol)) return UserRole.Cajero;
-        string norm = rol.Trim().ToUpperInvariant();
-        if (norm == "ADMINISTRADOR" || norm == "ADMIN") return UserRole.Admin;
-        if (norm == "GERENTE" || norm == "SUPERVISOR") return UserRole.Gerente;
-        if (Enum.TryParse<UserRole>(rol, true, out var parsedRole)) return parsedRole;
-        return UserRole.Cajero;
-    }
-
     public async Task DeleteAsync(string id)
     {
         await using var _context = await _factory.CreateDbContextAsync();
+        await using var tx = await _context.Database.BeginTransactionAsync();
         var actor = await RequireAdminAsync(_context, Guid.Empty);
         if (Guid.TryParse(id, out var guidId))
         {
-            if (actor.UserId == id) throw new InvalidOperationException("No puede desactivar su propia sesión.");
+            if (Guid.Parse(actor.UserId) == guidId) throw new InvalidOperationException("No puede desactivar su propia sesión.");
             var entity = await _context.Users.FindAsync(guidId);
-            if (entity != null)
+            if (entity?.IsActive == true)
             {
+                await RequireTargetAccessAsync(_context, entity);
+                if (UserAccountPolicy.EffectiveRole(entity) == "ADMINISTRADOR" && !await UserAccountPolicy.ActiveAdministrators(_context).AnyAsync(u => u.Id != guidId))
+                    throw new InvalidOperationException("Debe conservar un administrador activo.");
                 if (_auditService != null)
                 {
                     await _auditService.LogAsync(new AuditLogEntity
@@ -155,35 +180,12 @@ public class UserService : IUserService
                         Reason = "Administrative user account deletion"
                     });
                 }
-                if (entity.Role == UserRole.Admin && await _context.Users.CountAsync(u => u.IsActive && u.Role == UserRole.Admin) <= 1)
-                    throw new InvalidOperationException("Debe conservar un administrador activo.");
                 entity.IsActive = false;
                 CommercialLedger.Journal(_context, actor, Guid.NewGuid().ToString("N"), "USER_INACTIVATED", id, 0, "Baja lógica");
                 await _context.SaveChangesAsync();
+                await tx.CommitAsync();
             }
         }
-    }
-
-    public async Task<string?> GetPasswordHashAsync(string userId)
-    {
-        await using var _context = await _factory.CreateDbContextAsync();
-        if (Guid.TryParse(userId, out var guidId))
-        {
-            var entity = await _context.Users.FindAsync(guidId);
-            return entity?.PasswordHash;
-        }
-        return null;
-    }
-
-    public async Task<string?> GetPinHashAsync(string userId)
-    {
-        await using var _context = await _factory.CreateDbContextAsync();
-        if (Guid.TryParse(userId, out var guidId))
-        {
-            var entity = await _context.Users.FindAsync(guidId);
-            return entity?.PinCode;
-        }
-        return null;
     }
 
     public async Task<string?> GetPasswordHintAsync(string username)
@@ -193,29 +195,35 @@ public class UserService : IUserService
         return null;
     }
 
-    public async Task UpdatePasswordHashAsync(string userId, string passwordHash)
+    public async Task ChangePasswordAsync(string userId, string password)
     {
         await using var _context = await _factory.CreateDbContextAsync();
+        await using var tx = await _context.Database.BeginTransactionAsync();
         var actor = await RequireAdminAsync(_context, Guid.Empty);
         if (!Guid.TryParse(userId, out var guidId)) return;
         var entity = await _context.Users.FindAsync(guidId);
         if (entity == null) return;
-        if (string.IsNullOrWhiteSpace(passwordHash)) throw new InvalidOperationException("Contraseña requerida.");
-        entity.PasswordHash = NormalizePassword(passwordHash);
+        await RequireTargetAccessAsync(_context, entity);
+        entity.PasswordHash = AccountInputPolicy.PasswordHash(password, entity.Username);
+        entity.PasswordPolicyVersion = PasswordPolicy.CurrentVersion;
         CommercialLedger.Journal(_context, actor, Guid.NewGuid().ToString("N"), "PASSWORD_CHANGED", userId, 0, "Cambio administrativo de credencial");
         await _context.SaveChangesAsync();
+        await tx.CommitAsync();
     }
 
-    public async Task UpdatePinHashAsync(string userId, string pinHash)
+    public async Task ChangePinAsync(string userId, string pin)
     {
         await using var _context = await _factory.CreateDbContextAsync();
+        await using var tx = await _context.Database.BeginTransactionAsync();
         var actor = await RequireAdminAsync(_context, Guid.Empty);
         if (!Guid.TryParse(userId, out var guidId)) return;
         var entity = await _context.Users.FindAsync(guidId);
         if (entity == null) return;
-        entity.PinCode = NormalizePin(pinHash);
+        await RequireTargetAccessAsync(_context, entity);
+        entity.PinCode = AccountInputPolicy.PinHash(pin);
         CommercialLedger.Journal(_context, actor, Guid.NewGuid().ToString("N"), "PIN_CHANGED", userId, 0, "Cambio administrativo de PIN");
         await _context.SaveChangesAsync();
+        await tx.CommitAsync();
     }
 
     private async Task<OperationIdentity> RequireAdminAsync(AppDbContext db, Guid newUserId)
@@ -224,30 +232,17 @@ public class UserService : IUserService
         return await (_operations ?? throw new UnauthorizedAccessException("Sesión administrativa requerida."))
             .RequireAsync(db, Ticketfy.Core.Security.PermissionCatalog.UsersManage, false);
     }
+    private async Task RequireTargetAccessAsync(AppDbContext db, UserEntity target)
+    {
+        if (UserAccountPolicy.RequiresRoleManagement(target))
+            await (_operations ?? throw new UnauthorizedAccessException())
+                .RequireAsync(db, Ticketfy.Core.Security.PermissionCatalog.UsersRoles, false);
+    }
 
     public async Task<bool> VerifyCredentialAsync(string userId, string secret, bool pin = false)
     {
-        if (!Guid.TryParse(userId, out var id)) return false;
-        await using var db = await _factory.CreateDbContextAsync();
-        var user = await db.Users.SingleOrDefaultAsync(u => u.Id == id && u.IsActive);
-        if (user is null) return false;
-        string hash = pin ? user.PinCode : user.PasswordHash;
-        if (pin ? !SecurityManager.VerifyPin(secret, hash) : !SecurityManager.VerifyPassword(secret, hash)) return false;
-        if (pin ? SecurityManager.PinNeedsRehash(hash) : SecurityManager.NeedsRehash(hash))
-        {
-            if (pin) user.PinCode = SecurityManager.HashPin(secret); else user.PasswordHash = SecurityManager.HashPassword(secret);
-            await db.SaveChangesAsync();
-        }
-        return true;
+        return Guid.TryParse(userId, out var id) && await _credentials.ByIdAsync(id, secret, pin) is not null;
     }
-
-    private static string NormalizePassword(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? string.Empty :
-        SecurityManager.IsPasswordHash(value) ? value : SecurityManager.HashPassword(value);
-
-    private static string NormalizePin(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? string.Empty :
-        SecurityManager.IsPasswordHash(value) ? value : SecurityManager.HashPin(value);
 
     private static UserDto MapToDto(UserEntity e)
     {

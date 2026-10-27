@@ -1,11 +1,8 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Ticketfy.Data.Dtos;
-using Ticketfy.Data;
-using Microsoft.EntityFrameworkCore;
 using Ticketfy.Services.Interfaces;
 using Ticketfy.Core.Services;
-using Ticketfy.Data.Entities;
 using Serilog;
 using System;
 using System.Threading.Tasks;
@@ -84,6 +81,7 @@ public partial class ProductDialogViewModel : ObservableObject
     {
         get
         {
+            if (!CostsVisible) return "Costo y margen restringidos";
             decimal retail = RetailPrice ?? 0m;
             decimal cost = CostPrice ?? 0m;
             if (retail <= 0 || cost < 0) return "Margen: 0.00%";
@@ -95,43 +93,53 @@ public partial class ProductDialogViewModel : ObservableObject
     }
 
     private string? _editingProductId = null;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ProfitMargin))]
+    private bool _costsVisible = true;
     private double _originalStockSnapshot = 0.0;
     private double _originalMinStockSnapshot = 5.0;
 
     private readonly ISessionManager? _sessionManager;
-    private readonly IAuditService? _auditService;
-    private readonly IDbContextFactory<AppDbContext> _factory;
+    private long _lookupVersion;
+    private bool _replacingSuppliers;
+    private bool _closed;
 
     [ObservableProperty]
-    private SupplierDto? _selectedSupplier;
+    private ProductSupplierOption? _selectedSupplier;
+    [ObservableProperty] private string _supplierSearch = string.Empty;
+    [ObservableProperty] private string _supplierLookupMessage = string.Empty;
+    partial void OnSelectedSupplierChanged(ProductSupplierOption? value)
+    {
+        if (!_replacingSuppliers) _pendingSupplierId = value?.Id;
+    }
+    [RelayCommand] private Task SearchSuppliersAsync() => LoadCategoriesAndSuppliersAsync();
+    [RelayCommand]
+    private void ClearSupplier()
+    { _pendingSupplierId = null; SelectedSupplier = null; }
 
     public System.Collections.ObjectModel.ObservableCollection<string> Categories { get; } = [];
-    public System.Collections.ObjectModel.ObservableCollection<SupplierDto> Suppliers { get; } = [];
+    public System.Collections.ObjectModel.ObservableCollection<ProductSupplierOption> Suppliers { get; } = [];
 
     public event Action? RequestClose;
 
-    public ProductDialogViewModel(IProductService productService, AppDbContext db, ISessionManager? sessionManager = null, IAuditService? auditService = null)
+    public ProductDialogViewModel(IProductService productService, ISessionManager? sessionManager = null)
     {
         _productService = productService;
-        _factory = new AppDbContextFactoryImpl<AppDbContext>(db.Options);
         _sessionManager = sessionManager;
-        _auditService = auditService;
         _ = LoadCategoriesAndSuppliersAsync();
     }
 
     public async Task LoadCategoriesAndSuppliersAsync()
     {
-        await using var _db = await _factory.CreateDbContextAsync();
+        var version = ++_lookupVersion;
+        var sessionVersion = _sessionManager?.SessionVersion;
+        bool Current() => !_closed && version == _lookupVersion && sessionVersion == _sessionManager?.SessionVersion;
         try
         {
-            var list = await _db.Categories
-                .AsNoTracking()
-                .OrderBy(c => c.Name)
-                .Select(c => c.Name)
-                .ToListAsync();
-
+            var options = await _productService.GetEditorOptionsAsync(_editingProductId, SupplierSearch);
+            if (!Current()) return;
             Categories.Clear();
-            foreach (var item in list)
+            foreach (var item in options.Categories)
             {
                 Categories.Add(item);
             }
@@ -141,26 +149,30 @@ public partial class ProductDialogViewModel : ObservableObject
                 Categories.Add(Category);
             }
 
-            var supplierEntities = await _db.Suppliers
-                .AsNoTracking()
-                .Where(s => s.IsActive == 1)
-                .OrderBy(s => s.Name)
-                .ToListAsync();
-
-            Suppliers.Clear();
-            foreach (var s in supplierEntities)
+            var selected = SelectedSupplier?.Id == _pendingSupplierId ? SelectedSupplier
+                : options.AssignedSupplier?.Id == _pendingSupplierId ? options.AssignedSupplier : null;
+            _replacingSuppliers = true;
+            try
             {
-                Suppliers.Add(new SupplierDto(s.Id, s.Name, s.Rfc, s.Phone, s.Email, s.Address, s.ContactPerson));
+                Suppliers.Clear();
+                foreach (var supplier in options.Suppliers.Items) Suppliers.Add(supplier);
+                if (selected is not null && !Suppliers.Any(s => s.Id == selected.Id)) Suppliers.Add(selected);
+                SelectedSupplier = Suppliers.FirstOrDefault(s => s.Id == _pendingSupplierId);
             }
-
-            if (!string.IsNullOrEmpty(_pendingSupplierId))
-            {
-                SelectedSupplier = System.Linq.Enumerable.FirstOrDefault(Suppliers, s => s.Id == _pendingSupplierId);
-            }
+            finally { _replacingSuppliers = false; }
+            SupplierLookupMessage = options.Suppliers.HasMore
+                ? "Primeros 100 proveedores. Busque por nombre para localizar otro."
+                : $"{options.Suppliers.Items.Count} proveedores coincidentes.";
+            if (selected?.IsActive == false) SupplierLookupMessage += " El proveedor asignado está inactivo; puede conservarlo o elegir otro.";
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error loading categories and suppliers in dialog");
+            if (!Current()) return;
+            _replacingSuppliers = true;
+            try { Suppliers.Clear(); SelectedSupplier = null; Categories.Clear(); }
+            finally { _replacingSuppliers = false; }
+            SupplierLookupMessage = "No se pudieron consultar las opciones. La asignación existente se conserva al guardar; vuelva a buscar.";
         }
     }
 
@@ -193,12 +205,13 @@ public partial class ProductDialogViewModel : ObservableObject
         Barcode = product.Barcode ?? string.Empty;
         Name = product.Name;
         CostPrice = product.Cost;
+        CostsVisible = product.CostsVisible;
         RetailPrice = product.Price;
         Stock = product.Stock;
         Category = product.Category;
         Unit = string.IsNullOrWhiteSpace(product.Unit) ? "Pza" : product.Unit;
         OnPropertyChanged(nameof(IsBulkAllowed));
-        IsBulk = IsBulkAllowed;
+        IsBulk = product.IsBulk;
 
         if (!string.IsNullOrEmpty(Category) && !Categories.Contains(Category))
         {
@@ -214,17 +227,14 @@ public partial class ProductDialogViewModel : ObservableObject
         MaxStock = product.MaxStock;
         TaxRate = product.TaxRate;
 
-        if (!string.IsNullOrEmpty(product.DefaultSupplierId))
-        {
-            _pendingSupplierId = product.DefaultSupplierId;
-            if (Suppliers.Count > 0)
-            {
-                SelectedSupplier = System.Linq.Enumerable.FirstOrDefault(Suppliers, s => s.Id == product.DefaultSupplierId);
-            }
-        }
+        _pendingSupplierId = product.DefaultSupplierId;
+        _replacingSuppliers = true;
+        try { SelectedSupplier = Suppliers.FirstOrDefault(s => s.Id == product.DefaultSupplierId); }
+        finally { _replacingSuppliers = false; }
 
         _originalStockSnapshot = product.Stock;
         _originalMinStockSnapshot = product.MinStock;
+        _ = LoadCategoriesAndSuppliersAsync();
     }
 
     public void LoadFromParameters(ProductDialogParameters parameters)
@@ -236,6 +246,8 @@ public partial class ProductDialogViewModel : ObservableObject
         else
         {
             _editingProductId = null;
+            _loadedProduct = null;
+            _pendingSupplierId = null;
             Title = "Nuevo Producto";
             ShowAutoFillBanner = parameters.ShowAutoFillBanner;
             ErrorMessage = string.Empty;
@@ -288,6 +300,7 @@ public partial class ProductDialogViewModel : ObservableObject
     [RelayCommand]
     private void Cancel()
     {
+        _closed = true; ++_lookupVersion;
         RequestClose?.Invoke();
     }
 
@@ -302,7 +315,8 @@ public partial class ProductDialogViewModel : ObservableObject
     [RelayCommand]
     private async Task SaveAsync()
     {
-        if (_saving || _saved) return;
+        if (_saving || _saved || _closed) return;
+        var sessionVersion = _sessionManager?.SessionVersion;
         _saving = true;
         try
         {
@@ -322,10 +336,11 @@ public partial class ProductDialogViewModel : ObservableObject
                 SatProductCode: SatProductCode,
                 SatUnitCode: SatUnitCode,
                 MinStock: MinStock ?? 5.0,
-                DefaultSupplierId: SelectedSupplier?.Id,
-                IsBulk: IsBulk, IsKit: _loadedProduct?.IsKit ?? false, MaxStock: MaxStock, TaxRate: TaxRate, StockAdjustmentReason: StockAdjustmentReason,
+                DefaultSupplierId: _pendingSupplierId,
+                IsBulk: IsBulk, IsKit: _loadedProduct?.IsKit ?? false, IsActive: _loadedProduct?.IsActive ?? true, MaxStock: MaxStock, TaxRate: TaxRate, StockAdjustmentReason: StockAdjustmentReason,
                 ExpectedStockVersion: _loadedProduct?.ExpectedStockVersion
-            );
+            )
+            { CostsVisible = CostsVisible };
 
             if (_editingProductId != null)
             {
@@ -338,11 +353,12 @@ public partial class ProductDialogViewModel : ObservableObject
             }
 
             _saved = true;
-            RequestClose?.Invoke();
+            if (!_closed && sessionVersion == _sessionManager?.SessionVersion) RequestClose?.Invoke();
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error saving product");
+            if (_closed || sessionVersion != _sessionManager?.SessionVersion) return;
             var baseMsg = ex.GetBaseException().Message;
             if (baseMsg.Contains("UNIQUE constraint failed: products.barcode", StringComparison.OrdinalIgnoreCase))
             {

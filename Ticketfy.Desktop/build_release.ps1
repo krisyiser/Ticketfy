@@ -4,8 +4,9 @@ param (
 
 $ErrorActionPreference = "Stop"
 $ProjectPath = Join-Path $PSScriptRoot "Ticketfy.Desktop.csproj"
-$ReleaseDir = Join-Path $PSScriptRoot "Output\Releases"
+$RepositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 [xml]$ProjectXml = Get-Content $ProjectPath
+$ProjectVersion = [string](($ProjectXml.Project.PropertyGroup | Where-Object Version | Select-Object -First 1).Version)
 $TargetFramework = [string](($ProjectXml.Project.PropertyGroup | Where-Object TargetFramework | Select-Object -First 1).TargetFramework)
 if ([string]::IsNullOrWhiteSpace($TargetFramework)) { throw "TargetFramework is required." }
 if ([string]::IsNullOrWhiteSpace($Version)) {
@@ -16,6 +17,14 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
 if ($Version -notmatch '^\d+\.\d+\.\d+$') {
     throw "Version must use the numeric major.minor.patch format."
 }
+if ($Version -ne $ProjectVersion.Trim()) { throw 'Actualice primero la versión del proyecto; el release no admite versiones divergentes.' }
+$ExpectedSdk = (Get-Content -LiteralPath (Join-Path $RepositoryRoot 'global.json') -Raw | ConvertFrom-Json).sdk.version
+$ActualSdk = (& dotnet --version).Trim()
+if ($LASTEXITCODE -ne 0 -or $ActualSdk -ne $ExpectedSdk) { throw "Se requiere el SDK fijado: $ExpectedSdk." }
+if (git -C $RepositoryRoot status --porcelain) { throw 'El release firmado requiere un commit limpio y previamente aprobado por CI.' }
+$ReleaseCommit = (& git -C $RepositoryRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0) { throw 'No se pudo identificar el commit de release.' }
+$ReleaseDir = Join-Path $RepositoryRoot "artifacts\signed-releases\$Version-$([Guid]::NewGuid().ToString('N'))"
 
 $SigningThumbprint = $env:TICKETFY_SIGNING_CERT_THUMBPRINT
 $TimestampUrl = $env:TICKETFY_TIMESTAMP_URL
@@ -27,6 +36,7 @@ if ([string]::IsNullOrWhiteSpace($SignTool)) {
         Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
 }
 if ([string]::IsNullOrWhiteSpace($SignTool)) { throw "signtool.exe was not found. Install the Windows SDK." }
+New-Item -ItemType Directory -Path $ReleaseDir | Out-Null
 
 function Invoke-RequiredCodeSigning([string]$Path) {
     & $SignTool sign /sha1 $SigningThumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 $Path
@@ -41,8 +51,8 @@ Write-Host "==========================================================" -Foregro
 
 # 1. Publicar versión 64-bit (win-x64)
 Write-Host "[1/2] Publicando versión 64-bit (win-x64)..." -ForegroundColor Yellow
-$PublishDir64 = Join-Path $PSScriptRoot "bin\Release\$TargetFramework\win-x64\publish"
-dotnet publish $ProjectPath -c Release -r win-x64 --self-contained -p:Version=$Version -p:AssemblyVersion=$Version.0 -p:FileVersion=$Version.0 /p:EnableSourceLink=false /p:EnableSourceControlManagerQueries=false /p:PublishRepositoryUrl=false
+$PublishDir64 = Join-Path $ReleaseDir 'publish-x64'
+dotnet publish $ProjectPath -c Release -r win-x64 --self-contained --output $PublishDir64 -p:RestoreLockedMode=true -p:Version=$Version -p:AssemblyVersion=$Version.0 -p:FileVersion=$Version.0
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Error en la compilación x64." -ForegroundColor Red
@@ -53,8 +63,8 @@ Invoke-RequiredCodeSigning (Join-Path $PublishDir64 "Ticketfy.Desktop.exe")
 
 # 2. Publicar versión 32-bit (win-x86)
 Write-Host "[2/2] Publicando versión 32-bit (win-x86)..." -ForegroundColor Yellow
-$PublishDir86 = Join-Path $PSScriptRoot "bin\Release\$TargetFramework\win-x86\publish"
-dotnet publish $ProjectPath -c Release -r win-x86 --self-contained -p:Version=$Version -p:AssemblyVersion=$Version.0 -p:FileVersion=$Version.0 /p:EnableSourceLink=false /p:EnableSourceControlManagerQueries=false /p:PublishRepositoryUrl=false
+$PublishDir86 = Join-Path $ReleaseDir 'publish-x86'
+dotnet publish $ProjectPath -c Release -r win-x86 --self-contained --output $PublishDir86 -p:RestoreLockedMode=true -p:Version=$Version -p:AssemblyVersion=$Version.0 -p:FileVersion=$Version.0
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Error en la compilación x86." -ForegroundColor Red
@@ -62,29 +72,21 @@ if ($LASTEXITCODE -ne 0) {
 }
 Invoke-RequiredCodeSigning (Join-Path $PublishDir86 "Ticketfy.Desktop.exe")
 
-# 3. Purga estricta de instaladores antiguos para garantizar congruencia absoluta de versión
-Write-Host "Deteniendo procesos que puedan bloquear los archivos de release..." -ForegroundColor Cyan
-Get-Process -Name "Ticketfy.Desktop", "vpk" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Milliseconds 500
-
-Write-Host "Limpiando ejecutables e instaladores previos en Output\Releases..." -ForegroundColor Cyan
-Remove-Item -Path "$ReleaseDir\*.exe" -Force -ErrorAction SilentlyContinue
-Remove-Item -Path "$ReleaseDir\x64\*.exe" -Force -ErrorAction SilentlyContinue
-Remove-Item -Path "$ReleaseDir\x86\*.exe" -Force -ErrorAction SilentlyContinue
+# Each invocation owns a new output directory. Never stop an operating POS,
+# overwrite a previous release, or clean paths relative to the caller's CWD.
 
 # Validar versión del binario compilado
 $BuiltVersion = (Get-Item "$PublishDir64\Ticketfy.Desktop.exe").VersionInfo.FileVersion
 Write-Host "Verificando versión de ensamblado compilado: $BuiltVersion (Esperado: $Version.0)" -ForegroundColor Cyan
+if ($BuiltVersion -ne "$Version.0") { throw 'La versión del ejecutable no coincide con el proyecto.' }
 
 # 4. Empaquetado Velopack en directorios temporales aislados
 Write-Host "Empaquetando con Velopack en entorno aislado (x64 y x86)..." -ForegroundColor Cyan
 $TempPack64 = Join-Path $ReleaseDir "temp_x64_$Version"
 $TempPack86 = Join-Path $ReleaseDir "temp_x86_$Version"
 
-Remove-Item -Recurse -Force $TempPack64 -ErrorAction SilentlyContinue
-Remove-Item -Recurse -Force $TempPack86 -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path $TempPack64 -Force | Out-Null
-New-Item -ItemType Directory -Path $TempPack86 -Force | Out-Null
+New-Item -ItemType Directory -Path $TempPack64 | Out-Null
+New-Item -ItemType Directory -Path $TempPack86 | Out-Null
 
 vpk pack -u Ticketfy.Desktop -v $Version -p $PublishDir64 -o $TempPack64 -e Ticketfy.Desktop.exe --packTitle "Ticketfy! (64-bit)"
 if ($LASTEXITCODE -ne 0 -or !(Test-Path "$TempPack64\Ticketfy.Desktop-win-Setup.exe")) {
@@ -107,7 +109,7 @@ Copy-Item -Path "$TempPack86\*" -Destination "$ReleaseDir\x86\" -Recurse -Force
 
 Write-Host "Compilando instalador nativo industrial de alta compatibilidad con Inno Setup (ISCC.exe)..." -ForegroundColor Cyan
 $IsccPaths = @(
-    "C:\Users\YERSI\AppData\Local\Programs\Inno Setup 6\ISCC.exe",
+    (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
     "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
     "C:\Program Files\Inno Setup 6\ISCC.exe"
 )
@@ -124,6 +126,9 @@ if ($IsccExe) {
     $issFile = Join-Path $PSScriptRoot "ticketfy_setup.iss"
     if (Test-Path $issFile) {
         & $IsccExe "/DMyAppVersion=$Version" "/DMySourceDir=$PublishDir64" "/DMyOutputDir=$ReleaseDir" $issFile
+        if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath "$ReleaseDir\Ticketfy-Setup-v$Version-x64.exe")) {
+            throw 'No se generó el instalador Inno Setup. Se conserva la evidencia para diagnóstico.'
+        }
         if ($LASTEXITCODE -eq 0 -and (Test-Path "$ReleaseDir\Ticketfy-Setup-v$Version-x64.exe")) {
             Copy-Item -Path "$ReleaseDir\Ticketfy-Setup-v$Version-x64.exe" -Destination "$ReleaseDir\Ticketfy-Setup-v$Version.exe" -Force
             
@@ -150,26 +155,24 @@ Get-ChildItem -LiteralPath $ReleaseDir -Filter *.exe -Recurse | ForEach-Object {
 }
 
 $ZipSetupPath = "$ReleaseDir\Ticketfy-Instalador-v$Version-x64.zip"
-if (Test-Path $ZipSetupPath) { Remove-Item -LiteralPath $ZipSetupPath -Force }
-Compress-Archive -LiteralPath "$ReleaseDir\Ticketfy-Setup-v$Version-x64.exe" -DestinationPath $ZipSetupPath -Force
-
-Remove-Item -Recurse -Force $TempPack64 -ErrorAction SilentlyContinue
-Remove-Item -Recurse -Force $TempPack86 -ErrorAction SilentlyContinue
+Compress-Archive -LiteralPath "$ReleaseDir\Ticketfy-Setup-v$Version-x64.exe" -DestinationPath $ZipSetupPath
 
 # 4. Generar manifiesto local para trazabilidad de la compilación
 Write-Host "Generando manifiesto local de compilación..." -ForegroundColor Cyan
-$LocalBuildJson = @"
-{
-  "version": "$Version",
-  "created_at": "$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ssK')",
-  "mode": "local-development",
-  "artifacts": {
-    "x64": "Ticketfy-Setup-v$Version-x64.exe",
-    "x86": "Ticketfy-Setup-v$Version-x86.exe",
-    "portable": "Ticketfy-Portable-v$Version-x64.zip"
-  }
-}
-"@
+$ArtifactHashes = @(Get-ChildItem -LiteralPath $ReleaseDir -File | Sort-Object Name | ForEach-Object {
+    [ordered]@{ file = $_.Name; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash; bytes = $_.Length }
+})
+if (git -C $RepositoryRoot status --porcelain) { throw 'La compilación alteró fuentes rastreadas. No publique el resultado.' }
+$LocalBuildJson = [ordered]@{
+    version = $Version
+    commit = $ReleaseCommit
+    source_state = 'clean'
+    sdk = $ActualSdk
+    created_at = [DateTimeOffset]::UtcNow.ToString('O')
+    mode = 'local-signed-candidate'
+    qualification = 'Requiere aceptación de instalación, actualización, recuperación y piloto; la firma no acredita operación empresarial.'
+    artifacts = $ArtifactHashes
+} | ConvertTo-Json -Depth 4
 [System.IO.File]::WriteAllText("$ReleaseDir\local-build.json", $LocalBuildJson, (New-Object System.Text.UTF8Encoding($false)))
 
 Write-Host "¡Construcción local completada con éxito! No se publicó ningún artefacto remoto." -ForegroundColor Green
@@ -177,8 +180,5 @@ Write-Host "Instalador 64-bit: $ReleaseDir\Ticketfy-Setup-v$Version-x64.exe" -Fo
 Write-Host "Instalador 32-bit: $ReleaseDir\Ticketfy-Setup-v$Version-x86.exe" -ForegroundColor Green
 Write-Host "Manifiesto local:  $ReleaseDir\local-build.json" -ForegroundColor Green
 
-# 5. Limpieza de temporales
-Write-Host "Limpiando artefactos temporales..." -ForegroundColor Cyan
-Remove-Item -Recurse -Force ".\bin" -ErrorAction SilentlyContinue
-Remove-Item -Recurse -Force ".\obj" -ErrorAction SilentlyContinue
+# Keep intermediate artifacts for diagnostics and independently qualified installation tests.
 Write-Host "Proceso finalizado con éxito." -ForegroundColor Green

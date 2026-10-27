@@ -9,10 +9,11 @@ using Ticketfy.Data;
 using Ticketfy.Data.Entities;
 using Ticketfy.Services.Interfaces;
 using Serilog;
+using Ticketfy.Services.Security;
 
 namespace Ticketfy.Services.Implementations;
 
-public class SettingsService : ISettingsService
+public partial class SettingsService : ISettingsService
 {
     private const string AppSettingsJsonKey = "SystemGlobalAppSettings_V4";
     private readonly IDbContextFactory<AppDbContext> _factory;
@@ -32,24 +33,25 @@ public class SettingsService : ISettingsService
 
     public async Task SetAsync(string key, string value)
     {
+        if (key is AppSettingsJsonKey or "Inventory.DefaultMinStock" or InitialSetupStateStore.Key or "IsOnboardingCompleted") throw new InvalidOperationException("Use el contrato de configuración correspondiente; no se permiten reemplazos desde una clave genérica.");
         await using var _context = await _factory.CreateDbContextAsync();
-        string permission = key.StartsWith("RolePermissions_", StringComparison.Ordinal) || key == "CustomRolesList"
+        await using var tx = await _context.Database.BeginTransactionAsync();
+        string permission = RolePolicySettings.IsRoleSetting(key)
             ? Ticketfy.Core.Security.PermissionCatalog.UsersRoles
+            : key.StartsWith("Printer", StringComparison.Ordinal) || key.StartsWith("Scanner", StringComparison.Ordinal) || key.StartsWith("Scale", StringComparison.Ordinal)
+                ? Ticketfy.Core.Security.PermissionCatalog.SettingsHardware
             : key.StartsWith("Tutorial.", StringComparison.Ordinal) ? Ticketfy.Core.Security.PermissionCatalog.PosCheckout
             : Ticketfy.Core.Security.PermissionCatalog.SettingsBusiness;
         var actor = await (_operations ?? throw new UnauthorizedAccessException("Sesión requerida para cambiar la configuración."))
             .RequireAsync(_context, permission, false);
         if ((key is "PaymentApiToken" or "FacturamaApiPassword" or "FacturamaApiUser") && value.Length > 0)
             throw new InvalidOperationException("Las credenciales deben almacenarse en el almacén protegido de Windows.");
-        if (key.StartsWith("RolePermissions_", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(value))
-        {
-            var policy = JsonSerializer.Deserialize<Dictionary<string, bool>>(value)
-                ?? throw new InvalidOperationException("Política inválida.");
-            if (policy.Keys.Any(k => !Ticketfy.Core.Security.PermissionCatalog.IsKnown(k))) throw new InvalidOperationException("La política contiene permisos desconocidos.");
-        }
+        if (RolePolicySettings.IsRoleSetting(key))
+            (key, value) = await RolePolicySettings.ValidateAsync(_context, key, value);
         await SetValueAsync(_context, key, value);
         CommercialLedger.Journal(_context, actor, Guid.NewGuid().ToString("N"), "SETTING_CHANGED", key, 0, "Cambio de configuración; valores omitidos por privacidad");
         await _context.SaveChangesAsync();
+        await tx.CommitAsync();
     }
 
     private static async Task SetValueAsync(AppDbContext db, string key, string value)
@@ -57,6 +59,28 @@ public class SettingsService : ISettingsService
         var setting = await db.Settings.FindAsync(key);
         if (setting is null) db.Settings.Add(new SettingEntity { Key = key, Value = value });
         else setting.Value = value;
+    }
+
+    public Task AddCustomRoleAsync(string name) => ChangeCustomRoleAsync(name, false);
+    public Task DeleteCustomRoleAsync(string name) => ChangeCustomRoleAsync(name, true);
+    private async Task ChangeCustomRoleAsync(string name, bool remove)
+    {
+        if (string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException("Indique el nombre del rol.");
+        string role = UserAccountPolicy.NormalizeRole(name);
+        if (RolePolicySettings.IsBaseRole(role))
+            throw new InvalidOperationException("Los roles base no se agregan ni eliminan.");
+        await using var db = await _factory.CreateDbContextAsync();
+        await using var tx = await db.Database.BeginTransactionAsync();
+        var actor = await (_operations ?? throw new UnauthorizedAccessException("Sesión requerida."))
+            .RequireAsync(db, Ticketfy.Core.Security.PermissionCatalog.UsersRoles, false);
+        var current = await RolePolicySettings.ReadRolesAsync(db);
+        if (current.Contains(role, StringComparer.Ordinal) != remove) return;
+        var requested = remove ? current.Where(r => r != role) : current.Append(role);
+        var change = await RolePolicySettings.ValidateAsync(db, "CustomRolesList", JsonSerializer.Serialize(requested));
+        await SetValueAsync(db, change.Key, change.Value);
+        CommercialLedger.Journal(db, actor, Guid.NewGuid().ToString("N"), remove ? "ROLE_DELETED" : "ROLE_CREATED", role, 0m, "Administración de roles");
+        await db.SaveChangesAsync();
+        await tx.CommitAsync();
     }
 
     public async Task<Dictionary<string, string>> GetAllAsync()
@@ -68,11 +92,17 @@ public class SettingsService : ISettingsService
 
     public async Task<AppSettings> GetAppSettingsAsync()
     {
-        await using var _context = await _factory.CreateDbContextAsync();
+        await using var db = await _factory.CreateDbContextAsync();
+        return await ReadAppSettingsAsync(db);
+    }
+
+    private static async Task<AppSettings> ReadAppSettingsAsync(AppDbContext db)
+    {
+        var all = await db.Settings.AsNoTracking().ToDictionaryAsync(s => s.Key, s => s.Value);
         AppSettings settings = new();
         try
         {
-            var json = await GetAsync(AppSettingsJsonKey);
+            all.TryGetValue(AppSettingsJsonKey, out var json);
             if (!string.IsNullOrWhiteSpace(json))
             {
                 var deserialized = JsonSerializer.Deserialize<AppSettings>(json);
@@ -85,8 +115,6 @@ public class SettingsService : ISettingsService
         }
 
         // Always overlay individual keys for 100% full integration with Onboarding & Settings
-        var all = await GetAllAsync();
-
         if (all.TryGetValue("CurrentTheme", out var ct)) settings.Visual.ThemeName = ct;
         if (all.TryGetValue("AccentColor", out var ac)) settings.Visual.PrimaryColor = ac;
         if (all.TryGetValue("AppFont", out var af)) settings.Visual.FontFamily = af;
@@ -109,13 +137,51 @@ public class SettingsService : ISettingsService
         return settings;
     }
 
-    public async Task SaveAppSettingsAsync(AppSettings settings)
+    public Task SaveAppSettingsAsync(AppSettings settings) => SaveSettingsCoreAsync(settings, null);
+    public Task SaveSectionAsync(AppSettings settings, AppSettingsSection section) => SaveSettingsCoreAsync(settings, section);
+
+    private async Task SaveSettingsCoreAsync(AppSettings settings, AppSettingsSection? section)
     {
         ArgumentNullException.ThrowIfNull(settings);
         await using var db = await _factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
-        var actor = await (_operations ?? throw new UnauthorizedAccessException("Sesión requerida."))
-            .RequireAsync(db, Ticketfy.Core.Security.PermissionCatalog.SettingsBusiness, false);
+        string permission = section switch
+        {
+            AppSettingsSection.Security => Ticketfy.Core.Security.PermissionCatalog.SettingsSecurity,
+            AppSettingsSection.Hardware => Ticketfy.Core.Security.PermissionCatalog.SettingsHardware,
+            null or AppSettingsSection.Visual => Ticketfy.Core.Security.PermissionCatalog.SettingsBusiness,
+            _ => throw new ArgumentOutOfRangeException(nameof(section))
+        };
+        var actor = await (_operations ?? throw new UnauthorizedAccessException("Sesión requerida.")).RequireAsync(db, permission, false);
+        var previousSettings = await ReadAppSettingsAsync(db);
+        if (section.HasValue)
+        {
+            var merged = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(previousSettings))!;
+            switch (section.Value)
+            {
+                case AppSettingsSection.Visual: merged.Visual = settings.Visual; break;
+                case AppSettingsSection.Hardware: merged.Hardware = settings.Hardware; merged.Ticket = settings.Ticket; break;
+                case AppSettingsSection.Security: merged.System = settings.System; merged.Company.TimeZoneId = settings.Company.TimeZoneId; break;
+            }
+            settings = merged;
+        }
+        if (JsonSerializer.Serialize(previousSettings.System) != JsonSerializer.Serialize(settings.System))
+            await _operations.RequireAsync(db, Ticketfy.Core.Security.PermissionCatalog.SettingsSecurity, false);
+        if (JsonSerializer.Serialize(previousSettings.Hardware) != JsonSerializer.Serialize(settings.Hardware)
+            || JsonSerializer.Serialize(previousSettings.Ticket) != JsonSerializer.Serialize(settings.Ticket))
+            await _operations.RequireAsync(db, Ticketfy.Core.Security.PermissionCatalog.SettingsHardware, false);
+        _ = Ticketfy.Core.Helpers.BusinessTime.Resolve(settings.Company.TimeZoneId);
+        if (!settings.System.EnableAuditLogs || settings.System.AutoLockTimeoutMinutes is < 1 or > 60
+            || settings.System.BackupIntervalHours is < 1 or > 168 || settings.System.BackupRetentionCount is < 1 or > 365
+            || settings.System.BackupRetentionDays is < 1 or > 3650 || !Enum.IsDefined(settings.System.TelemetryConsent))
+            throw new InvalidOperationException("Revise los límites de bloqueo, respaldos y telemetría. La auditoría comercial no puede desactivarse.");
+        if (previousSettings.Company.TimeZoneId != settings.Company.TimeZoneId)
+        {
+            if (await db.Shifts.AnyAsync(s => s.IsOpen == 1))
+                throw new InvalidOperationException("Cierre todos los turnos antes de cambiar la zona horaria comercial. Reinicie después de guardar.");
+            CommercialLedger.Journal(db, actor, Guid.NewGuid().ToString("N"), "BUSINESS_TIME_ZONE_CHANGED", AppSettingsJsonKey, 0,
+                previousSettings.Company.TimeZoneId + " -> " + settings.Company.TimeZoneId);
+        }
         var values = new Dictionary<string, string>
         {
             [AppSettingsJsonKey] = JsonSerializer.Serialize(settings),

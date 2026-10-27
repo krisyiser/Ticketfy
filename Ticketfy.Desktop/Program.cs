@@ -4,7 +4,6 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Threading;
 using Velopack;
 using Ticketfy.Core.Configuration;
 using Ticketfy.Logging;
@@ -18,39 +17,38 @@ internal static class Program
 
     [DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
-    [DllImport("ntdll.dll")]
-    private static extern int NtQueryInformationProcess(
-        IntPtr processHandle, int processInformationClass, ref PROCESS_BASIC_INFORMATION processInformation, int processInformationLength, out int returnLength);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct PROCESS_BASIC_INFORMATION
-    {
-        public IntPtr ExitStatus;
-        public IntPtr PebBaseAddress;
-        public IntPtr AffinityMask;
-        public IntPtr BasePriority;
-        public IntPtr UniqueProcessId;
-        public IntPtr InheritedFromUniqueProcessId;
-    }
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int MessageBoxW(IntPtr hWnd, string text, string caption, uint type);
 
     private const int SW_RESTORE = 9;
 
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.Contains("--verify-startup", StringComparer.Ordinal))
+        {
+            try { Core.Startup.StartupVerification.Run(args); }
+            catch (Exception ex) { Console.Error.WriteLine("Startup verification failed: " + ex.GetType().Name); Environment.ExitCode = 1; }
+            return;
+        }
         // 1. Initialize Velopack (crucial for shortcuts, uninstalls, and OTA background updates).
         // TLS certificate validation intentionally uses the operating-system trust store.
         VelopackApp.Build().Run();
 
-        // 2. Ensure single responsive instance: kill ghost/hung processes (0 UI window) or bring active UI window to front
-        if (!EnsureSingleResponsiveInstance())
-        {
-            return;
-        }
-
         try
         {
+            int dataDirectoryArgument = Array.IndexOf(args, "--data-directory");
+            if (dataDirectoryArgument >= 0)
+            {
+                if (dataDirectoryArgument + 1 >= args.Length) throw new ArgumentException("Falta la carpeta después de --data-directory.");
+                AppDataPaths.UseDataDirectory(args[dataDirectoryArgument + 1]);
+            }
+            using var ownership = new Ticketfy.Core.Startup.ApplicationInstanceLock(AppDataPaths.RootDirectory);
+            if (!ownership.IsAcquired)
+            {
+                ActivateExistingWindow();
+                return;
+            }
             var logDir = AppDataPaths.LogDirectory;
             Directory.CreateDirectory(logDir);
 
@@ -68,6 +66,10 @@ internal static class Program
         catch (Exception ex)
         {
             Log.Fatal(ex, "TICKETFY! crashed fatally during initialization");
+            Environment.ExitCode = 1;
+            if (OperatingSystem.IsWindows()) MessageBoxW(IntPtr.Zero,
+                "No se pudo iniciar Ticketfy. Revise la ruta de datos, los permisos y los registros de diagnóstico. No borre bases ni llaves. Si perdió el perfil, utilice el asistente --recovery con su paquete integral.\n\nCódigo: " + ex.GetType().Name,
+                "Ticketfy — Inicio detenido", 0x10);
         }
         finally
         {
@@ -75,79 +77,24 @@ internal static class Program
         }
     }
 
-    private static int GetParentProcessId(IntPtr handle)
+    private static void ActivateExistingWindow()
     {
-        try
+        foreach (var process in Process.GetProcessesByName("Ticketfy.Desktop"))
         {
-            var pbi = new PROCESS_BASIC_INFORMATION();
-            int status = NtQueryInformationProcess(handle, 0, ref pbi, Marshal.SizeOf(pbi), out _);
-            if (status == 0)
+            using (process)
             {
-                return pbi.InheritedFromUniqueProcessId.ToInt32();
-            }
-        }
-        catch { }
-        return -1;
-    }
-
-    private static bool EnsureSingleResponsiveInstance()
-    {
-        try
-        {
-            var currentProc = Process.GetCurrentProcess();
-
-            // NEVER enforce process killing if running from Setup, Velopack, or installer executables
-            if (currentProc.ProcessName.Contains("Setup", StringComparison.OrdinalIgnoreCase) ||
-                currentProc.ProcessName.Contains("vpk", StringComparison.OrdinalIgnoreCase) ||
-                currentProc.ProcessName.Contains("Update", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            int parentPid = GetParentProcessId(currentProc.Handle);
-
-            // ONLY target processes named strictly "Ticketfy.Desktop"
-            var existingProcesses = Process.GetProcessesByName("Ticketfy.Desktop");
-
-            foreach (var p in existingProcesses)
-            {
-                // Skip self and parent process
-                if (p.Id == currentProc.Id || (parentPid > 0 && p.Id == parentPid)) continue;
-
+                if (process.Id == Environment.ProcessId) continue;
                 try
                 {
-                    string pName = p.ProcessName;
-                    if (pName.Contains("Setup", StringComparison.OrdinalIgnoreCase) ||
-                        pName.Contains("Update", StringComparison.OrdinalIgnoreCase) ||
-                        pName.Contains("vpk", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    // Check if existing process has an active UI main window
-                    if (p.MainWindowHandle != IntPtr.Zero)
-                    {
-                        ShowWindow(p.MainWindowHandle, SW_RESTORE);
-                        SetForegroundWindow(p.MainWindowHandle);
-                        return false; // Exit current duplicate instance cleanly
-                    }
-                    else
-                    {
-                        // Ghost process without UI window -> kill it so new instance can run
-                        p.Kill();
-                    }
+                    if (process.MainWindowHandle == IntPtr.Zero) continue;
+                    ShowWindow(process.MainWindowHandle, SW_RESTORE);
+                    SetForegroundWindow(process.MainWindowHandle);
+                    return;
                 }
-                catch
-                {
-                    // Ignore permission / already exited exceptions
-                }
+                catch (System.ComponentModel.Win32Exception) { }
+                catch (InvalidOperationException) { }
             }
         }
-        catch
-        {
-            // Fallback: continue startup
-        }
-        return true;
     }
 
     private static void RunAvaloniaApp(string[] args)

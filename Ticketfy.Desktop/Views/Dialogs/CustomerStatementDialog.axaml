@@ -25,14 +25,21 @@
                         <TextBlock Text="{Binding CustomerRfc, StringFormat='RFC: {0}'}" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
                     </StackPanel>
                     <StackPanel Grid.Column="1" HorizontalAlignment="Right" Spacing="2">
-                        <TextBlock Text="Saldo Deudor Actual" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" HorizontalAlignment="Right" />
-                        <TextBlock Text="{Binding CurrentDebt, StringFormat='${0:N2}'}" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource AccentDangerBrush}" HorizontalAlignment="Right" />
+                        <TextBlock Text="Saldo de la consulta" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" HorizontalAlignment="Right" />
+                        <TextBlock Text="{Binding BalanceDisplay}" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource AccentDangerBrush}" HorizontalAlignment="Right" />
                     </StackPanel>
                 </Grid>
             </StackPanel>
 
             <!-- Bottom Action Buttons -->
-            <StackPanel DockPanel.Dock="Bottom" Margin="0,16,0,0">
+            <StackPanel DockPanel.Dock="Bottom" Margin="0,16,0,0" Spacing="6">
+                <TextBlock Text="{Binding Status}" TextWrapping="Wrap" FontSize="11" />
+                <TextBlock Text="{Binding PageLabel}" FontSize="11" />
+                <StackPanel Orientation="Horizontal" Spacing="8" IsEnabled="{Binding !IsBusy}">
+                    <Button Content="Más recientes" Command="{Binding RecentEntriesCommand}" IsEnabled="{Binding HasRecentEntries}" />
+                    <Button Content="Más antiguos" Command="{Binding OlderEntriesCommand}" IsEnabled="{Binding HasOlderEntries}" />
+                    <Button Content="Actualizar" Command="{Binding RefreshLedgerCommand}" />
+                </StackPanel>
                 <Button Command="{Binding CloseCommand}" Content="CERRAR ESTADO DE CUENTA" Padding="12"
                         Background="{DynamicResource BgPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                         Foreground="{DynamicResource TextPrimaryBrush}" CornerRadius="6" HorizontalContentAlignment="Center" />

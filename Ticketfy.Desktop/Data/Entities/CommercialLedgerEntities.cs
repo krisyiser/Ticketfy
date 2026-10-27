@@ -117,6 +117,7 @@ public sealed class PaymentRefundEntity : IImmutableRecord
 public sealed class InventoryMovementEntity : IImmutableRecord
 {
     [Key] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public long PostingSequence { get; set; }
     public string ProductId { get; set; } = "";
     public string OperationId { get; set; } = "";
     public string DocumentId { get; set; } = "";
@@ -137,6 +138,7 @@ public sealed class InventoryMovementEntity : IImmutableRecord
 public sealed class AccountEntryEntity : IImmutableRecord
 {
     [Key] public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public long PostingSequence { get; set; }
     public AccountKind AccountKind { get; set; }
     public string AccountId { get; set; } = "";
     public string OperationId { get; set; } = "";

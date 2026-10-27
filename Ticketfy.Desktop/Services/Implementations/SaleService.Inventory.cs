@@ -18,7 +18,7 @@ public partial class SaleService
 {
     private async Task<string> GenerateNextSaleFolioAsync(AppDbContext _ctx)
     {
-        string datePrefix = DateTime.Now.ToString("ddMMyy");
+        string datePrefix = Ticketfy.Core.Helpers.BusinessTime.Now.ToString("ddMMyy");
 
         var query = @"
             INSERT INTO FolioSequences (DatePrefix, LastSequence) 
@@ -49,7 +49,7 @@ public partial class SaleService
 
     private async Task<string> GenerateNextReturnFolioAsync(AppDbContext _ctx)
     {
-        string datePrefix = $"DEV-{DateTime.Now.ToString("ddMMyy")}";
+        string datePrefix = $"DEV-{Ticketfy.Core.Helpers.BusinessTime.Now.ToString("ddMMyy")}";
 
         var query = @"
             INSERT INTO FolioSequences (DatePrefix, LastSequence) 
@@ -82,8 +82,8 @@ public partial class SaleService
     {
         if (product.Stock <= product.MinStock)
         {
-            bool alertExists = await _ctx.SystemAlerts
-                .AnyAsync(a => a.ProductId == product.Id && !a.IsResolved);
+            bool alertExists = _ctx.SystemAlerts.Local.Any(a => a.ProductId == product.Id && !a.IsResolved)
+                || await _ctx.SystemAlerts.AnyAsync(a => a.ProductId == product.Id && !a.IsResolved);
 
             if (!alertExists)
             {
@@ -94,7 +94,7 @@ public partial class SaleService
                     SupplierId = product.DefaultSupplierId,
                     Title = $"Stock Crítico: {product.Name}",
                     Message = $"Stock actual ({product.Stock}) por debajo del mínimo permitido ({product.MinStock}).",
-                    CreatedAt = DateTime.Now.ToString("s"),
+                    CreatedAt = DateTimeOffset.UtcNow.ToString("O"),
                     IsResolved = false
                 };
                 _ctx.SystemAlerts.Add(alert);
@@ -102,44 +102,18 @@ public partial class SaleService
         }
     }
 
-    private async Task<decimal> DeductInventoryRecursiveAsync(AppDbContext _ctx, string productId, double quantityMultiplier, HashSet<string> executionStack, OperationIdentity actor, string operationId, string documentId, string saleLineId)
+    private async Task<decimal> DeductInventoryAsync(AppDbContext db, KitInventoryGraph graph, string productId, decimal quantity, OperationIdentity actor, string operationId, string documentId, string saleLineId)
     {
-        var product = await _ctx.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == productId && p.IsActive)
-            ?? throw new InvalidOperationException($"Producto o ingrediente no encontrado: {productId}");
-
-        if (product.IsKit)
+        var plan = graph.RequirePlan(productId);
+        // Aggregate repeated/nested leaves first; quantities and costs never multiply as double.
+        var requirements = graph.QuantitiesFor(plan, quantity);
+        foreach (var pair in requirements.OrderBy(p => p.Key, StringComparer.Ordinal))
         {
-            if (!executionStack.Add(productId))
-                throw new InvalidOperationException($"Error crítico: Referencia circular detectada en el Combo/Kit: {product.Name}");
-
-            var kit = await _ctx.ItemKits
-                .Include(k => k.Components)
-                .FirstOrDefaultAsync(k => k.ParentProductId == product.Id || k.Id == product.Id)
-                ?? throw new InvalidOperationException($"Estructura de Combo no encontrada para: {product.Name}");
-
-            decimal totalKitUnitCost = 0m;
-
-            if (kit.Components.Count == 0 || kit.Components.Any(c => !double.IsFinite(c.Quantity) || c.Quantity <= 0))
-                throw new InvalidOperationException("El kit requiere componentes con cantidades válidas.");
-
-            foreach (var component in kit.Components)
-            {
-                double totalRequired = quantityMultiplier * component.Quantity;
-                decimal compUnitCost = await DeductInventoryRecursiveAsync(_ctx, component.ProductId, totalRequired, executionStack, actor, operationId, documentId, saleLineId);
-                totalKitUnitCost += Convert.ToDecimal(component.Quantity) * compUnitCost;
-            }
-
-            executionStack.Remove(productId);
-            return totalKitUnitCost;
+            await CommercialLedger.StockAsync(db, actor, operationId, documentId, pair.Key, -pair.Value, "SALE", saleLineId);
+            var product = await db.Products.AsNoTracking().SingleAsync(p => p.Id == pair.Key);
+            await CheckAndFlagLowStockAsync(db, product);
         }
-        else
-        {
-            await CommercialLedger.StockAsync(_ctx, actor, operationId, documentId, productId,
-                -(decimal)quantityMultiplier, "SALE", saleLineId);
-            product.Stock = Math.Round(product.Stock - quantityMultiplier, 3);
-            await CheckAndFlagLowStockAsync(_ctx, product);
-            return product.Cost;
-        }
+        return plan.UnitCost;
     }
 
     private static List<SaleItemSnapshotDto> ApplyProratedGlobalDiscountAndTaxes(List<SaleItemSnapshotDto> items, decimal globalDiscountAmount)

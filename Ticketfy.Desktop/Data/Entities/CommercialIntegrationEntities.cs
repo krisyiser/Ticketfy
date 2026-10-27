@@ -131,6 +131,18 @@ public sealed class PaymentTerminalOperationEntity
     [Column("last_four_digits")]
     public string? LastFourDigits { get; set; }
 
+    [Column("funds_observed")]
+    public bool FundsObserved { get; set; }
+
+    [Column("no_funds_confirmed")]
+    public bool NoFundsConfirmed { get; set; }
+
+    [Column("provider_updated_at_utc")]
+    public string? ProviderUpdatedAtUtc { get; set; }
+
+    [Column("provider_evidence_hash")]
+    public string? ProviderEvidenceHash { get; set; }
+
     [Column("attempt_count")]
     public int AttemptCount { get; set; }
 

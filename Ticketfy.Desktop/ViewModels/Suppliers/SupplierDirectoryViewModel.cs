@@ -17,7 +17,11 @@ namespace Ticketfy.ViewModels.Suppliers;
 public partial class SupplierDirectoryViewModel : ObservableObject
 {
     private readonly ISupplierService _supplierService;
-    private List<SupplierDto> _allSuppliers = [];
+    private long _loadVersion;
+    private int _page;
+    [ObservableProperty] private bool _hasNextPage;
+    public bool HasPreviousPage => _page > 0;
+    public string PageDescription => $"Página {_page + 1} · {Suppliers.Count} proveedores";
 
     public ObservableCollection<SupplierDto> Suppliers { get; } = [];
 
@@ -47,39 +51,53 @@ public partial class SupplierDirectoryViewModel : ObservableObject
 
     public async Task LoadSuppliersAsync()
     {
+        var version = ++_loadVersion;
         try
         {
-            var list = await _supplierService.GetAllAsync();
-            _allSuppliers = list.OrderBy(x => x.Name).ToList();
-            ApplySearchFilter();
+            var page = await _supplierService.GetPageAsync(_page, 100, SearchQuery);
+            if (version != _loadVersion) return;
+            Suppliers.Clear();
+            foreach (var supplier in page.Items) Suppliers.Add(supplier);
+            HasNextPage = page.HasMore;
+            OnPropertyChanged(nameof(HasPreviousPage));
+            OnPropertyChanged(nameof(PageDescription));
         }
         catch (Exception ex)
         {
             Log.Error(ex, "SupplierDirectoryViewModel: error loading suppliers");
+            if (version != _loadVersion) return;
+            Suppliers.Clear(); HasNextPage = false;
+            IsFeedbackError = true;
+            FeedbackMessage = "No se pudieron consultar los proveedores. Verifique su sesión y vuelva a buscar.";
         }
     }
 
     partial void OnSearchQueryChanged(string value)
     {
-        ApplySearchFilter();
+        _page = 0;
+        _ = SearchAfterDelayAsync(++_loadVersion);
     }
 
-    private void ApplySearchFilter()
+    private async Task SearchAfterDelayAsync(long version)
     {
-        Suppliers.Clear();
-        var q = SearchQuery?.Trim().ToLowerInvariant() ?? string.Empty;
+        await Task.Delay(180);
+        if (version == _loadVersion) await LoadSuppliersAsync();
+    }
 
-        foreach (var s in _allSuppliers)
-        {
-            if (string.IsNullOrWhiteSpace(q) ||
-                s.Name.ToLowerInvariant().Contains(q) ||
-                (!string.IsNullOrEmpty(s.Rfc) && s.Rfc.ToLowerInvariant().Contains(q)) ||
-                (!string.IsNullOrEmpty(s.Phone) && s.Phone.Contains(q)) ||
-                (!string.IsNullOrEmpty(s.ContactPerson) && s.ContactPerson.ToLowerInvariant().Contains(q)))
-            {
-                Suppliers.Add(s);
-            }
-        }
+    [RelayCommand] private async Task NextPageAsync() { if (HasNextPage) { ++_page; await LoadSuppliersAsync(); } }
+    [RelayCommand] private async Task PreviousPageAsync() { if (_page > 0) { --_page; await LoadSuppliersAsync(); } }
+
+    public void ClearSessionData()
+    {
+        SearchQuery = string.Empty;
+        ++_loadVersion;
+        _page = 0;
+        Suppliers.Clear();
+        HasNextPage = false;
+        CancelEdit();
+        FeedbackMessage = string.Empty;
+        OnPropertyChanged(nameof(HasPreviousPage));
+        OnPropertyChanged(nameof(PageDescription));
     }
 
     [RelayCommand]

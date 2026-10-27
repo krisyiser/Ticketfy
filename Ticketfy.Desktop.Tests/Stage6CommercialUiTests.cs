@@ -70,7 +70,7 @@ public sealed partial class Stage6CommercialLedgerTests
     {
         await using var db = Db();
         var products = ProductsService();
-        var product = new ProductDialogViewModel(products, db) { Name = "Producto pantalla", Barcode = "UI-001", CostPrice = 2m, RetailPrice = 5m, Stock = 4, Unit = "Pza" };
+        var product = new ProductDialogViewModel(products) { Name = "Producto pantalla", Barcode = "UI-001", CostPrice = 2m, RetailPrice = 5m, Stock = 4, Unit = "Pza" };
         var productView = new ProductDialog();
         var window = Show(productView, product);
         await ClickTwiceAsync(productView, product.SaveCommand);
@@ -154,8 +154,9 @@ public sealed partial class Stage6CommercialLedgerTests
     {
         var service = new PromotionService(new TestDbContextFactory(_options), _actor);
         var rule = new PromotionDto("EDIT-PROMO", "Volumen", 8m, true, Ticketfy.Core.Enums.PromotionType.VolumeTier,
-            TargetProductId: "P", MinQuantity: 3, StartDate: DateTime.Today, EndDate: DateTime.Today.AddDays(2));
-        await service.SaveAsync(rule);
+            TargetProductId: "P", MinQuantity: 3, StartDate: Ticketfy.Core.Helpers.BusinessTime.Today, EndDate: Ticketfy.Core.Helpers.BusinessTime.Today.AddDays(2));
+        await service.SaveAsync(rule, "CREATE-EDIT-PROMO");
+        rule = Assert.Single(await service.GetAllAsync());
         var vm = new PromotionDialogViewModel(service, ProductsService(), rule);
         var view = new PromotionDialog(); var window = Show(view, vm);
         try
@@ -254,7 +255,7 @@ public sealed partial class Stage6CommercialLedgerTests
         Assert.Single(control.Rows);
         Assert.Equal(22m, control.Rows[0].Balance);
         window.Close();
-        var count = new CashupDialogViewModel(db, shifts, isFinalZCut: true) { Count50 = "1", Count20 = "2", Count2 = "2" };
+        var count = new CashupDialogViewModel(shifts, isFinalZCut: true) { Count50 = "1", Count20 = "2", Count2 = "2" };
         var countView = new CashupDialog(); window = Show(countView, count);
         await ClickTwiceAsync(countView, count.SaveCashupCommand);
         Assert.False(count.IsFeedbackError, count.FeedbackMessage);

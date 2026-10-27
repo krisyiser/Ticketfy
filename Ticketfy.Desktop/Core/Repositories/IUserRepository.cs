@@ -9,11 +9,9 @@ public interface IUserRepository
 {
     Task<List<UserModel>> GetActiveUsersAsync();
     Task<UserModel?> ValidatePinAsync(string username, string pin4Digits);
-    Task<UserModel?> ValidateAnyPinAsync(string pin4Digits);
-    Task<bool> ValidateAdminPinAsync(string pin4Digits);
+    Task<UserModel?> VerifyPasswordAsync(string username, string password, bool supervisorOnly = false, System.Func<bool>? isRequestCurrent = null);
     Task<bool> HasAnyUsersAsync();
-    Task CreateUserAsync(UserEntity user);
-    Task SaveOrUpdateAdminUserAsync(UserEntity user);
-    Task<UserEntity?> GetByUsernameAsync(string username);
-    Task<UserEntity?> GetAdminUserAsync();
+    Task<UserModel> CreateUserAsync(UserAccountDraft user);
+    Task<UserModel> SaveOrUpdateAdminUserAsync(UserAccountDraft user);
+    Task<Ticketfy.Data.Dtos.UserDto?> GetAdminProfileAsync();
 }

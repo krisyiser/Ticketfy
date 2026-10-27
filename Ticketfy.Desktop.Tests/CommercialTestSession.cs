@@ -66,9 +66,28 @@ internal static class CommercialTestSession
             IdempotencyKey = operationId,
             Amount = amount,
             ProviderPaymentId = reference ?? "TEST-BANK:" + operationId,
-            Status = IntegrationOperationStatus.Completed
+            Status = IntegrationOperationStatus.Completed,
+            FundsObserved = true,
+            ProviderUpdatedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
+            // This fixture represents an already validated provider response, never a production token.
+            ProviderEvidenceHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes("SYNTHETIC-BANK-EVIDENCE:" + operationId)))
         });
         db.SaveChanges();
+    }
+
+    public static async Task<CommercialOperationContext> PrepareCardCheckoutAsync(IDbContextFactory<AppDbContext> factory, string reference, decimal amount)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        var actor = Create(db);
+        string productId = "BANK-PRODUCT:" + reference;
+        db.Products.Add(new ProductEntity { Id = productId, Barcode = productId, Name = "Producto de prueba bancaria", Price = amount, Stock = 2 });
+        await db.SaveChangesAsync();
+        var sale = new Ticketfy.Data.Dtos.SaleDto(reference, DateTimeOffset.UtcNow.ToString("O"),
+            [new(productId, "Producto de prueba bancaria", amount, 0m, 1, "Pza", "General", 0m, amount)],
+            amount, 0m, amount, amount, 0m, "Tarjeta", null, false, false, null, CardAmount: amount, OperationId: reference);
+        await new Ticketfy.Services.Implementations.SaleService(factory, new(), new SpyAuditService(), actor).BeginCheckoutAsync(sale);
+        return actor;
     }
 }
 

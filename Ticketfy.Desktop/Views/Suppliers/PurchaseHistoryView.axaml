@@ -13,8 +13,15 @@
             <DockPanel LastChildFill="True">
                 <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,12">
                     <TextBlock Text="Historial de Remisiones y Órdenes de Compra" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
-                    <TextBlock Text="Lista completa de las entradas de mercancía y reabastecimientos realizados." FontSize="12" Foreground="{DynamicResource TextMutedBrush}" />
+                    <TextBlock Text="Historial paginado de entradas de mercancía y reabastecimientos." FontSize="12" Foreground="{DynamicResource TextMutedBrush}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" IsEnabled="{Binding !IsLoading}">
+                        <TextBox Text="{Binding Search}" Watermark="Proveedor, factura o documento" Width="280" />
+                        <Button Content="Buscar" Command="{Binding SearchPurchasesCommand}" />
+                        <Button Content="Anterior" Command="{Binding PreviousPageCommand}" />
+                        <Button Content="Siguiente" Command="{Binding NextPageCommand}" />
+                    </StackPanel>
                     <TextBlock Text="{Binding FeedbackMessage}" FontSize="12" Foreground="{DynamicResource AccentSuccessBrush}" />
+                    <TextBlock Text="Consultando detalle…" IsVisible="{Binding IsLoadingDetail}" />
                 </StackPanel>
 
                 <DataGrid ItemsSource="{Binding Purchases}" AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal">
@@ -22,7 +29,11 @@
                         <DataGridTextColumn Header="No. Remisión / Factura" Binding="{Binding InvoiceNumber}" Width="1.5*" />
                         <DataGridTextColumn Header="Proveedor" Binding="{Binding SupplierName}" Width="2*" />
                         <DataGridTextColumn Header="Fecha y Hora" Binding="{Binding Date}" Width="1.5*" />
-                        <DataGridTextColumn Header="Costo Total" Binding="{Binding TotalCost, StringFormat='${0:N2}'}" Width="1*" />
+                        <DataGridTextColumn Header="Total registrado" Binding="{Binding TotalCost, StringFormat='${0:N2}'}" Width="1*" />
+                        <DataGridTextColumn Header="Pagos documentados" Binding="{Binding RecordedPaymentsDisplay}" Width="1*" />
+                        <DataGridTextColumn Header="Saldo (+ deuda / - crédito)" Binding="{Binding BalanceDisplay}" Width="1*" />
+                        <DataGridTextColumn Header="Estado financiero" Binding="{Binding FinancialStatus}" Width="2*" />
+                        <DataGridTextColumn Header="Estado del desglose" Binding="{Binding DetailStatus}" Width="2*" />
                         <DataGridTemplateColumn Header="Acciones" Width="Auto">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="dto:PurchaseDto">
@@ -61,7 +72,7 @@
 
         <!-- ═══ DETALLE DE COMPRA MODAL DIALOG ═══ -->
         <Border Background="#80000000" IsVisible="{Binding IsPurchaseDetailDialogOpen}" Padding="20">
-            <Border Width="550" VerticalAlignment="Center" HorizontalAlignment="Center" Padding="20"
+            <Border Width="850" MaxHeight="850" VerticalAlignment="Center" HorizontalAlignment="Center" Padding="20"
                     Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="12">
                 <DockPanel LastChildFill="True" DataContext="{Binding SelectedPurchaseForDetail}">
                     <!-- Title Bar -->
@@ -96,6 +107,8 @@
                     <!-- Info & Items List -->
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel Spacing="12">
+                            <TextBlock Text="{Binding DetailWarning}" IsVisible="{Binding !DetailsAvailable}" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource AccentWarningBrush}" />
                             <!-- Metadata Header Banner -->
                             <Border Background="{DynamicResource BgPrimaryBrush}" Padding="12" CornerRadius="6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                                 <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,*">
@@ -115,23 +128,58 @@
                                     </StackPanel>
 
                                     <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,8,0,0" Spacing="2">
-                                        <TextBlock Text="Costo Total:" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" />
+                                        <TextBlock Text="Total registrado:" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" />
                                         <TextBlock Text="{Binding TotalCost, StringFormat='${0:N2}'}" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource AccentSuccessBrush}" />
                                     </StackPanel>
                                 </Grid>
                             </Border>
 
                             <!-- Items DataGrid -->
+                            <TextBlock Text="{Binding FinancialStatus}" TextWrapping="Wrap" FontWeight="Bold" />
+                            <TextBlock Text="{Binding RecordedPaymentsDisplay, StringFormat='Pagos documentados: {0}'}" />
+                            <TextBlock Text="{Binding BalanceDisplay, StringFormat='Saldo del documento (+ deuda / - crédito): {0}'}" />
+                            <Border IsVisible="{Binding Financial, Converter={x:Static ObjectConverters.IsNotNull}}">
+                             <StackPanel DataContext="{Binding Financial}" Spacing="3">
+                                <TextBlock Text="{Binding Returns, StringFormat='Devoluciones de mercancía: {0:C2}'}" />
+                                <TextBlock Text="{Binding CreditApplied, StringFormat='Crédito aplicado: {0:C2}'}" />
+                                <TextBlock Text="{Binding CreditTransferred, StringFormat='Crédito trasladado a otra compra: {0:C2}'}" />
+                                <TextBlock Text="{Binding CreditRefunded, StringFormat='Reembolsos recibidos: {0:C2}'}" />
+                                <TextBlock Text="{Binding AvailableCredit, StringFormat='Saldo a favor disponible (sin reservas): {0:C2}'}" />
+                             </StackPanel>
+                            </Border>
                             <TextBlock Text="Artículos e Insumos Ingresados:" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
 
                             <DataGrid ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal" MaxHeight="220">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Descripción Artículo" Binding="{Binding ProductName}" Width="2*" />
-                                    <DataGridTextColumn Header="Cantidad" Binding="{Binding Quantity, StringFormat='{}{0:N2}'}" Width="1*" />
+                                    <DataGridTextColumn Header="Cantidad" Binding="{Binding Quantity, StringFormat='{}{0:N3}'}" Width="1*" />
+                                    <DataGridTextColumn Header="Devuelto" Binding="{Binding ReturnedQuantity, StringFormat='{}{0:N3}'}" Width="1*" />
+                                    <DataGridTextColumn Header="Disponible para devolver" Binding="{Binding ReturnableQuantity, StringFormat='{}{0:N3}'}" Width="1*" />
                                     <DataGridTextColumn Header="Costo Unit." Binding="{Binding UnitPrice, StringFormat='${0:N2}'}" Width="1*" />
                                     <DataGridTextColumn Header="Importe Total" Binding="{Binding TotalPrice, StringFormat='${0:N2}'}" Width="1*" />
                                 </DataGrid.Columns>
                             </DataGrid>
+                            <StackPanel DataContext="{Binding $parent[UserControl].((vm:PurchaseHistoryViewModel)DataContext)}" Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="6" IsEnabled="{Binding !IsLoadingFinancial}">
+                                    <Button Content="Consultar movimientos" Command="{Binding LoadFinancialCommand}" />
+                                    <Button Content="Movimientos anteriores" Command="{Binding PreviousFinancialCommand}" IsEnabled="{Binding HasPreviousFinancial}" />
+                                    <Button Content="Movimientos siguientes" Command="{Binding NextFinancialCommand}" IsEnabled="{Binding HasMoreFinancial}" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding FinancialFeedback}" TextWrapping="Wrap" />
+                                <DataGrid ItemsSource="{Binding FinancialEntries}" AutoGenerateColumns="False" IsReadOnly="True" MaxHeight="250">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Fecha" Binding="{Binding DateDisplay}" />
+                                        <DataGridTextColumn Header="Movimiento" Binding="{Binding TypeDisplay}" />
+                                        <DataGridTextColumn Header="Importe al saldo" Binding="{Binding Amount, StringFormat='{}{0:C2}'}" />
+                                        <DataGridTextColumn Header="Medio" Binding="{Binding Method}" />
+                                        <DataGridTextColumn Header="Referencia" Binding="{Binding Reference}" />
+                                        <DataGridTextColumn Header="Operación" Binding="{Binding OperationId}" />
+                                        <DataGridTextColumn Header="Operador (ID)" Binding="{Binding CashierUserId}" />
+                                        <DataGridTextColumn Header="Caja" Binding="{Binding RegisterId}" />
+                                        <DataGridTextColumn Header="Turno" Binding="{Binding ShiftId}" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </StackPanel>
                         </StackPanel>
                     </ScrollViewer>
                 </DockPanel>

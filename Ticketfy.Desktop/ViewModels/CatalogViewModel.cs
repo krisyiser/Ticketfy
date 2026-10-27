@@ -18,7 +18,6 @@ public partial class CatalogViewModel : ObservableObject
 {
     private readonly IProductService _productService;
     private readonly IExternalCatalogService _externalCatalogService;
-    private readonly IItemKitService? _kitService;
     private readonly CartStateStore _cartStateStore;
     public event Action<Ticketfy.ViewModels.Dialogs.ProductDialogParameters>? OpenProductDialogWithParamsRequested;
 
@@ -27,7 +26,13 @@ public partial class CatalogViewModel : ObservableObject
     public ObservableCollection<CategoryChipDto> CategoryChips { get; } = [];
 
     [ObservableProperty] private string _searchQuery = string.Empty;
-    [ObservableProperty] private string _selectedCategory = "⭐ Top Ventas";
+    [ObservableProperty] private string _selectedCategory = "Todos";
+    [ObservableProperty] private bool _isLoading;
+    [ObservableProperty] private bool _hasNextPage;
+    [ObservableProperty] private string _pageLabel = "Página 1";
+    private int _page, _queryVersion;
+    private bool _clearingSession;
+    private const int PageSize = 60;
     [ObservableProperty] private string _feedbackMessage = string.Empty;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(FeedbackColor))]
@@ -35,78 +40,87 @@ public partial class CatalogViewModel : ObservableObject
 
     public string FeedbackColor => FeedbackIsError ? "#EF4444" : "#10B981";
 
-    public CatalogViewModel(IProductService productService, IExternalCatalogService externalCatalogService, IItemKitService? kitService, CartStateStore cartStateStore)
+    public CatalogViewModel(IProductService productService, IExternalCatalogService externalCatalogService, CartStateStore cartStateStore)
     {
         _productService = productService;
         _externalCatalogService = externalCatalogService;
-        _kitService = kitService;
         _cartStateStore = cartStateStore;
     }
 
     public async Task LoadProductsAsync()
     {
+        int version = ++_queryVersion;
         try
         {
-            var list = await _productService.GetAllAsync();
+            var categories = await _productService.GetCategoryCountsAsync();
+            if (version != _queryVersion) return;
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                Products.Clear();
-                foreach (var p in list) Products.Add(p);
-                BuildCategoryChips();
-                FilterProducts();
+                CategoryChips.Clear();
+                CategoryChips.Add(new CategoryChipDto("Todos", categories.Sum(c => c.Count), $"TODOS ({categories.Sum(c => c.Count)})"));
+                foreach (var category in categories) CategoryChips.Add(new CategoryChipDto(category.Name, category.Count, $"{category.Name} ({category.Count})"));
             });
+            _page = 0;
+            await LoadPageAsync();
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error loading products");
+            Products.Clear(); FilteredProducts.Clear(); FeedbackIsError = true;
+            FeedbackMessage = "No se pudo consultar el catálogo. Revise sesión y permisos y vuelva a cargar.";
         }
     }
 
-    private void BuildCategoryChips()
+    public void ClearSessionData()
     {
-        CategoryChips.Clear();
-        CategoryChips.Add(new CategoryChipDto("⭐ Top Ventas", Products.Count, $"⭐ TOP VENTAS ({Products.Count})"));
-
-        var promoCount = Products.Count(p => string.Equals(p.Category, "Promociones", StringComparison.OrdinalIgnoreCase));
-        if (promoCount > 0)
-        {
-            CategoryChips.Add(new CategoryChipDto("Promociones", promoCount, $"🏷️ PROMOCIONES ({promoCount})"));
-        }
-
-        var groups = Products.Where(p => !string.Equals(p.Category, "Promociones", StringComparison.OrdinalIgnoreCase))
-                             .GroupBy(p => p.Category ?? "General")
-                             .OrderBy(g => g.Key);
-
-        foreach (var g in groups)
-        {
-            CategoryChips.Add(new CategoryChipDto(g.Key, g.Count(), $"{g.Key.ToUpper()} ({g.Count()})"));
-        }
+        ++_queryVersion;
+        _clearingSession = true;
+        try { SearchQuery = ""; SelectedCategory = "Todos"; _page = 0; }
+        finally { _clearingSession = false; }
+        Products.Clear(); FilteredProducts.Clear(); CategoryChips.Clear();
+        FeedbackMessage = ""; HasNextPage = false; IsLoading = false;
     }
 
     [RelayCommand]
-    private void SelectCategoryChip(CategoryChipDto chip)
+    private async Task SelectCategoryChip(CategoryChipDto chip)
     {
         if (chip == null) return;
         SelectedCategory = chip.Name;
-        FilterProducts();
+        _page = 0;
+        await LoadPageAsync();
     }
 
-    private void FilterProducts()
+    private async Task LoadPageAsync(bool debounce = false)
     {
-        FilteredProducts.Clear();
-        var query = SearchQuery.Trim().ToLower();
-
-        var matches = Products.Where(p =>
-            (SelectedCategory == "⭐ Top Ventas" || SelectedCategory == "Todos" || string.Equals(p.Category, SelectedCategory, StringComparison.OrdinalIgnoreCase)) &&
-            (string.IsNullOrWhiteSpace(query) ||
-             p.Name.ToLower().Contains(query) ||
-             (p.Barcode != null && p.Barcode.ToLower().Contains(query)))
-        );
-
-        foreach (var m in matches) FilteredProducts.Add(m);
+        int version = ++_queryVersion;
+        IsLoading = true;
+        try
+        {
+            if (debounce) await Task.Delay(150);
+            if (version != _queryVersion) return;
+            var result = await _productService.GetPageAsync(_page, PageSize, SearchQuery, SelectedCategory == "Todos" ? null : SelectedCategory);
+            if (version != _queryVersion) return;
+            Products.Clear(); FilteredProducts.Clear();
+            foreach (var product in result.Items) { Products.Add(product); FilteredProducts.Add(product); }
+            HasNextPage = result.HasMore;
+            PageLabel = $"Página {_page + 1} · {result.Items.Count} productos · búsqueda en todo el catálogo";
+        }
+        catch (Exception ex)
+        {
+            if (version != _queryVersion) return;
+            Products.Clear(); FilteredProducts.Clear(); HasNextPage = false;
+            FeedbackIsError = true; FeedbackMessage = "No se pudo consultar el catálogo. Revise la sesión e intente de nuevo.";
+            Log.Error(ex, "Catalog page query failed");
+        }
+        finally { if (version == _queryVersion) IsLoading = false; }
     }
 
-    partial void OnSearchQueryChanged(string value) => FilterProducts();
+    partial void OnSearchQueryChanged(string value) { if (_clearingSession) return; _page = 0; _ = LoadPageAsync(debounce: true); }
+
+    [RelayCommand]
+    private async Task NextPageAsync() { if (IsLoading || !HasNextPage) return; _page++; await LoadPageAsync(); }
+    [RelayCommand]
+    private async Task PreviousPageAsync() { if (IsLoading || _page == 0) return; _page--; await LoadPageAsync(); }
 
     [RelayCommand]
     private void FocusSearch() => WeakReferenceMessenger.Default.Send(new FocusSearchMessage());
@@ -128,16 +142,25 @@ public partial class CatalogViewModel : ObservableObject
                 quantityMultiplier = parsedQty;
                 productQuery = parts[1].Trim();
             }
-
-            var p = Products.FirstOrDefault(x =>
-                (x.Barcode != null && x.Barcode.Equals(productQuery, StringComparison.OrdinalIgnoreCase)) ||
-                x.Name.Equals(productQuery, StringComparison.OrdinalIgnoreCase));
-
-            if (p == null) p = Products.FirstOrDefault(x => x.Name.Contains(productQuery, StringComparison.OrdinalIgnoreCase));
+            if (!double.IsFinite(quantityMultiplier) || quantityMultiplier <= 0 || Math.Round(quantityMultiplier, 3) != quantityMultiplier)
+                throw new InvalidOperationException("Cantidad inválida: use un número positivo con hasta tres decimales.");
+            var p = await _productService.GetByBarcodeAsync(productQuery);
+            if (p is null)
+            {
+                var matches = await _productService.GetPageAsync(0, 2, productQuery);
+                if (matches.Items.Count == 1 && !matches.HasMore && matches.Items[0].Name.Equals(productQuery, StringComparison.OrdinalIgnoreCase)) p = matches.Items[0];
+                else if (matches.Items.Count > 0)
+                {
+                    FeedbackIsError = false;
+                    FeedbackMessage = "Seleccione el producto en los resultados. Una búsqueda parcial no agrega automáticamente el primer resultado.";
+                    return;
+                }
+            }
 
             if (p != null)
             {
                 SearchQuery = string.Empty;
+                if (p.InventoryWarning is not null) throw new InvalidOperationException(p.InventoryWarning);
                 if (quantityMultiplier != 1.0)
                 {
                     AddToCartWithQuantity(p, quantityMultiplier);
@@ -153,8 +176,13 @@ public partial class CatalogViewModel : ObservableObject
             }
             else
             {
-                await TryAddKitBarcodeAsync(productQuery, quantityMultiplier);
+                await TryDiscoverProductAsync(productQuery);
             }
+        }
+        catch (Exception ex)
+        {
+            FeedbackIsError = true; FeedbackMessage = ex.Message;
+            Log.Error(ex, "Scan or product lookup failed");
         }
         finally
         {
@@ -162,52 +190,30 @@ public partial class CatalogViewModel : ObservableObject
         }
     }
 
-    private async Task TryAddKitBarcodeAsync(string barcode, double multiplier)
+    private async Task TryDiscoverProductAsync(string barcode)
     {
-        bool kitFound = false;
-        if (_kitService != null)
-        {
-            var kit = await _kitService.GetByBarcodeAsync(barcode);
-            if (kit != null)
-            {
-                kitFound = true;
-                foreach (var item in kit.Items)
-                {
-                    var prod = Products.FirstOrDefault(p => p.Id == item.ProductId);
-                    if (prod != null)
-                    {
-                        AddToCartWithQuantity(prod, item.Quantity * multiplier);
-                    }
-                }
-                SearchQuery = string.Empty;
-                FeedbackMessage = $"¡Combo / Paquete '{kit.Name}' agregado al ticket!";
-            }
-        }
+        // Kits are products in the authoritative catalog. Never substitute separate ingredient sales.
+        FeedbackMessage = $"Buscando '{barcode}' en OpenFoodFacts...";
+        var externalProduct = await _externalCatalogService.FetchProductByBarcodeAsync(barcode);
 
-        if (!kitFound)
+        if (externalProduct != null)
         {
-            FeedbackMessage = $"Buscando '{barcode}' en OpenFoodFacts...";
-            var externalProduct = await _externalCatalogService.FetchProductByBarcodeAsync(barcode);
-
-            if (externalProduct != null)
+            OpenProductDialogWithParamsRequested?.Invoke(new Ticketfy.ViewModels.Dialogs.ProductDialogParameters
             {
-                OpenProductDialogWithParamsRequested?.Invoke(new Ticketfy.ViewModels.Dialogs.ProductDialogParameters
-                {
-                    IsEditMode = false,
-                    PreFilledData = externalProduct,
-                    ShowAutoFillBanner = true
-                });
-            }
-            else
-            {
-                OpenProductDialogWithParamsRequested?.Invoke(new Ticketfy.ViewModels.Dialogs.ProductDialogParameters
-                {
-                    IsEditMode = false,
-                    PreFilledBarcode = barcode
-                });
-            }
-            SearchQuery = string.Empty;
+                IsEditMode = false,
+                PreFilledData = externalProduct,
+                ShowAutoFillBanner = true
+            });
         }
+        else
+        {
+            OpenProductDialogWithParamsRequested?.Invoke(new Ticketfy.ViewModels.Dialogs.ProductDialogParameters
+            {
+                IsEditMode = false,
+                PreFilledBarcode = barcode
+            });
+        }
+        SearchQuery = string.Empty;
     }
 
     public event Action<ProductDto>? OpenBulkWeightRequested;
@@ -216,6 +222,10 @@ public partial class CatalogViewModel : ObservableObject
     private void AddToCart(ProductDto product)
     {
         if (product == null) return;
+        if (product.InventoryWarning is not null)
+        {
+            FeedbackIsError = true; FeedbackMessage = product.InventoryWarning; return;
+        }
 
         if (IsBulkProduct(product))
         {
@@ -246,6 +256,16 @@ public partial class CatalogViewModel : ObservableObject
     private void AddToCartWithQuantity(ProductDto product, double qty)
     {
         if (product == null) return;
+        if (product.InventoryWarning is not null)
+        {
+            FeedbackIsError = true; FeedbackMessage = product.InventoryWarning; return;
+        }
+
+        if (!product.IsActive || !double.IsFinite(qty) || qty <= 0 || Math.Round(qty, 3) != qty
+            || (!IsBulkProduct(product) && Math.Truncate(qty) != qty))
+        {
+            FeedbackIsError = true; FeedbackMessage = "Producto inactivo o cantidad inválida para su unidad."; return;
+        }
 
         var cartItem = new CartItemDto(product.Id, product.Name, product.Price, qty, product.Unit, product.PointsRewarded)
         {
@@ -257,7 +277,8 @@ public partial class CatalogViewModel : ObservableObject
             SatUnitCode = product.SatUnitCode ?? "H87"
         };
 
-        _cartStateStore.AddItem(cartItem, product.Stock);
+        try { _cartStateStore.AddItem(cartItem, product.Stock); }
+        catch (InvalidOperationException ex) { FeedbackIsError = true; FeedbackMessage = ex.Message; return; }
 
         FeedbackIsError = false;
         FeedbackMessage = $"Agregado: {product.Name} ({qty:N3} {product.Unit})";

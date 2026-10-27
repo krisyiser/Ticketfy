@@ -39,6 +39,25 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: quality-evidence
-          path: artifacts/quality-*/TestResults/
+          # Publish reports only: the startup probe also creates disposable keys
+          # and synthetic databases in TestResults, which must stay on the runner.
+          path: |
+            artifacts/quality-*/TestResults/*.trx
+            artifacts/quality-*/TestResults/*/coverage.cobertura.xml
+            artifacts/quality-*/TestResults/*-dependencies.json
+            artifacts/quality-*/TestResults/startup-*/startup-verification.json
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Conservar candidato verificable (sin firma, no es una aprobación comercial)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ticketfy-candidate-${{ github.sha }}
+          path: |
+            artifacts/quality-*/package-a/*.zip
+            artifacts/quality-*/package-a/*.sha256
+            artifacts/quality-*/package-a/startup-verified.json
+            artifacts/quality-*/package-a/publish-win-x64/build-manifest.json
+          if-no-files-found: error
+          retention-days: 30

@@ -1,4 +1,3 @@
-using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Ticketfy.Data.Dtos;
@@ -14,18 +13,52 @@ public partial class ExpensesViewModel : ObservableObject
 {
     private string _expenseOperationId = Guid.NewGuid().ToString("N");
     private bool _savingExpense;
+    private int _loadVersion;
+    private long _sessionVersion;
+    public void ClearSessionData()
+    {
+        ++_sessionVersion; ++_loadVersion;
+        _page = 0; IsLoading = false;
+        ClearReadData();
+        ExpenseAmount = 0m;
+        ExpenseDescription = ExpenseReference = CancellationReason = FeedbackMessage = string.Empty;
+        ReversalVerified = false;
+        _expenseOperationId = Guid.NewGuid().ToString("N");
+    }
+    private void ClearReadData()
+    {
+        Expenses.Clear(); Cancellations.Clear(); CancellationAmount = 0m;
+        TotalRevenue = TotalCostOfGoods = GrossProfit = TotalExpenses = NetProfit = 0m;
+        FondoInicial = Ingresos = PagosConTarjeta = CostoDeVentas = Egresos = TotalEnCaja = Reinversion = UtilidadNeta = 0m;
+        PeriodSubtitleDisplay = string.Empty;
+        HasLoadedData = FinancialVisible = HasMore = false;
+        TotalCount = 0;
+        ReadMessage = "Sin consulta disponible.";
+        OnPropertyChanged(nameof(PageStatus));
+    }
     [ObservableProperty] private string _expenseReference = string.Empty;
     [ObservableProperty] private string _cancellationReason = string.Empty;
     [ObservableProperty] private bool _reversalVerified;
     private readonly IExpenseService _expenseService;
-    private readonly IShiftService _shiftService;
 
     public ObservableCollection<ExpenseDto> Expenses { get; } = [];
+    public ObservableCollection<ExpenseCancellationDto> Cancellations { get; } = [];
+    public ObservableCollection<string> HistoryOptions { get; } = ["Documentos de gasto", "Cancelaciones recibidas"];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowingCancellations), nameof(PageStatus))]
+    private string _selectedHistory = "Documentos de gasto";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CancellationAmountDisplay))]
+    private decimal _cancellationAmount;
+    public string CancellationAmountDisplay => HasLoadedData
+        ? $"Reversos con fecha verificable de todo el período: {CancellationAmount:C2}" : "Reversos del período: no disponibles";
+    public bool ShowingCancellations => SelectedHistory == "Cancelaciones recibidas";
+    partial void OnSelectedHistoryChanged(string value) => _ = LoadExpensesAsync();
     public ObservableCollection<string> Categories { get; } = [
         "Renta", "Servicios (Luz/Agua/Internet)", "Nómina / Salarios", "Mantenimiento", "Transporte", "Varios"
     ];
     public ObservableCollection<string> PaymentMethods { get; } = [
-        "Efectivo", "Tarjeta / Transferencia"
+        "Efectivo", "Tarjeta", "Transferencia"
     ];
 
     public ObservableCollection<string> PeriodOptions { get; } = [
@@ -74,94 +107,11 @@ public partial class ExpensesViewModel : ObservableObject
     [ObservableProperty] private string _feedbackMessage = string.Empty;
     [ObservableProperty] private bool _isFeedbackError = false;
 
-    public ExpensesViewModel(IExpenseService expenseService, IShiftService shiftService)
+    public Task InitializationTask { get; }
+    public ExpensesViewModel(IExpenseService expenseService, bool loadOnCreate = true)
     {
         _expenseService = expenseService;
-        _shiftService = shiftService;
-        _ = LoadExpensesAsync();
-    }
-
-    public async Task LoadExpensesAsync()
-    {
-        try
-        {
-            var list = await _expenseService.GetAllAsync();
-            var activeShift = await _shiftService.GetActiveAsync();
-
-            DateTime? shiftStart = null;
-            DateTime? shiftEnd = DateTime.Now;
-
-            if (SelectedPeriod == "Turno Activo")
-            {
-                if (activeShift != null && !string.IsNullOrWhiteSpace(activeShift.StartTime))
-                {
-                    if (DateTime.TryParse(activeShift.StartTime, out var parsedStart))
-                    {
-                        shiftStart = parsedStart;
-                        PeriodSubtitleDisplay = $"Turno Activo (Desde: {parsedStart:dd/MM/yyyy hh:mm tt})";
-                    }
-                }
-                if (!shiftStart.HasValue)
-                {
-                    shiftStart = DateTime.Today;
-                    PeriodSubtitleDisplay = $"Turno Activo (Desde Hoy: {DateTime.Today:dd/MM/yyyy})";
-                }
-            }
-            else if (SelectedPeriod == "Hoy")
-            {
-                shiftStart = DateTime.Today;
-                PeriodSubtitleDisplay = $"Acumulado de Hoy ({DateTime.Today:dd/MM/yyyy})";
-            }
-            else if (SelectedPeriod == "Esta Semana")
-            {
-                int diff = (7 + (DateTime.Today.DayOfWeek - DayOfWeek.Monday)) % 7;
-                shiftStart = DateTime.Today.AddDays(-1 * diff);
-                PeriodSubtitleDisplay = $"Acumulado de Esta Semana (Desde: {shiftStart.Value:dd/MM/yyyy})";
-            }
-            else if (SelectedPeriod == "Este Mes")
-            {
-                shiftStart = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
-                PeriodSubtitleDisplay = $"Acumulado de Este Mes ({shiftStart.Value:MMMM yyyy})";
-            }
-            else // Todo el Histórico
-            {
-                shiftStart = null;
-                shiftEnd = null;
-                PeriodSubtitleDisplay = "Acumulado Histórico Total de la Tienda";
-            }
-
-            var summary = await _expenseService.GetFinancialSummaryAsync(shiftStart, shiftEnd);
-            decimal openingBalance = (SelectedPeriod == "Turno Activo" && activeShift != null) ? activeShift.OpeningBalance : 0m;
-
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                Expenses.Clear();
-                foreach (var e in list) Expenses.Add(e);
-
-                TotalRevenue = summary.TotalRevenue;
-                TotalCostOfGoods = summary.TotalCostOfGoodsSold;
-                GrossProfit = summary.GrossProfit;
-                TotalExpenses = summary.TotalExpenses;
-                NetProfit = summary.NetProfit;
-
-                FondoInicial = openingBalance;
-                Ingresos = summary.TotalRevenue;
-                PagosConTarjeta = summary.CardRevenue;
-                CostoDeVentas = summary.TotalCostOfGoodsSold;
-                Egresos = summary.TotalExpenses;
-
-                // Total en Caja (Fondo Inicial + Ventas en Efectivo - Gastos en Efectivo)
-                TotalEnCaja = activeShift?.ExpectedBalance ?? 0m;
-
-                Reinversion = CostoDeVentas;
-                // Utilidad Neta Real = Ventas - Costo de Ventas (COGS) - Gastos Operativos
-                UtilidadNeta = Ingresos - CostoDeVentas - Egresos;
-            });
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error loading expenses data");
-        }
+        InitializationTask = loadOnCreate ? LoadExpensesAsync() : Task.CompletedTask;
     }
 
     [RelayCommand]
@@ -175,6 +125,7 @@ public partial class ExpensesViewModel : ObservableObject
             return;
         }
 
+        var version = _sessionVersion;
         try
         {
             _savingExpense = true;
@@ -182,27 +133,32 @@ public partial class ExpensesViewModel : ObservableObject
                 _expenseOperationId,
                 SelectedCategory,
                 ExpenseAmount,
-                DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                DateTimeOffset.UtcNow.ToString("O"),
                 ExpenseDescription,
                 PaymentMethod,
                 string.Empty, OperationId: _expenseOperationId, Reference: ExpenseReference
             );
 
-            var created = await _expenseService.CreateAsync(dto);
-            Expenses.Insert(0, created);
+            await _expenseService.CreateAsync(dto);
+            if (version != _sessionVersion) return;
             _expenseOperationId = Guid.NewGuid().ToString("N");
 
             // COMPLETE FORM RESET UPON SAVE
             ExpenseAmount = 0;
-            ExpenseDescription = string.Empty;
+            ExpenseDescription = ExpenseReference = string.Empty;
             IsFeedbackError = false;
             FeedbackMessage = "¡Gasto operativo registrado correctamente!";
 
-            await LoadExpensesAsync();
+            if (!await LoadPageAsync(0) && version == _sessionVersion)
+            {
+                IsFeedbackError = false;
+                FeedbackMessage = "Gasto registrado. No se pudo actualizar la consulta; vuelva a consultar sin repetir el pago.";
+            }
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error adding expense");
+            if (version != _sessionVersion) return;
             IsFeedbackError = true;
             FeedbackMessage = ex.Message;
         }
@@ -212,18 +168,27 @@ public partial class ExpensesViewModel : ObservableObject
     [RelayCommand]
     private async Task DeleteExpenseAsync(ExpenseDto expense)
     {
-        if (_savingExpense || expense.IsCancelled) return;
+        if (_savingExpense || expense.IsCancelled || !HasLoadedData || ShowingCancellations
+            || !Expenses.Any(row => ReferenceEquals(row, expense))) return;
+        var version = _sessionVersion;
         try
         {
             _savingExpense = true;
-            await _expenseService.CancelAsync(expense.Id, CancellationReason, $"VOID:{expense.Id}", ReversalVerified);
+            bool cancelled = await _expenseService.CancelAsync(expense.Id, CancellationReason, $"VOID:{expense.Id}", ReversalVerified);
+            if (version != _sessionVersion) return;
+            if (!cancelled) throw new InvalidOperationException("El gasto ya no está disponible. Actualice la consulta.");
             CancellationReason = ""; ReversalVerified = false;
             IsFeedbackError = false; FeedbackMessage = "Gasto cancelado; se conserva el original y su compensación.";
-            await LoadExpensesAsync();
+            if (!await LoadPageAsync(0) && version == _sessionVersion)
+            {
+                IsFeedbackError = false;
+                FeedbackMessage = "Gasto cancelado. No se pudo actualizar la consulta; no repita la restitución.";
+            }
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error deleting expense");
+            if (version != _sessionVersion) return;
             IsFeedbackError = true; FeedbackMessage = ex.Message;
         }
         finally { _savingExpense = false; }

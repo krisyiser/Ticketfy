@@ -7,7 +7,6 @@ using Ticketfy.Core.Messages;
 using Ticketfy.Core.State;
 using Ticketfy.Services.Interfaces;
 using Ticketfy.Core.Services;
-using Ticketfy.Data;
 using Ticketfy.Data.Dtos;
 using System;
 using System.Linq;
@@ -25,6 +24,13 @@ public partial class PosViewModel : ObservableObject, IDisposable
 
     private readonly CartStateStore _cartStateStore;
     private readonly IPredictiveIntelligenceService? _predictiveService;
+    private readonly ISessionManager? _sessionManager;
+    private int _sessionVersion;
+    private long _suggestionVersion;
+    private CancellationTokenSource? _suggestionCancellation;
+    private readonly TimeProvider _suggestionClock;
+    private bool _disposed;
+    internal Task SuggestionCompletion { get; private set; } = Task.CompletedTask;
 
     [ObservableProperty] private int _cartGridColumn = 1;
     [ObservableProperty] private int _productsGridColumn = 0;
@@ -49,26 +55,32 @@ public partial class PosViewModel : ObservableObject, IDisposable
 
     public PosViewModel(
         IProductService productService,
-        AppDbContext? db = null,
         IShiftNoteService? shiftNoteService = null,
-        IItemKitService? kitService = null,
         ICustomerService? customerService = null,
         ISessionManager? sessionManager = null,
-        Ticketfy.Core.Repositories.IUserRepository? userRepository = null,
         IPromotionService? promotionService = null,
-        IAuditService? auditService = null,
-        IAttendanceService? attendanceService = null,
         IPredictiveIntelligenceService? predictiveService = null,
-        IExternalCatalogService? externalCatalogService = null)
+        IExternalCatalogService? externalCatalogService = null,
+        TimeProvider? suggestionClock = null,
+        bool loadOnCreate = true)
     {
         _predictiveService = predictiveService;
+        _sessionManager = sessionManager;
+        _suggestionClock = suggestionClock ?? TimeProvider.System;
         _cartStateStore = new CartStateStore { PromotionService = promotionService };
 
-        Catalog = new CatalogViewModel(productService, externalCatalogService!, kitService, _cartStateStore);
-        Cart = new CartViewModel(_cartStateStore, null!, customerService!); // Ideally SaleService injected
-        Header = new PosHeaderViewModel(sessionManager, shiftNoteService, _cartStateStore);
+        Catalog = new CatalogViewModel(productService, externalCatalogService!, _cartStateStore);
+        Cart = new CartViewModel(_cartStateStore, null!, customerService!, loadOnCreate, sessionManager);
+        Header = new PosHeaderViewModel(sessionManager, shiftNoteService, _cartStateStore, loadOnCreate);
+        _loadOnSessionChange = loadOnCreate;
+        if (_sessionManager is not null)
+        {
+            _sessionManager.CashierChanged += OnCashierChanged;
+            _sessionManager.LockStateChanged += OnLockStateChanged;
+        }
 
         _cartStateStore.ProductAddedToCart += OnProductAddedToCart;
+        _cartStateStore.Items.CollectionChanged += OnCartItemsChanged;
 
         Cart.OpenCheckoutRequested += () => OpenCheckoutRequested?.Invoke();
         Cart.OpenAddCustomerRequested += () => OpenAddCustomerRequested?.Invoke();
@@ -81,10 +93,25 @@ public partial class PosViewModel : ObservableObject, IDisposable
         Header.OpenPartialCashupRequested += () => OpenPartialCashupRequested?.Invoke();
         Header.OpenFinalCashupRequested += () => OpenFinalCashupRequested?.Invoke();
 
-        ThemeService.Instance.CartWidthChanged += width => Dispatcher.UIThread.Post(() => CartWidthPx = width);
-        ThemeService.Instance.CartPositionChanged += pos => Dispatcher.UIThread.Post(() => ApplyCartPosition(pos));
+        ThemeService.Instance.CartWidthChanged += OnCartWidthChanged;
+        ThemeService.Instance.CartPositionChanged += OnCartPositionChanged;
 
         RegisterMessages();
+    }
+
+    private void OnLockStateChanged(bool locked) => Cart.InvalidateCheckoutPreparation();
+
+    private void OnCashierChanged(Ticketfy.Core.Models.UserModel? user)
+    {
+        ++_sessionVersion;
+        Catalog.ClearSessionData();
+        Cart.ClearSessionData();
+        InvalidateSuggestion();
+        if (_loadOnSessionChange && user is not null && _sessionManager?.IsTerminalLocked == false)
+        {
+            _ = Catalog.LoadProductsAsync();
+            _ = Cart.LoadCustomersAsync();
+        }
     }
 
     public void ApplyCartPosition(string position)
@@ -119,48 +146,95 @@ public partial class PosViewModel : ObservableObject, IDisposable
 
     private void OnProductAddedToCart(string scannedProductId)
     {
-        _ = TriggerCrossSellSuggestionAsync(scannedProductId);
+        SuggestionCompletion = TriggerCrossSellSuggestionAsync(scannedProductId);
+    }
+
+    private void OnCartItemsChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs args) => InvalidateSuggestion();
+    private void OnCartWidthChanged(double width) => Dispatcher.UIThread.Post(() => { if (!_disposed) CartWidthPx = width; });
+    private void OnCartPositionChanged(string position) => Dispatcher.UIThread.Post(() => { if (!_disposed) ApplyCartPosition(position); });
+
+    private void InvalidateSuggestion()
+    {
+        ++_suggestionVersion;
+        _suggestionCancellation?.Cancel();
+        _suggestionCancellation = null;
+        _suggestedProduct = null;
+        IsSuggestionVisible = false; SmartSuggestionText = "";
     }
 
     private async Task TriggerCrossSellSuggestionAsync(string scannedProductId)
     {
-        if (_predictiveService == null) return;
-
+        InvalidateSuggestion();
+        if (_disposed || _predictiveService == null) return;
+        long request = _suggestionVersion;
+        var source = new CancellationTokenSource();
+        _suggestionCancellation = source;
+        var token = source.Token;
         var cartIds = _cartStateStore.Items.Select(i => i.ProductId).ToList();
-
-        // Consulta no bloqueante
-        var suggestion = await _predictiveService.GetTopCorrelatedProductAsync(scannedProductId, cartIds);
-
-        if (suggestion != null)
+        int version = _sessionVersion;
+        try
         {
+            // SQLite's async API can run synchronously; keep the database traversal off the UI thread.
+            var suggestion = await Task.Run(() => _predictiveService.GetTopCorrelatedProductAsync(scannedProductId, cartIds, token), token);
+            if (_disposed || token.IsCancellationRequested || version != _sessionVersion || request != _suggestionVersion) return;
+            if (suggestion is null || !suggestion.IsActive || suggestion.Stock <= 0 ||
+                suggestion.InventoryWarning is not null || _cartStateStore.Items.Any(i => i.ProductId == suggestion.Id)) return;
             _suggestedProduct = suggestion;
             SmartSuggestionText = $"Sugerencia: Ofrece {suggestion.Name} (${suggestion.Price}). ¡Se venden juntos a menudo!";
             IsSuggestionVisible = true;
-
-            // Auto-ocultar la sugerencia después de 10 segundos
-            await Task.Delay(10000);
-            if (_suggestedProduct?.Id == suggestion.Id) // only hide if it hasn't changed
-            {
-                IsSuggestionVisible = false;
-            }
+            await Task.Delay(TimeSpan.FromSeconds(10), _suggestionClock, token);
+            if (request == _suggestionVersion && !_disposed) InvalidateSuggestion();
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Product suggestion lookup failed");
+            if (request == _suggestionVersion && !_disposed) InvalidateSuggestion();
+        }
+        finally
+        {
+            if (ReferenceEquals(_suggestionCancellation, source)) _suggestionCancellation = null;
+            source.Dispose();
         }
     }
 
     [RelayCommand]
     private void AddSuggestionToCart()
     {
-        if (_suggestedProduct != null)
+        if (!_disposed && IsSuggestionVisible && _suggestedProduct is { } suggestion)
         {
-            Catalog.AddToCartCommand.Execute(_suggestedProduct);
-            IsSuggestionVisible = false;
-            _suggestedProduct = null;
+            InvalidateSuggestion();
+            if (!_cartStateStore.Items.Any(i => i.ProductId == suggestion.Id))
+                Catalog.AddToCartCommand.Execute(suggestion);
         }
     }
 
     public async Task LoadProductsAsync() => await Catalog.LoadProductsAsync();
+    private readonly bool _loadOnSessionChange;
+    public async Task LoadSessionAsync()
+    {
+        var version = _sessionVersion;
+        await Catalog.LoadProductsAsync();
+        if (version != _sessionVersion) return;
+        await Cart.LoadCustomersAsync();
+        if (version != _sessionVersion) return;
+        await Header.LoadActiveShiftNotesAsync();
+    }
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
+        InvalidateSuggestion();
+        _cartStateStore.ProductAddedToCart -= OnProductAddedToCart;
+        _cartStateStore.Items.CollectionChanged -= OnCartItemsChanged;
+        ThemeService.Instance.CartWidthChanged -= OnCartWidthChanged;
+        ThemeService.Instance.CartPositionChanged -= OnCartPositionChanged;
+        if (_sessionManager is not null)
+        {
+            _sessionManager.CashierChanged -= OnCashierChanged;
+            _sessionManager.LockStateChanged -= OnLockStateChanged;
+        }
         WeakReferenceMessenger.Default.UnregisterAll(this);
     }
 }

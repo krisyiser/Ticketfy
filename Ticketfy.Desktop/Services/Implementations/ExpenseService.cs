@@ -10,7 +10,7 @@ using Ticketfy.Services.Interfaces;
 
 namespace Ticketfy.Services.Implementations;
 
-public class ExpenseService : IExpenseService
+public partial class ExpenseService : IExpenseService
 {
     private readonly IDbContextFactory<AppDbContext> _factory;
     private readonly CommercialOperationContext? _operations;
@@ -20,18 +20,24 @@ public class ExpenseService : IExpenseService
     { _factory = factory; _operations = operations; }
     private Task<OperationIdentity> AuthorizeAsync(AppDbContext db) =>
         (_operations ?? throw new UnauthorizedAccessException("Se requiere una sesión autenticada.")).RequireAsync(db, PermissionCatalog.ExpensesManage);
-    public async Task<List<ExpenseDto>> GetAllAsync()
+    public async Task<List<ExpenseDto>> GetAllAsync(DateTime? startDate = null, DateTime? endDate = null, string? shiftId = null)
     {
         await using var db = await _factory.CreateDbContextAsync();
+        await using var snapshot = await ReadSnapshot.BeginAsync(db);
         await (_operations ?? throw new UnauthorizedAccessException()).RequireAsync(db, PermissionCatalog.ExpensesManage, false);
-        return (await db.Expenses.AsNoTracking().OrderByDescending(e => e.Date).ToListAsync()).Select(Map).ToList();
+        var period = new BusinessDateQuery(startDate ?? DateTime.MinValue, endDate ?? DateTime.MaxValue);
+        var rows = await ReadRowsAsync(db, period, shiftId, 0, LegacyCatalogReadPolicy.Limit, startDate is null && endDate is null);
+        LegacyCatalogReadPolicy.RequireComplete(rows.HasMore);
+        return rows.Items;
     }
     public async Task<ExpenseDto> CreateAsync(ExpenseDto dto)
     {
         string operation = CommercialLedger.OperationId(dto.OperationId ?? dto.Id);
         if (dto.Amount <= 0 || CommercialLedger.Money(dto.Amount) != dto.Amount || string.IsNullOrWhiteSpace(dto.Description))
             throw new InvalidOperationException("Indique un importe positivo y el concepto del gasto.");
-        bool cash = dto.PaymentMethod is "Efectivo" or "Cash";
+        var kind = TenderMethodCatalog.Parse(dto.PaymentMethod);
+        bool cash = kind == TenderKind.Cash;
+        dto = dto with { PaymentMethod = TenderMethodCatalog.Label(kind) };
         if (!cash && string.IsNullOrWhiteSpace(dto.Reference)) throw new InvalidOperationException("Indique la referencia del pago del gasto.");
         await using var db = await _factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
@@ -83,36 +89,106 @@ public class ExpenseService : IExpenseService
         await db.SaveChangesAsync(); await tx.CommitAsync();
         return true;
     }
-    private async Task<(decimal Sales, decimal Cogs, decimal Returns, decimal Reversed, decimal Expenses, decimal CashExpenses, decimal Cash, decimal Card)> TotalsAsync(DateTime? start, DateTime? end)
+    private sealed record FinancialTotals(decimal Sales, decimal Cogs, decimal Returns, decimal Reversed, decimal Expenses,
+        decimal CashExpenses, decimal Cash, decimal Card, decimal Transfer)
+    {
+        public FinancialSummaryDto Summary()
+        {
+            decimal revenue = Sales - Returns, cogs = Cogs - Reversed, gross = revenue - cogs;
+            return new(revenue, cogs, gross, Expenses, gross - Expenses, Cash, CashExpenses, Card, Transfer);
+        }
+    }
+    private async Task<FinancialTotals> TotalsAsync(DateTime? start, DateTime? end, string? shiftId = null)
     {
         await using var db = await _factory.CreateDbContextAsync();
+        await using var snapshot = await ReadSnapshot.BeginAsync(db);
         await (_operations ?? throw new UnauthorizedAccessException()).RequireAsync(db, PermissionCatalog.ReportsProfits, false);
-        var allSales = await db.Sales.AsNoTracking().ToListAsync();
-        var sales = allSales.Where(s => s.Date.IsInDateRange(start, end) && (s.LedgerVersion > 0 || s.IsCancelled == 0)).ToList();
-        var ledgerIds = allSales.Where(s => s.LedgerVersion > 0).Select(s => s.Id).ToHashSet();
-        var returns = (await db.Returns.AsNoTracking().ToListAsync()).Where(r => ledgerIds.Contains(r.OriginalSaleId) && r.CreatedAt.IsInDateRange(start, end)).ToList();
-        var expenses = await db.Expenses.AsNoTracking().ToListAsync();
-        decimal ExpenseAmount(ExpenseEntity e) => (e.Date.IsInDateRange(start, end) ? e.Amount : 0m)
-            - (e.IsCancelled && e.CancelledAtUtc is not null && e.CancelledAtUtc.IsInDateRange(start, end) ? e.Amount : 0m);
-        var payments = (await db.SalePayments.AsNoTracking().ToListAsync()).Where(p => p.CreatedAtUtc.IsInDateRange(start, end)).ToList();
-        var refunds = (await db.PaymentRefunds.AsNoTracking().ToListAsync()).Where(r => r.State == TenderState.Refunded && r.CreatedAtUtc.IsInDateRange(start, end)).ToList();
-        var settled = await (from s in db.RefundSettlements.AsNoTracking()
-                             join r in db.PaymentRefunds.AsNoTracking()
-            on s.RefundId equals r.Id
-                             select new { s.CreatedAtUtc, s.Amount, r.Kind }).ToListAsync();
-        decimal cardSettlements = settled.Where(s => s.Kind == TenderKind.Card && s.CreatedAtUtc.IsInDateRange(start, end)).Sum(s => s.Amount);
-        return (sales.Sum(s => s.Total), sales.Sum(s => s.TotalCost), returns.Sum(r => r.TotalRefunded), returns.Sum(r => r.CogsReversed),
-            expenses.Sum(ExpenseAmount), expenses.Where(e => e.PaymentMethod is "Efectivo" or "Cash").Sum(ExpenseAmount),
-            payments.Where(p => p.Kind == TenderKind.Cash).Sum(p => p.Amount) - refunds.Where(r => r.Kind == TenderKind.Cash).Sum(r => r.Amount)
-                + sales.Where(s => s.LedgerVersion == 0).Sum(s => s.CashAmount),
-            payments.Where(p => p.Kind == TenderKind.Card).Sum(p => p.Amount) - refunds.Where(r => r.Kind == TenderKind.Card).Sum(r => r.Amount)
-                - cardSettlements + sales.Where(s => s.LedgerVersion == 0).Sum(s => s.CardAmount));
+        return await TotalsAsync(db, new BusinessDateQuery(start ?? DateTime.MinValue, end ?? DateTime.MaxValue), shiftId);
     }
-    public async Task<FinancialSummaryDto> GetFinancialSummaryAsync(DateTime? startDate = null, DateTime? endDate = null)
+    private static async Task<FinancialTotals> TotalsAsync(AppDbContext db, BusinessDateQuery period, string? shiftId)
     {
-        var t = await TotalsAsync(startDate, endDate);
-        decimal revenue = t.Sales - t.Returns, cogs = t.Cogs - t.Reversed, gross = revenue - cogs;
-        return new(revenue, cogs, gross, t.Expenses, gross - t.Expenses, t.Cash, t.CashExpenses, t.Card);
+        var start = period.Start; var end = period.End;
+        bool InPeriod(string? date) => BusinessTime.TryLocal(date, out var local, period.Zone) && local >= start && local <= end;
+        // SQLite money is stored as scaled integers. Aggregate streamed decimal scalars
+        // inside this single read snapshot; do not hydrate items JSON, people or whole ledgers.
+        decimal sales = 0m, cogs = 0m, returned = 0m, reversedCogs = 0m, expenses = 0m, cashExpenses = 0m;
+        decimal cash = 0m, card = 0m, transfer = 0m;
+        void Receipt(TenderKind? kind, decimal amount)
+        {
+            switch (kind)
+            {
+                case TenderKind.Cash: cash += amount; break;
+                case TenderKind.Card: card += amount; break;
+                case TenderKind.Transfer: transfer += amount; break;
+            }
+        }
+        static bool IsCash(string method) => method is "Efectivo" or "Cash";
+        await foreach (var sale in db.Sales.AsNoTracking().InCandidateDateRange(s => s.Date, start, end)
+            .Where(s => (s.LedgerVersion > 0 || s.IsCancelled == 0) && (shiftId == null || s.ShiftId == shiftId))
+            .Select(s => new { s.Date, s.Total, s.TotalCost, s.LedgerVersion, s.CashAmount, s.CardAmount }).AsAsyncEnumerable())
+        {
+            if (!InPeriod(sale.Date)) continue;
+            sales += sale.Total; cogs += sale.TotalCost;
+            if (sale.LedgerVersion == 0) { cash += sale.CashAmount; card += sale.CardAmount; }
+        }
+        var returnQuery = from r in db.Returns.AsNoTracking()
+                          join s in db.Sales.AsNoTracking() on r.OriginalSaleId equals s.Id
+                          where s.LedgerVersion > 0 && (shiftId == null || r.ShiftId == shiftId)
+                          select new { r.CreatedAt, r.TotalRefunded, r.CogsReversed };
+        await foreach (var row in returnQuery.InCandidateDateRange(r => r.CreatedAt, start, end).AsAsyncEnumerable())
+        {
+            if (!InPeriod(row.CreatedAt)) continue;
+            returned += row.TotalRefunded; reversedCogs += row.CogsReversed;
+        }
+        await foreach (var expense in db.Expenses.AsNoTracking().Where(e => shiftId == null || e.ShiftId == shiftId)
+            .InCandidateDateRange(e => e.Date, start, end).Select(e => new { e.Date, e.Amount, e.PaymentMethod }).AsAsyncEnumerable())
+        {
+            if (!InPeriod(expense.Date)) continue;
+            expenses += expense.Amount;
+            if (IsCash(expense.PaymentMethod)) cashExpenses += expense.Amount;
+        }
+        // Reversals belong to the shift that received the money, not the original expense's shift.
+        await foreach (var reversal in ReversalScalars(db, shiftId).InCandidateDateRange(e => e.Date, start, end).AsAsyncEnumerable())
+        {
+            if (!InPeriod(reversal.Date)) continue;
+            expenses -= reversal.Amount;
+            if (IsCash(reversal.PaymentMethod)) cashExpenses -= reversal.Amount;
+        }
+        await foreach (var payment in db.SalePayments.AsNoTracking().Where(p => p.State == TenderState.Captured && (shiftId == null || p.ShiftId == shiftId))
+            .InCandidateDateRange(p => p.CreatedAtUtc, start, end).Select(p => new { p.CreatedAtUtc, p.Kind, p.Amount }).AsAsyncEnumerable())
+            if (InPeriod(payment.CreatedAtUtc)) Receipt(payment.Kind, payment.Amount);
+        await foreach (var refund in db.PaymentRefunds.AsNoTracking().Where(r => r.State == TenderState.Refunded && (shiftId == null || r.ShiftId == shiftId))
+            .InCandidateDateRange(r => r.CreatedAtUtc, start, end).Select(r => new { r.CreatedAtUtc, r.Kind, r.Amount }).AsAsyncEnumerable())
+            if (InPeriod(refund.CreatedAtUtc)) Receipt(refund.Kind, -refund.Amount);
+        var settlements = from s in db.RefundSettlements.AsNoTracking()
+                          join r in db.PaymentRefunds.AsNoTracking() on s.RefundId equals r.Id
+                          where shiftId == null || s.ShiftId == shiftId
+                          select new { s.CreatedAtUtc, s.Amount, r.Kind };
+        await foreach (var settlement in settlements.InCandidateDateRange(s => s.CreatedAtUtc, start, end).AsAsyncEnumerable())
+            if (InPeriod(settlement.CreatedAtUtc)) Receipt(settlement.Kind, -settlement.Amount);
+        // Receipts are not accrual revenue. Debt collections and credit refunds must not change sales or COGS again.
+        await foreach (var collection in db.CustomerPayments.AsNoTracking().Where(p => p.Status == PaymentStatus.Completed && (shiftId == null || p.ShiftId == shiftId))
+            .InCandidateDateRange(p => p.Date, start, end).Select(p => new { p.Date, p.Method, p.Amount }).AsAsyncEnumerable())
+        {
+            if (!InPeriod(collection.Date)) continue;
+            TenderKind? kind = collection.Method switch
+            {
+                "Efectivo" or "Cash" => TenderKind.Cash,
+                "Tarjeta" or "Card" => TenderKind.Card,
+                "Transferencia" or "Transfer" => TenderKind.Transfer,
+                _ => null
+            };
+            Receipt(kind, collection.Amount);
+        }
+        await foreach (var refund in db.AccountCreditSettlements.AsNoTracking().Where(s => s.AccountKind == AccountKind.Customer
+            && s.Kind == AccountCreditSettlementKind.Refund && (shiftId == null || s.ShiftId == shiftId))
+            .InCandidateDateRange(s => s.CreatedAtUtc, start, end).Select(s => new { s.CreatedAtUtc, s.TenderKind, s.Amount }).AsAsyncEnumerable())
+            if (InPeriod(refund.CreatedAtUtc)) Receipt(refund.TenderKind, -refund.Amount);
+        return new(sales, cogs, returned, reversedCogs, expenses, cashExpenses, cash, card, transfer);
+    }
+    public async Task<FinancialSummaryDto> GetFinancialSummaryAsync(DateTime? startDate = null, DateTime? endDate = null, string? shiftId = null)
+    {
+        return (await TotalsAsync(startDate, endDate, shiftId)).Summary();
     }
     public async Task<NetProfitReportModel> CalculateTrueNetProfitAsync(DateTime startDate, DateTime endDate)
     {
@@ -134,5 +210,6 @@ public class ExpenseService : IExpenseService
         };
     }
     private static ExpenseDto Map(ExpenseEntity e) => new(e.Id, e.Category, e.Amount, e.Date, e.Description,
-        e.PaymentMethod, e.RegisteredByUser, e.OperationId, e.Reference, e.IsCancelled);
+        e.PaymentMethod, e.RegisteredByUser, e.OperationId, e.Reference, e.IsCancelled,
+        e.CancelledAtUtc, e.CancellationReason, e.ShiftId, e.RegisterId);
 }

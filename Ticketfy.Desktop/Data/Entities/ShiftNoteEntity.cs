@@ -27,4 +27,9 @@ public class ShiftNoteEntity
 
     [Column("is_resolved")]
     public bool IsResolved { get; set; } = false;
+
+    public string? CashierUserId { get; set; }
+    public string? RegisterId { get; set; }
+    public string? ShiftId { get; set; }
+    public bool IsCancelled { get; set; }
 }

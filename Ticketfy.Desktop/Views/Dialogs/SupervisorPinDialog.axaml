@@ -1,53 +1,18 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Ticketfy.ViewModels.Dialogs"
-             xmlns:mi="using:Material.Icons.Avalonia"
              x:Class="Ticketfy.Views.Dialogs.SupervisorPinDialog"
              x:DataType="vm:SupervisorPinDialogViewModel">
-
-    <Grid Background="#80000000">
-        <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center"
-                Background="White" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                CornerRadius="{DynamicResource AppCornerRadius}" Padding="24">
-            <StackPanel Spacing="16" HorizontalAlignment="Center">
-                <Border Background="#FEF3C7" CornerRadius="40" Width="60" Height="60" HorizontalAlignment="Center">
-                    <mi:MaterialIcon Kind="ShieldKey" Width="30" Height="30" Foreground="#D97706" VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                </Border>
-
-                <StackPanel Spacing="4" HorizontalAlignment="Center">
-                    <TextBlock Text="{Binding ActionTitle}" FontSize="16" FontWeight="ExtraBold" Foreground="{DynamicResource TextPrimaryBrush}" HorizontalAlignment="Center" TextAlignment="Center"/>
-                    <TextBlock Text="Ingrese PIN de 4 dígitos de Supervisor (Rol ADMIN) para autorizar" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" HorizontalAlignment="Center" TextAlignment="Center"/>
-                </StackPanel>
-
-                <Border Background="{DynamicResource BgTertiaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6" Height="44" Width="200">
-                    <TextBlock Text="{Binding EnteredPin}" FontSize="22" FontWeight="Bold" LetterSpacing="12" 
-                               HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
-                </Border>
-
-                <TextBlock Text="{Binding ErrorMessage}" Foreground="#EF4444" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center" Height="18"/>
-
-                <!-- Numeric Keypad -->
-                <Grid RowDefinitions="44, 44, 44, 44" ColumnDefinitions="60, 60, 60" HorizontalAlignment="Center">
-                    <Button Grid.Row="0" Grid.Column="0" Content="1" Command="{Binding AppendPinDigitCommand}" CommandParameter="1" Margin="2" FontSize="16" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
-                    <Button Grid.Row="0" Grid.Column="1" Content="2" Command="{Binding AppendPinDigitCommand}" CommandParameter="2" Margin="2" FontSize="16" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
-                    <Button Grid.Row="0" Grid.Column="2" Content="3" Command="{Binding AppendPinDigitCommand}" CommandParameter="3" Margin="2" FontSize="16" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
-
-                    <Button Grid.Row="1" Grid.Column="0" Content="4" Command="{Binding AppendPinDigitCommand}" CommandParameter="4" Margin="2" FontSize="16" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
-                    <Button Grid.Row="1" Grid.Column="1" Content="5" Command="{Binding AppendPinDigitCommand}" CommandParameter="5" Margin="2" FontSize="16" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
-                    <Button Grid.Row="1" Grid.Column="2" Content="6" Command="{Binding AppendPinDigitCommand}" CommandParameter="6" Margin="2" FontSize="16" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
-
-                    <Button Grid.Row="2" Grid.Column="0" Content="7" Command="{Binding AppendPinDigitCommand}" CommandParameter="7" Margin="2" FontSize="16" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
-                    <Button Grid.Row="2" Grid.Column="1" Content="8" Command="{Binding AppendPinDigitCommand}" CommandParameter="8" Margin="2" FontSize="16" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
-                    <Button Grid.Row="2" Grid.Column="2" Content="9" Command="{Binding AppendPinDigitCommand}" CommandParameter="9" Margin="2" FontSize="16" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
-
-                    <Button Grid.Row="3" Grid.Column="0" Content="C" Command="{Binding ClearPinCommand}" Margin="2" Background="#FEF2F2" Foreground="#EF4444" FontWeight="Bold" CornerRadius="6" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
-                    <Button Grid.Row="3" Grid.Column="1" Content="0" Command="{Binding AppendPinDigitCommand}" CommandParameter="0" Margin="2" FontSize="16" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
-                    <Button Grid.Row="3" Grid.Column="2" Content="✕" Command="{Binding CancelCommand}" Margin="2" Background="{DynamicResource BgTertiaryBrush}" Foreground="{DynamicResource TextSecondaryBrush}" CornerRadius="6" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
-                </Grid>
-
-                <Button Content="Cancelar" Command="{Binding CancelCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Height="36" Margin="0,4,0,0"/>
-            </StackPanel>
-        </Border>
-    </Grid>
+    <Border Width="440" Padding="24" Background="{DynamicResource BgSecondaryBrush}"
+            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8">
+        <StackPanel Spacing="14">
+            <TextBlock Text="{Binding ActionTitle}" FontSize="18" FontWeight="Bold" TextWrapping="Wrap" />
+            <TextBlock Text="Esta acción requiere la contraseña de un supervisor, gerente o administrador autorizado. El acceso rápido por PIN no autoriza acciones sensibles." TextWrapping="Wrap" />
+            <TextBox Text="{Binding Username}" Watermark="Usuario del supervisor" MaxLength="128" />
+            <TextBox Text="{Binding Password}" PasswordChar="•" Watermark="Contraseña" MaxLength="1024" />
+            <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" Foreground="{DynamicResource AccentDangerBrush}" />
+            <Button Command="{Binding ApproveCommand}" Content="Verificar contraseña y autorizar" IsEnabled="{Binding !IsVerifying}" HorizontalAlignment="Stretch" />
+            <Button Command="{Binding CancelCommand}" Content="Cancelar" HorizontalAlignment="Stretch" />
+        </StackPanel>
+    </Border>
 </UserControl>
-

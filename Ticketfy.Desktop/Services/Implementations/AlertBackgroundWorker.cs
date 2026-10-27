@@ -1,74 +1,45 @@
-using System;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Ticketfy.Data;
 using Ticketfy.Data.Entities;
-using Serilog;
+using Ticketfy.Core.Operations;
 
 namespace Ticketfy.Services.Implementations;
 
-public class AlertBackgroundWorker
+public sealed class AlertBackgroundWorker(IDbContextFactory<AppDbContext> factory,
+    TimeSpan? interval = null, TimeProvider? clock = null, MaintenanceHealth? health = null)
+    : PeriodicBackgroundWorker(interval ?? TimeSpan.FromMinutes(5), clock, health, MaintenanceTask.StockAlerts)
 {
-    private readonly IDbContextFactory<AppDbContext> _contextFactory;
-    private readonly TimeSpan _checkInterval = TimeSpan.FromMinutes(5);
-
-    public AlertBackgroundWorker(IDbContextFactory<AppDbContext> contextFactory)
+    internal const int BatchSize = 200;
+    internal override async Task RunOnceAsync(CancellationToken token)
     {
-        _contextFactory = contextFactory;
-    }
-
-    public Task StartAsync(CancellationToken cancellationToken)
-    {
-        _ = Task.Run(() => ExecuteAsync(cancellationToken), cancellationToken);
-        return Task.CompletedTask;
-    }
-
-    private async Task ExecuteAsync(CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested)
+        string? after = null;
+        while (true)
         {
-            try
+            token.ThrowIfCancellationRequested();
+            await using var db = await factory.CreateDbContextAsync(token).ConfigureAwait(false);
+            // The writer transaction serializes this decision with checkout's own low-stock alert.
+            await using var tx = await db.Database.BeginTransactionAsync(token).ConfigureAwait(false);
+            var query = db.Products.AsNoTracking().Where(p => p.IsActive && !p.IsKit && p.Stock <= p.MinStock
+                && !db.SystemAlerts.Any(a => a.ProductId == p.Id && !a.IsResolved));
+            if (after is not null) query = query.Where(p => string.Compare(p.Id, after) > 0);
+            var rows = await query.OrderBy(p => p.Id).Select(p => new { p.Id, p.Name, p.Stock, p.MinStock, p.DefaultSupplierId })
+                .Take(BatchSize).ToListAsync(token).ConfigureAwait(false);
+            foreach (var product in rows)
             {
-                await EvaluateStockAlertsAsync();
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Error en AlertBackgroundWorker");
-            }
-
-            await Task.Delay(_checkInterval, cancellationToken);
-        }
-    }
-
-    private async Task EvaluateStockAlertsAsync()
-    {
-        using var _ctx = await _contextFactory.CreateDbContextAsync();
-
-        // Obtener productos con bajo stock que no tengan alertas no resueltas.
-        var lowStockProducts = await _ctx.Products
-            .Where(p => p.Stock <= p.MinStock)
-            .ToListAsync();
-
-        foreach (var product in lowStockProducts)
-        {
-            bool hasActiveAlert = await _ctx.SystemAlerts
-                .AnyAsync(a => a.ProductId == product.Id && !a.IsResolved);
-
-            if (!hasActiveAlert)
-            {
-                var newAlert = new SystemAlertEntity
+                db.SystemAlerts.Add(new SystemAlertEntity
                 {
                     ProductId = product.Id,
-                    Title = "Stock Bajo",
-                    Message = $"El producto '{product.Name}' tiene un stock de {product.Stock}, el cual está por debajo del mínimo permitido ({product.MinStock})."
-                };
-
-                _ctx.SystemAlerts.Add(newAlert);
+                    SupplierId = product.DefaultSupplierId,
+                    Title = "Stock bajo",
+                    Message = $"{product.Name}: existencias {product.Stock}; mínimo {product.MinStock}.",
+                    CreatedAt = DateTimeOffset.UtcNow.ToString("O")
+                });
             }
+            await db.SaveChangesAsync(token).ConfigureAwait(false);
+            await tx.CommitAsync(token).ConfigureAwait(false);
+            if (rows.Count < BatchSize) return;
+            after = rows[^1].Id;
+            await Task.Yield();
         }
-
-        await DbResilienceHelper.ExecuteWithRetryAsync(async () => await _ctx.SaveChangesAsync());
     }
 }

@@ -41,25 +41,26 @@
 
             <!-- Register New User Form -->
             <Border Padding="16" Background="{DynamicResource BgSecondaryBrush}" CornerRadius="{DynamicResource AppCornerRadius}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
-                <StackPanel Spacing="12">
-                    <TextBlock Text="Registrar Nuevo Cajero / Usuario" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" />
+                <StackPanel Spacing="12" IsEnabled="{Binding !IsUserSaving}">
+                    <TextBlock Text="{Binding UserEditorTitle}" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" />
+                    <TextBlock Text="{Binding CredentialInstructions}" TextWrapping="Wrap" FontSize="12" />
 
                     <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,*">
                         <!-- Row 0: Full Name & Username -->
                         <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,8,10" Spacing="4">
                             <TextBlock Text="Nombre Completo *" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                            <TextBox Text="{Binding NewFullName, Mode=TwoWay}" Watermark="Ej. María López" Padding="8,6" />
+                            <TextBox Text="{Binding NewFullName, Mode=TwoWay}" MaxLength="256" Watermark="Ej. María López" Padding="8,6" />
                         </StackPanel>
 
                         <StackPanel Grid.Row="0" Grid.Column="1" Margin="8,0,0,10" Spacing="4">
                             <TextBlock Text="Usuario de Acceso *" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                            <TextBox Text="{Binding NewUsername, Mode=TwoWay}" Watermark="Ej. mlopez" Padding="8,6" />
+                            <TextBox Text="{Binding NewUsername, Mode=TwoWay}" MaxLength="128" Watermark="Ej. mlopez" Padding="8,6" />
                         </StackPanel>
 
                         <!-- Row 1: Password & Hint -->
                         <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,8,10" Spacing="4">
                             <TextBlock Text="Contraseña (Principal)" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                            <TextBox Text="{Binding NewPassword, Mode=TwoWay}" PasswordChar="*" Watermark="••••••••" Padding="8,6" />
+                            <TextBox Text="{Binding NewPassword, Mode=TwoWay}" MaxLength="1024" PasswordChar="*" Watermark="••••••••" Padding="8,6" />
                         </StackPanel>
 
                         <!-- Row 2: System Role & Custom Role Creator + PIN -->
@@ -92,6 +93,7 @@
                         <StackPanel Grid.Row="2" Grid.Column="1" Margin="8,0,0,0" Spacing="4">
                             <TextBlock Text="PIN rápido de 4 Dígitos" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
                             <controls:PinInputControl Pin1="{Binding NewPin1, Mode=TwoWay}" Pin2="{Binding NewPin2, Mode=TwoWay}" Pin3="{Binding NewPin3, Mode=TwoWay}" Pin4="{Binding NewPin4, Mode=TwoWay}" HorizontalAlignment="Left" />
+                            <CheckBox Content="Deshabilitar acceso por PIN" IsVisible="{Binding IsEditingUser}" IsChecked="{Binding DisableEditedPin}" />
                         </StackPanel>
                     </Grid>
 
@@ -101,6 +103,7 @@
                             <TextBlock Text="GUARDAR USUARIO" FontWeight="Bold" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
+                    <Button Content="CANCELAR EDICIÓN" IsVisible="{Binding IsEditingUser}" Command="{Binding CancelUserEditCommand}" HorizontalAlignment="Right" />
                 </StackPanel>
             </Border>
 
@@ -123,11 +126,12 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="dto:UserDto">
                         <Border Padding="12,8" Margin="0,0,0,6" Background="{DynamicResource BgSecondaryBrush}" CornerRadius="{DynamicResource AppCornerRadius}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
-                            <Grid ColumnDefinitions="*,*,*,Auto">
+                            <Grid ColumnDefinitions="*,*,*,Auto,Auto">
                                 <TextBlock Grid.Column="0" Text="{Binding FullName}" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="{Binding Role}" FontSize="12" Foreground="{DynamicResource AccentPrimaryBrush}" VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="2" Text="{Binding Username, StringFormat='Usuario: {0}'}" FontSize="12" Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center" />
-                                <Button Grid.Column="3" Command="{Binding $parent[UserControl].((vmsettings:UsuariosSettingsViewModel)DataContext).RequestDeleteUserCommand}" CommandParameter="{Binding}" Padding="8,4" Background="Transparent" BorderThickness="0" Cursor="Hand">
+                                <Button Grid.Column="3" Content="EDITAR" Command="{Binding $parent[UserControl].((vmsettings:UsuariosSettingsViewModel)DataContext).EditUserCommand}" CommandParameter="{Binding}" Padding="8,4" />
+                                <Button Grid.Column="4" Command="{Binding $parent[UserControl].((vmsettings:UsuariosSettingsViewModel)DataContext).RequestDeleteUserCommand}" CommandParameter="{Binding}" Padding="8,4" Background="Transparent" BorderThickness="0" Cursor="Hand">
                                     <mi:MaterialIcon Kind="TrashCanOutline" Width="18" Height="18" Foreground="{DynamicResource AccentDangerBrush}" />
                                 </Button>
                             </Grid>
@@ -197,7 +201,7 @@
                                 </StackPanel>
                             </Button>
 
-                            <Button Command="{Binding SaveRolePermissionsCommand}" Classes="primary-action" Padding="14,8" CornerRadius="{DynamicResource AppCornerRadius}" Cursor="Hand">
+                            <Button Command="{Binding SaveRolePermissionsCommand}" IsEnabled="{Binding !IsPermissionLoading}" Classes="primary-action" Padding="14,8" CornerRadius="{DynamicResource AppCornerRadius}" Cursor="Hand">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <mi:MaterialIcon Kind="ContentSaveCheck" Width="18" Height="18" />
                                     <TextBlock Text="GUARDAR PERMISOS DEL ROL" FontWeight="Bold" VerticalAlignment="Center" />
@@ -223,7 +227,7 @@
                                             <TextBlock Text="{Binding Description}" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" TextWrapping="Wrap" />
                                         </StackPanel>
 
-                                        <ToggleSwitch Grid.Column="2" IsChecked="{Binding IsGranted, Mode=TwoWay}" OnContent="Permitido" OffContent="Denegado" VerticalAlignment="Center" Margin="10,0,0,0" />
+                                        <ToggleSwitch Grid.Column="2" IsChecked="{Binding IsGranted, Mode=TwoWay}" IsEnabled="{Binding IsEditable}" OnContent="Permitido" OffContent="Denegado" VerticalAlignment="Center" Margin="10,0,0,0" />
                                     </Grid>
                                 </Border>
                             </DataTemplate>

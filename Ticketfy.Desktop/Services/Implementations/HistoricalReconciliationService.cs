@@ -9,16 +9,21 @@ namespace Ticketfy.Services.Implementations;
 /// <summary>Explicit current-balance adjustments, never reconstruction of missing payments, stock or original attribution.</summary>
 public sealed class HistoricalReconciliationService(IDbContextFactory<AppDbContext> factory, CommercialOperationContext operations)
 {
-    public async Task<List<HistoricalBalanceTargetDto>> GetTargetsAsync(HistoricalBalanceScope scope)
+    public async Task<List<HistoricalBalanceTargetDto>> GetTargetsAsync(HistoricalBalanceScope scope, string? search = null)
     {
         await using var db = await factory.CreateDbContextAsync();
         await operations.RequireAsync(db, PermissionCatalog.HistoryReconcile, false);
+        string term = search?.Trim().ToLowerInvariant() ?? "";
         // Inactive accounts still require reconciliation; catalog filters must not hide their balances.
         return scope switch
         {
-            HistoricalBalanceScope.CustomerAccount => await db.Customers.AsNoTracking().OrderBy(c => c.Name)
+            HistoricalBalanceScope.CustomerAccount => await db.Customers.AsNoTracking()
+                .Where(c => term == "" || c.Name.ToLower().Contains(term) || c.CustomerCode.ToLower().Contains(term) || c.Id.ToLower().Contains(term))
+                .OrderBy(c => c.Name).ThenBy(c => c.Id).Take(100)
                 .Select(c => new HistoricalBalanceTargetDto(c.Id, c.Name + (c.IsActive ? "" : " (inactivo)") + " · " + c.Id)).ToListAsync(),
-            HistoricalBalanceScope.SupplierPurchase => await db.Purchases.AsNoTracking().Where(p => p.LedgerVersion == 0).OrderBy(p => p.SupplierName).ThenBy(p => p.Date)
+            HistoricalBalanceScope.SupplierPurchase => await db.Purchases.AsNoTracking().Where(p => p.LedgerVersion == 0
+                && (term == "" || p.SupplierName.ToLower().Contains(term) || p.InvoiceNumber.ToLower().Contains(term) || p.Id.ToLower().Contains(term)))
+                .OrderBy(p => p.SupplierName).ThenBy(p => p.Date).ThenBy(p => p.Id).Take(100)
                 .Select(p => new HistoricalBalanceTargetDto(p.Id, p.SupplierName + " · " + p.InvoiceNumber + " · " + p.Id)).ToListAsync(),
             _ => throw new InvalidOperationException("Tipo de conciliación desconocido.")
         };
@@ -26,6 +31,7 @@ public sealed class HistoricalReconciliationService(IDbContextFactory<AppDbConte
     public async Task<HistoricalBalancePreview> PreviewAsync(HistoricalBalanceScope scope, string targetId)
     {
         await using var db = await factory.CreateDbContextAsync();
+        await using var snapshot = await ReadSnapshot.BeginAsync(db);
         await operations.RequireAsync(db, PermissionCatalog.HistoryReconcile, false);
         return await ReadAsync(db, scope, targetId);
     }

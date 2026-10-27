@@ -8,6 +8,30 @@ namespace Ticketfy.Services.Implementations;
 /// <summary>Shared invariants for closing a register and subsequently reconciling its documents.</summary>
 internal static class ShiftLedgerValidator
 {
+    internal static IQueryable<SaleEntity> Sales(AppDbContext db, string shiftId) =>
+        db.Sales.AsNoTracking().Where(s => s.ShiftId == shiftId).Select(s => new SaleEntity
+        {
+            Id = s.Id,
+            OperationId = s.OperationId,
+            LedgerVersion = s.LedgerVersion,
+            Total = s.Total,
+            ShiftId = s.ShiftId,
+            RegisterId = s.RegisterId,
+            CashierUserId = s.CashierUserId
+        });
+    internal static IQueryable<SalePaymentEntity> Payments(AppDbContext db, string shiftId) =>
+        db.SalePayments.AsNoTracking().Where(p => p.ShiftId == shiftId).Select(p => new SalePaymentEntity
+        {
+            Id = p.Id,
+            SaleId = p.SaleId,
+            OperationId = p.OperationId,
+            Kind = p.Kind,
+            State = p.State,
+            Amount = p.Amount,
+            ShiftId = p.ShiftId,
+            RegisterId = p.RegisterId,
+            CashierUserId = p.CashierUserId
+        });
     public static void ValidateSales(ShiftEntity shift, IReadOnlyList<SaleEntity> sales, IReadOnlyList<SalePaymentEntity> payments)
     {
         var salesById = sales.ToDictionary(s => s.Id);
@@ -32,8 +56,7 @@ internal static class ShiftLedgerValidator
     }
 
     public static Task<bool> HasPendingCheckoutsAsync(AppDbContext db, string shiftId) =>
-        db.CheckoutOperations.AnyAsync(o => o.ShiftId == shiftId && (o.State == CheckoutOperationState.Started
-            || o.State == CheckoutOperationState.PaymentAuthorized || o.State == CheckoutOperationState.RequiresReconciliation));
+        CheckoutStatePolicy.Pending(db).AnyAsync(o => o.ShiftId == shiftId);
 
     public static async Task ValidateCloseEvidenceAsync(AppDbContext db, ShiftEntity shift, decimal expected, IReadOnlyList<SalePaymentEntity> payments)
     {
@@ -43,15 +66,15 @@ internal static class ShiftLedgerValidator
         if (cashups.Count != 1 || events.Count != 1 || command is null || !DateTimeOffset.TryParse(shift.EndTime, out _))
             throw new InvalidOperationException("Falta un arqueo final único, comando, fecha o registro de cierre verificable.");
         var cashup = cashups[0];
+        CashCountEvidence.Validate(cashup);
         var journal = events[0];
         if (cashup.OperationId != shift.CloseOperationId || cashup.RegisterId != shift.RegisterId || cashup.CashierUserId != shift.CashierUserId
             || cashup.OpenCashAmount != shift.OpeningBalance || cashup.ClosedCashAmount != shift.ActualBalance
             || cashup.TheoreticalCash != expected || cashup.Difference != shift.ActualBalance - expected || shift.Diff != cashup.Difference
             || journal.OperationId != shift.CloseOperationId || journal.EntityId != shift.Id || journal.Amount != shift.ActualBalance
             || journal.RegisterId != shift.RegisterId || journal.CashierUserId != shift.CashierUserId
-            || command.Command != "SHIFT_CLOSE" || command.RegisterId != shift.RegisterId || command.CashierUserId != shift.CashierUserId || command.ShiftId != shift.Id
-            || command.Fingerprint != CommandIdentity.Hash("SHIFT_CLOSE", shift.CashierUserId,
-                shift.RegisterId, shift.Id, shift.Id, cashup.ClosedCashAmount, cashup.Notes)
+            || command.RegisterId != shift.RegisterId || command.CashierUserId != shift.CashierUserId || command.ShiftId != shift.Id
+            || !CashCountEvidence.Matches(command, "SHIFT_CLOSE", shift.CashierUserId, shift.RegisterId, shift.Id, cashup)
             || shift.TotalCashSales != payments.Where(p => p.Kind == TenderKind.Cash).Sum(p => p.Amount)
             || shift.TotalCreditSales != payments.Where(p => p.Kind == TenderKind.Credit).Sum(p => p.Amount))
             throw new InvalidOperationException("El arqueo, diario, comando o totales del cierre no coinciden con el turno y sus documentos.");
@@ -76,6 +99,13 @@ internal static class ShiftLedgerValidator
         expected.AddRange(refunds.Select(r => new CashSource(MovementType.DevolucionCliente, true, r.ReturnId, r.OperationId, r.Amount, r.RegisterId, r.CashierUserId)));
 
         var customerPayments = await db.CustomerPayments.AsNoTracking().Where(p => p.ShiftId == shift.Id && (p.Method == "Efectivo" || p.Method == "Cash")).ToListAsync();
+        var creditRefunds = await db.AccountCreditSettlements.AsNoTracking().Where(s => s.ShiftId == shift.Id
+            && s.Kind == AccountCreditSettlementKind.Refund && s.TenderKind == TenderKind.Cash).ToListAsync();
+        if (creditRefunds.Any(s => s.AccountKind is not (AccountKind.Customer or AccountKind.Supplier)))
+            throw new InvalidOperationException("Reembolso de saldo a favor con cuenta inválida.");
+        expected.AddRange(creditRefunds.Select(s => new CashSource(
+            s.AccountKind == AccountKind.Customer ? MovementType.ReembolsoSaldoCliente : MovementType.ReembolsoProveedor,
+            s.AccountKind == AccountKind.Customer, s.OperationId, s.OperationId, s.Amount, s.RegisterId, s.CashierUserId)));
         if (customerPayments.Any(p => p.Status != PaymentStatus.Completed))
             throw new InvalidOperationException("Hay un abono en efectivo sin confirmar.");
         expected.AddRange(customerPayments.Select(p => new CashSource(MovementType.AbonoCliente, false, p.Id, p.OperationId, p.Amount, p.RegisterId, p.CashierUserId)));

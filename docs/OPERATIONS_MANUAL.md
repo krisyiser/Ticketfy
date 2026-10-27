@@ -8,7 +8,8 @@
 3. Revisar impresora, papel, lector, báscula y cajón antes de abrir turno.
 4. Abrir turno con el fondo contado por dos personas cuando la política del comercio
    lo requiera.
-5. Ejecutar una venta de control sin cobro real si se cambió hardware o Windows.
+5. Si se cambió hardware o Windows, ensayar el flujo en una instalación con datos
+   de prueba, sin cobro real ni registros ficticios en la base operativa.
 
 ## Durante el turno
 
@@ -18,6 +19,9 @@
 - Ante diferencia de caja, conservar el turno abierto y seguir el runbook de caja.
 - Una falla de impresión no invalida una venta confirmada; reimprimir desde Historial.
 - Si una operación queda en conciliación, no crear una segunda con otra referencia.
+- **Detener espera** no cancela en banco. Conservar la referencia y seguir el
+  [procedimiento de cobros interrumpidos](ENTERPRISE_RECOVERY_RUNBOOK.md#cobro-pendiente-o-respuesta-perdida).
+  Ese pendiente bloquea otro cobro y el cierre del mismo turno hasta su resolución.
 
 ## Cierre
 

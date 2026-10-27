@@ -42,12 +42,11 @@ public partial class CommercialControlViewModel
     {
         TransferReference = value?.Reference ?? "";
         TransferFundsVerified = false; TransferNoFundsVerified = false; TransferRefundVerified = false; TransferRefundReference = "";
+        ApplyTransferCommand.NotifyCanExecuteChanged();
+        CancelUnfundedTransferCommand.NotifyCanExecuteChanged();
+        RefundPendingTransferCommand.NotifyCanExecuteChanged();
     }
-    private async Task LoadPendingTransfersAsync()
-    {
-        PendingTransfers.Clear(); foreach (var item in await Transfers.GetPendingAsync()) PendingTransfers.Add(item);
-        PendingTransfer = null;
-    }
+    private bool HasTransferSelection() => !TransferHistoryMode && PendingTransfer is not null && PendingTransfers.Contains(PendingTransfer);
     [RelayCommand]
     private Task PreviewHistoricalAsync() => RunAsync(async () =>
     {
@@ -81,41 +80,52 @@ public partial class CommercialControlViewModel
     [RelayCommand]
     private Task PrepareTransferAsync() => RunAsync(async () =>
     {
-        string destination = TransferToWallet
-            ? (await _wallets.GetByCardNumberAsync(WalletNumber) ?? throw new InvalidOperationException("Seleccione un monedero activo.")).Id
-            : Customer?.Id ?? throw new InvalidOperationException("Seleccione un cliente.");
+        int version = _transferQueryVersion;
+        bool wallet = TransferToWallet;
+        string number = WalletNumber, notes = Reason;
+        string? customer = Customer?.Id;
+        decimal amount = Amount;
         string operation = Key("TRANSFER_PREPARE");
-        await Transfers.PrepareAsync(operation, TransferToWallet ? IncomingTransferService.WalletPurpose : IncomingTransferService.CustomerPurpose,
-            destination, Amount, Reason);
-        Amount = 0m; await LoadPendingTransfersAsync(); PendingTransfer = PendingTransfers.Single(p => p.OperationId == operation);
+        try
+        {
+            string destination = wallet
+                ? (await _wallets.GetByCardNumberAsync(number) ?? throw new InvalidOperationException("Seleccione un monedero activo.")).Id
+                : customer ?? throw new InvalidOperationException("Seleccione un cliente.");
+            if (version != _transferQueryVersion) return;
+            await Transfers.PrepareAsync(operation, wallet ? IncomingTransferService.WalletPurpose : IncomingTransferService.CustomerPurpose,
+                destination, amount, notes);
+        }
+        catch when (version != _transferQueryVersion) { return; }
+        _keys.Remove("TRANSFER_PREPARE");
+        if (version != _transferQueryVersion) return;
+        Amount = 0m;
+        Message = "Intento guardado. Conserve la referencia: " + operation;
         Summary = "Intento guardado. No se ha abonado ni recargado saldo. Compruebe el depósito antes de aplicarlo.";
-    }, "TRANSFER_PREPARE");
-    [RelayCommand]
-    private Task ApplyTransferAsync() => RunAsync(async () =>
-    {
-        await Transfers.ConfirmAndApplyAsync(PendingTransfer?.OperationId ?? throw new InvalidOperationException("Seleccione un intento."), TransferReference, TransferFundsVerified);
-        await LoadPendingTransfersAsync(); Summary = "Transferencia aplicada una sola vez; no genera entrada de efectivo.";
+        TransferSearch = operation;
+        try
+        {
+            await LoadPendingTransfersAsync();
+            PendingTransfer = PendingTransfers.SingleOrDefault(p => p.OperationId == operation);
+        }
+        catch { Summary += " No se pudo actualizar la lista. Consulte esa misma referencia; no prepare otro intento."; }
     });
-    [RelayCommand]
-    private Task CancelUnfundedTransferAsync() => RunAsync(async () =>
-    {
-        await Transfers.CancelUnfundedAsync(PendingTransfer?.OperationId ?? throw new InvalidOperationException("Seleccione un intento."), Reason, TransferNoFundsVerified);
-        await LoadPendingTransfersAsync(); Summary = "Intento descartado con declaración de no recepción de fondos; se conserva la evidencia.";
-    });
-    [RelayCommand]
-    private Task RefundPendingTransferAsync() => RunAsync(async () =>
-    {
-        await Transfers.ResolveByExternalRefundAsync(PendingTransfer?.OperationId ?? throw new InvalidOperationException("Seleccione un intento."),
-            TransferRefundReference, Reason, TransferRefundVerified);
-        await LoadPendingTransfersAsync(); Summary = "Devolución bancaria documentada. No se generó un abono, recarga ni movimiento de caja.";
-    });
+    [RelayCommand(CanExecute = nameof(HasTransferSelection))]
+    private Task ApplyTransferAsync() => ExecuteSelectedTransferAsync(p =>
+        Transfers.ConfirmAndApplyAsync(p.OperationId, TransferReference, TransferFundsVerified),
+        "Transferencia aplicada una sola vez; no genera entrada de efectivo.");
+    [RelayCommand(CanExecute = nameof(HasTransferSelection))]
+    private Task CancelUnfundedTransferAsync() => ExecuteSelectedTransferAsync(p =>
+        Transfers.CancelUnfundedAsync(p.OperationId, Reason, TransferNoFundsVerified),
+        "Intento descartado con declaración de no recepción de fondos; se conserva la evidencia.");
+    [RelayCommand(CanExecute = nameof(HasTransferSelection))]
+    private Task RefundPendingTransferAsync() => ExecuteSelectedTransferAsync(p =>
+        Transfers.ResolveByExternalRefundAsync(p.OperationId, TransferRefundReference, Reason, TransferRefundVerified),
+        "Devolución bancaria documentada. No se generó un abono, recarga ni movimiento de caja.");
     [RelayCommand]
     private Task TransferHistoryAsync() => RunAsync(async () =>
     {
-        Rows.Clear();
-        foreach (var r in await Transfers.GetReceiptsAsync())
-            Rows.Add(new(r.CreatedAtUtc, r.DocumentId, r.Purpose + " · " + r.Outcome + " · Depósito: " + r.ExternalReference
-                + (r.RefundReference is null ? "" : " · Reembolso: " + r.RefundReference), r.Amount, 0, r.CashierUserId, r.RegisterId, r.ShiftId));
-        Summary = "Últimos 200 depósitos aplicados o devueltos. No son ventas adicionales; deben compararse con el estado de cuenta bancario.";
+        TransferHistoryMode = true;
+        ResetTransferQuery();
+        await LoadTransferPageAsync(null, 0);
     });
 }

@@ -22,7 +22,16 @@ public partial class InventoryActionsViewModel : ObservableObject
 {
     private readonly IProductService _productService;
     private readonly IExternalCatalogService _externalCatalogService;
-    private readonly IInventorySnapshotService _snapshotService;
+    private readonly IInventorySnapshotService? _snapshotService;
+    private bool _creatingSnapshot;
+    private string _snapshotOperationId = Guid.NewGuid().ToString("N");
+    private long _sessionVersion;
+    public void ClearSessionData()
+    {
+        ++_sessionVersion;
+        _snapshotOperationId = Guid.NewGuid().ToString("N");
+        FeedbackMessage = string.Empty; IsFeedbackError = false;
+    }
     private readonly IEscPosPrinterService _printerService;
 
     [ObservableProperty] private string _feedbackMessage = string.Empty;
@@ -38,13 +47,14 @@ public partial class InventoryActionsViewModel : ObservableObject
     {
         _productService = productService;
         _externalCatalogService = externalCatalogService;
-        _snapshotService = snapshotService ?? new InventorySnapshotService();
+        _snapshotService = snapshotService;
         _printerService = printerService ?? new EscPosPrinterService();
     }
 
     [RelayCommand]
     private async Task ImportProductsFromCsvAsync()
     {
+        var version = _sessionVersion;
         try
         {
             if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop && desktop.MainWindow != null)
@@ -60,14 +70,16 @@ public partial class InventoryActionsViewModel : ObservableObject
                     }
                 });
 
-                if (files.Count > 0)
+                if (files.Count > 0 && version == _sessionVersion)
                 {
                     var file = files[0];
                     using var stream = await file.OpenReadAsync();
                     using var reader = new StreamReader(stream);
-                    string content = await reader.ReadToEndAsync();
+                    string content = await Ticketfy.Core.Operations.InventoryWorkloadLimits.ReadCsvAsync(reader);
+                    if (version != _sessionVersion) return;
 
                     int imported = await _productService.ImportFromCsvTextAsync(content);
+                    if (version != _sessionVersion) return;
                     IsFeedbackError = false;
                     FeedbackMessage = $"¡Se importaron correctamente {imported} productos!";
                     ProductsUpdated?.Invoke();
@@ -77,18 +89,21 @@ public partial class InventoryActionsViewModel : ObservableObject
         catch (Exception ex)
         {
             Log.Error(ex, "InventoryActionsViewModel: error importing CSV");
+            if (version != _sessionVersion) return;
             IsFeedbackError = true;
-            FeedbackMessage = "Error al importar el archivo CSV.";
+            FeedbackMessage = ex is InvalidOperationException ? ex.Message : "Error al importar el archivo CSV.";
         }
     }
 
     public Task ImportCsvCatalogAsync() => ImportProductsFromCsvAsync();
 
-    public async Task PrintChecklistAsync()
+    public async Task PrintChecklistAsync(string? search = null, bool lowStockOnly = false)
     {
+        var version = _sessionVersion;
         try
         {
-            var products = await _productService.GetAllAsync();
+            var products = await _productService.GetInventoryChecklistAsync(search, lowStockOnly);
+            if (version != _sessionVersion) return;
             if (products == null || products.Count == 0)
             {
                 IsFeedbackError = true;
@@ -98,18 +113,23 @@ public partial class InventoryActionsViewModel : ObservableObject
 
             await Dispatcher.UIThread.InvokeAsync(async () =>
             {
+                if (version != _sessionVersion) return;
                 if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop && desktop.MainWindow != null)
                 {
-                    var vm = new Ticketfy.ViewModels.Dialogs.PrintPreviewWindowViewModel($"Checklist de Conteo Físico ({products.Count} productos)");
+                    var vm = new Ticketfy.ViewModels.Dialogs.PrintPreviewWindowViewModel($"Checklist del filtro actual ({products.Count} productos físicos activos)");
                     var win = new Ticketfy.Views.Dialogs.PrintPreviewWindow { DataContext = vm };
                     var confirmed = await win.ShowDialog<bool>(desktop.MainWindow);
-                    if (confirmed)
+                    if (confirmed && version == _sessionVersion)
                     {
-                        bool printed = await _printerService.PrintInventoryChecklistAsync(products);
+                        // Revalidate permission and scope after a potentially long-lived preview.
+                        var printable = await _productService.GetInventoryChecklistAsync(search, lowStockOnly);
+                        if (version != _sessionVersion) return;
+                        bool printed = await _printerService.PrintInventoryChecklistAsync(printable);
+                        if (version != _sessionVersion) return;
                         if (printed)
                         {
                             IsFeedbackError = false;
-                            FeedbackMessage = $"¡Checklist de conteo físico de inventario enviado a la impresora ({products.Count} productos)!";
+                            FeedbackMessage = $"Checklist del filtro enviado al controlador ({printable.Count} productos físicos activos). Compruebe el papel.";
                         }
                         else
                         {
@@ -118,32 +138,42 @@ public partial class InventoryActionsViewModel : ObservableObject
                         }
                     }
                 }
+                else { IsFeedbackError = true; FeedbackMessage = "No hay ventana disponible para confirmar la impresión. No se envió el checklist."; }
             });
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error printing inventory checklist");
+            if (version != _sessionVersion) return;
             IsFeedbackError = true;
-            FeedbackMessage = "Error al generar el checklist de inventario.";
+            FeedbackMessage = ex is InvalidOperationException ? ex.Message : "Error al generar el checklist de inventario.";
         }
     }
 
     public async Task CreateSnapshotAsync()
     {
+        if (_creatingSnapshot) return;
+        var version = _sessionVersion;
         try
         {
-            string note = $"Punto de guardado - {DateTime.Now:dd/MM/yyyy HH:mm}";
-            var snapshot = await _snapshotService.CreateSnapshotAsync(note);
+            _creatingSnapshot = true;
+            var service = _snapshotService ?? throw new InvalidOperationException("No hay servicio de capturas autorizado configurado.");
+            // Stable payload as well as operation ID: a lost response must not create a second capture.
+            await service.CreateSnapshotAsync("Captura documental solicitada desde inventario", _snapshotOperationId);
+            if (version != _sessionVersion) return;
+            _snapshotOperationId = Guid.NewGuid().ToString("N");
 
             IsFeedbackError = false;
-            FeedbackMessage = "¡Copia de seguridad del inventario creada con éxito!";
+            FeedbackMessage = "Captura documental de inventario guardada. No es un respaldo: use Seguridad para recuperación integral.";
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error creating inventory snapshot");
+            if (version != _sessionVersion) return;
             IsFeedbackError = true;
-            FeedbackMessage = "Error al crear la copia de seguridad del inventario.";
+            FeedbackMessage = ex is InvalidOperationException ? ex.Message : "No se pudo guardar la captura. Verifique permisos de inventario y costos; puede reintentar sin duplicar una solicitud interrumpida.";
         }
+        finally { _creatingSnapshot = false; }
     }
 
     public async Task ViewSnapshotsAsync()
@@ -154,7 +184,7 @@ public partial class InventoryActionsViewModel : ObservableObject
             {
                 if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop && desktop.MainWindow != null)
                 {
-                    var vm = new InventorySnapshotsViewModel(_printerService);
+                    var vm = new InventorySnapshotsViewModel(_snapshotService ?? throw new InvalidOperationException("Servicio de capturas no configurado."), _printerService);
                     var win = new Ticketfy.Views.InventorySnapshotsWindow
                     {
                         DataContext = vm

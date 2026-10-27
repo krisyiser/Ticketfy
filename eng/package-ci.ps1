@@ -91,6 +91,7 @@ try {
 finally { $stream.Dispose() }
 
 $hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash
+[IO.File]::WriteAllText($zipPath + '.sha256', "$hash  $([IO.Path]::GetFileName($zipPath))`n", [Text.UTF8Encoding]::new($false))
 Write-Host "Paquete CI: $zipPath"
 Write-Host "SHA256: $hash"
 [pscustomobject]@{ Path = $zipPath; Sha256 = $hash; Version = $version }

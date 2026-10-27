@@ -14,15 +14,18 @@
                     <TextBlock Text="TERMINAL BLOQUEADA" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
                 </StackPanel>
                 
-                <TextBlock Text="Ingrese su PIN para desbloquear la sesión" FontSize="12" Foreground="{DynamicResource TextMutedBrush}" HorizontalAlignment="Center" />
+                <TextBlock Text="Use su contraseña. El PIN requiere una verificación primaria en los últimos 15 minutos de esta ejecución." TextWrapping="Wrap" MaxWidth="310" FontSize="12" Foreground="{DynamicResource TextMutedBrush}" HorizontalAlignment="Center" />
+                <CheckBox Content="Usar contraseña" IsChecked="{Binding LockScreen.UsePassword}" />
                 
-                <TextBox Text="{Binding UnlockPin, Mode=TwoWay}" PasswordChar="•" Width="220" Padding="12" FontSize="16" HorizontalAlignment="Center" HorizontalContentAlignment="Center" />
+                <TextBox Text="{Binding UnlockPin, Mode=TwoWay}" PasswordChar="•" MaxLength="1024" Width="220" Padding="12" FontSize="16" HorizontalAlignment="Center" HorizontalContentAlignment="Center" />
                 
-                <TextBlock Text="{Binding UnlockErrorMessage}" Foreground="{DynamicResource AccentDangerBrush}" FontSize="12" HorizontalAlignment="Center" IsVisible="{Binding UnlockErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <TextBlock Text="{Binding UnlockErrorMessage}" Foreground="{DynamicResource AccentDangerBrush}" FontSize="12" HorizontalAlignment="Center" TextWrapping="Wrap" MaxWidth="310" IsVisible="{Binding UnlockErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 
                 <Button Command="{Binding UnlockTerminalCommand}" Classes="danger-action" Width="220" Height="40" HorizontalAlignment="Center" CornerRadius="{DynamicResource AppCornerRadius}">
                     <TextBlock Text="DESBLOQUEAR" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Button>
+                <Button Content="Cerrar sesión" Command="{Binding EndLockedSessionCommand}" HorizontalAlignment="Center" />
+                <TextBlock Text="Cerrar sesión no cierra el turno ni cancela cobros pendientes." FontSize="11" TextWrapping="Wrap" MaxWidth="300" />
             </StackPanel>
         </Border>
     </Grid>

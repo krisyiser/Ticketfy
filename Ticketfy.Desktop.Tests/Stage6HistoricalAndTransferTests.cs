@@ -152,7 +152,7 @@ public sealed partial class Stage6CommercialLedgerTests
         Assert.Single(await db.CustomerPayments.ToListAsync()); Assert.Single(await Transfers.GetReceiptsAsync());
         Assert.Empty(await db.Sales.ToListAsync()); Assert.Empty(await db.ShiftMovements.ToListAsync());
         await new ShiftService(new TestDbContextFactory(_options), _actor).CloseAsync("SHIFT-1", 0);
-        Assert.True(Assert.Single(await Reconciliation.ReconcileAsync(DateTime.Today)).IsBalanced);
+        Assert.True(Assert.Single(await Reconciliation.ReconcileAsync(Ticketfy.Core.Helpers.BusinessTime.Today)).IsBalanced);
     }
     [Fact]
     public async Task WalletTransfer_AppliesOnceAndCannotUseSaleProofOrWrongDestination()
@@ -266,9 +266,12 @@ public sealed partial class Stage6CommercialLedgerTests
     public async Task Ui_RoleMatrix_ContainsEveryBackendPermissionAndKeepsHistoricalReviewRestricted()
     {
         var vm = new UsuariosSettingsViewModel();
+        await vm.Initialization;
+        vm.SelectedPermissionRole = "ADMINISTRADOR";
         await vm.LoadRolePermissionsAsync("ADMINISTRADOR");
         Assert.Equal(PermissionCatalog.All.Order(), vm.RolePermissions.Select(p => p.Key).Order());
         Assert.All(vm.RolePermissions, p => Assert.True(p.IsGranted));
+        vm.SelectedPermissionRole = "GERENTE";
         await vm.LoadRolePermissionsAsync("GERENTE");
         Assert.False(vm.RolePermissions.Single(p => p.Key == PermissionCatalog.HistoryReconcile).IsGranted);
         Assert.True(vm.RolePermissions.Single(p => p.Key == PermissionCatalog.PaymentsReconcile).IsGranted);
@@ -313,7 +316,21 @@ public sealed partial class Stage6CommercialLedgerTests
         var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
         await using var db = new AppDbContext(options);
         await db.Database.GetService<IMigrator>().MigrateAsync("20261018213827_CommercialLedgersAndRegisterOwnership");
-        var actor = CommercialTestSession.Create(db);
+        // Insert the historical account using only columns available at this checkpoint.
+        // The current UserEntity also maps credential-policy columns added by later migrations.
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO usuarios (id,nombre,username,rol,role_string,password_hash,pin_checador_hash,estatus,password_hint)
+            VALUES ({CommercialTestSession.UserId},'Synthetic','historical-admin',0,'ADMINISTRADOR','','',1,'');
+            """);
+        db.Shifts.Add(new ShiftEntity
+        {
+            Id = "SHIFT-1",
+            RegisterId = "TEST-REGISTER",
+            CashierUserId = CommercialTestSession.UserId.ToString(),
+            IsOpen = 1,
+            StartTime = DateTimeOffset.UtcNow.ToString("O")
+        });
+        await db.SaveChangesAsync(); // The historical insert trigger requires an already-open shift.
         // Seed a prior-version posted transfer without invoking services that require the new tables.
         db.Sales.Add(new SaleEntity
         {
@@ -338,6 +355,7 @@ public sealed partial class Stage6CommercialLedgerTests
         });
         db.Purchases.Add(new PurchaseEntity { Id = "OLD-P", SupplierId = "OLD-S", TotalCost = 50m });
         await db.SaveChangesAsync(); await db.Database.MigrateAsync();
+        var actor = CommercialTestSession.Create(db);
         Assert.Equal("OLD-BANK-REF", (await db.IncomingTransferReceipts.SingleAsync()).ExternalReference);
         var historical = new HistoricalReconciliationService(new TestDbContextFactory(options), actor);
         var preview = await historical.PreviewAsync(HistoricalBalanceScope.SupplierPurchase, "OLD-P");

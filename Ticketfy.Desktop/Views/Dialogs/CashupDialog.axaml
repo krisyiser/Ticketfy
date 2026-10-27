@@ -25,10 +25,10 @@
             <!-- Bottom Action Buttons -->
             <StackPanel DockPanel.Dock="Bottom" Margin="0,16,0,0" Spacing="10">
                 <!-- Operation Type Selector (Parcial X vs Corte Final Z) -->
-                <Border Background="{DynamicResource BgPrimaryBrush}" Padding="12,8" CornerRadius="6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                <Border IsVisible="{Binding !IsBlindMode}" Background="{DynamicResource BgPrimaryBrush}" Padding="12,8" CornerRadius="6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                     <Grid ColumnDefinitions="Auto,*">
                         <TextBlock Text="Tipo de Operación:" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,12,0" />
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16">
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16" IsEnabled="{Binding !SaveCashupCommand.IsRunning}">
                             <RadioButton Content="Corte parcial" IsChecked="{Binding IsPartialMode}" GroupName="CashupTypeGroup" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" />
                             <RadioButton Content="Corte final" IsChecked="{Binding IsFinalZCut}" GroupName="CashupTypeGroup" FontSize="11" FontWeight="Bold" Foreground="#EF4444" />
                         </StackPanel>
@@ -36,6 +36,7 @@
                 </Border>
 
                 <controls:AlertBannerControl Message="{Binding FeedbackMessage}" IsError="{Binding IsFeedbackError}" />
+                <controls:AlertBannerControl Message="{Binding CountValidationMessage}" IsError="True" />
 
                 <Grid ColumnDefinitions="*,*">
                     <Button Grid.Column="0" Command="{Binding CancelCommand}" Content="Cancelar" Margin="0,0,6,0" Padding="12"
@@ -51,7 +52,8 @@
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="14">
                     <!-- 1. Top 4 Category Cards (Fondo Inicial, Ingresos, Egresos, Diferencia) -->
-                    <UniformGrid Columns="4">
+                    <TextBlock IsVisible="{Binding IsBlindMode}" Text="Corte ciego: cuente el efectivo sin consultar el saldo esperado. El cierre final conservará la diferencia real en el historial." TextWrapping="Wrap" />
+                    <UniformGrid Columns="4" IsVisible="{Binding !IsBlindMode}">
                         <!-- 1. FONDO INICIAL -->
                         <Border Margin="0,0,3,0" Padding="10" Background="{DynamicResource BgPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6">
                             <StackPanel Spacing="2">
@@ -103,7 +105,7 @@
                     <!-- Denomination Grid -->
                     <TextBlock Text="Desglose Físico por Denominación" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
 
-                    <UniformGrid Columns="2">
+                    <UniformGrid Columns="2" IsEnabled="{Binding !SaveCashupCommand.IsRunning}">
                         <!-- Billetes -->
                         <StackPanel Margin="4" Spacing="8">
                             <TextBlock Text="Billetes" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" />
@@ -172,7 +174,7 @@
 
                     <StackPanel Spacing="4" Margin="0,8,0,0">
                         <TextBlock Text="Notas / Observaciones de Cierre" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                        <TextBox Text="{Binding Notes, Mode=TwoWay}" Watermark="Observaciones del corte de caja..." Height="60" AcceptsReturn="True" TextWrapping="Wrap" Padding="8" />
+                        <TextBox Text="{Binding Notes, Mode=TwoWay}" IsEnabled="{Binding !SaveCashupCommand.IsRunning}" Watermark="Observaciones del corte de caja..." Height="60" AcceptsReturn="True" TextWrapping="Wrap" Padding="8" />
                     </StackPanel>
                 </StackPanel>
             </ScrollViewer>

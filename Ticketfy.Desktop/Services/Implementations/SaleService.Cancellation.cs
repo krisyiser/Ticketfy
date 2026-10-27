@@ -26,26 +26,26 @@ public partial class SaleService
     private async Task<bool> ReturnCoreAsync(string saleId, string? productId, decimal quantity, string reason,
         bool restock, string operationId, bool cancel)
     {
-        if (string.IsNullOrWhiteSpace(reason)) throw new InvalidOperationException("Indique el motivo de devolución.");
+        SaleReturnEvidence.Key(saleId); SaleReturnEvidence.Key(operationId);
+        if (!cancel) SaleReturnEvidence.Key(productId);
+        if (string.IsNullOrWhiteSpace(reason) || reason.Length > 500 || reason.Contains('\0'))
+            throw new InvalidOperationException("Indique un motivo de devolución de hasta 500 caracteres, sin nulos.");
         await using var db = await _contextFactory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
         var actor = await AuthorizeAsync(db, cancel ? PermissionCatalog.PosCancelSale : PermissionCatalog.PosRefund);
         await CommandIdentity.BindAsync(db, actor, operationId, "RETURN", saleId, productId, quantity, reason, restock, cancel);
-        var previous = await db.Returns.AsNoTracking().SingleOrDefaultAsync(r => r.OperationId == operationId);
-        if (previous is not null)
+        if (await db.Returns.AnyAsync(r => r.OperationId == operationId))
         {
-            if (previous.OriginalSaleId != saleId) throw new InvalidOperationException("La operación pertenece a otra venta.");
+            if (await db.Returns.AnyAsync(r => r.OperationId == operationId && r.OriginalSaleId != saleId))
+                throw new InvalidOperationException("La operación pertenece a otra venta.");
             return !cancel;
         }
-        var sale = await db.Sales.SingleOrDefaultAsync(s => s.Id == saleId);
-        if (sale is null || sale.Status is SaleStatus.Canceled or SaleStatus.Refunded) return false;
-        if (sale.LedgerVersion == 0)
-            throw new InvalidOperationException("Venta histórica sin desglose verificable. Requiere conciliación y migración asistida antes de devolver.");
-        var lines = await db.SaleLines.AsNoTracking().Where(l => l.SaleId == saleId).OrderBy(l => l.LineNumber).ToListAsync();
-        var lineIds = lines.Select(l => l.Id).ToArray();
-        var priorLines = await db.ReturnLines.AsNoTracking().Where(r => lineIds.Contains(r.SaleLineId)).ToListAsync();
+        var evidence = await SaleReturnEvidence.ReadAsync(db, saleId);
+        if (evidence is null) return false;
+        var sale = evidence.Sale;
+        var lines = evidence.Lines;
         var targetLines = cancel ? lines : lines.Where(l => l.ProductId == productId || l.Id == productId).ToList();
-        decimal available = targetLines.Sum(l => l.Quantity - priorLines.Where(r => r.SaleLineId == l.Id).Sum(r => r.Quantity));
+        decimal available = targetLines.Sum(l => l.Quantity - (evidence.Returned.GetValueOrDefault(l.Id)?.Quantity ?? 0m));
         if (available <= 0 || (!cancel && quantity > available)) throw new InvalidOperationException("La cantidad supera lo disponible para devolución.");
         decimal remaining = cancel ? available : quantity;
         var returned = new ReturnEntity
@@ -63,20 +63,18 @@ public partial class SaleService
         db.Returns.Add(returned);
         foreach (var line in targetLines)
         {
-            var oldLines = priorLines.Where(r => r.SaleLineId == line.Id).ToList();
-            decimal alreadyReturned = oldLines.Sum(r => r.Quantity);
+            var old = evidence.Returned.GetValueOrDefault(line.Id) ?? new SaleReturnEvidence.LineTotals();
+            decimal alreadyReturned = old.Quantity;
             decimal take = Math.Min(remaining, line.Quantity - alreadyReturned);
             if (take <= 0) continue;
-            decimal amount = CommercialLedger.Money(line.Total * (alreadyReturned + take) / line.Quantity) - oldLines.Sum(r => r.Amount);
-            decimal restoredBefore = oldLines.Where(r => r.Restocked).Sum(r => r.Quantity);
+            decimal amount = CommercialLedger.Money(line.Total * (alreadyReturned + take) / line.Quantity) - old.Amount;
+            decimal restoredBefore = old.Restocked;
             decimal cost = restock ? CommercialLedger.Money(line.CostTotal * (restoredBefore + take) / line.Quantity)
-                - oldLines.Sum(r => r.CostReversed) : 0m;
+                - old.Cost : 0m;
             if (restock)
             {
                 // Restore the exact component recipe sold, even if the kit has since been edited.
-                var originalMoves = await db.InventoryMovements.AsNoTracking()
-                    .Where(m => m.SaleLineId == line.Id && m.Reason == "SALE").ToListAsync();
-                foreach (var move in originalMoves)
+                foreach (var move in evidence.Stock[line.Id])
                 {
                     decimal restored = Math.Round(-move.Quantity * (restoredBefore + take) / line.Quantity, 3)
                         - Math.Round(-move.Quantity * restoredBefore / line.Quantity, 3);
@@ -99,16 +97,15 @@ public partial class SaleService
             remaining -= take;
             if (remaining == 0) break;
         }
-        var payments = await db.SalePayments.AsNoTracking().Where(p => p.SaleId == saleId).OrderBy(p => p.Kind).ToListAsync();
-        var paymentIds = payments.Select(p => p.Id).ToArray();
-        var priorRefunds = await db.PaymentRefunds.AsNoTracking().Where(r => paymentIds.Contains(r.PaymentId)).ToListAsync();
-        decimal availablePayments = payments.Sum(p => p.Amount) - priorRefunds.Sum(r => r.Amount);
+        var payments = evidence.Payments;
+        decimal availablePayments = payments.Sum(p => p.Amount) - evidence.Refunded.Values.Sum();
+        if (returned.TotalRefunded < 0 || returned.TotalRefunded > availablePayments) SaleReturnEvidence.Fail();
         decimal weight = 0m;
         decimal allocatedCumulative = 0m;
         for (int i = 0; i < payments.Count; i++)
         {
             var payment = payments[i];
-            decimal availablePayment = payment.Amount - priorRefunds.Where(r => r.PaymentId == payment.Id).Sum(r => r.Amount);
+            decimal availablePayment = payment.Amount - evidence.Refunded.GetValueOrDefault(payment.Id);
             weight += availablePayment;
             decimal target = availablePayments == 0 ? 0 : CommercialLedger.Money(returned.TotalRefunded * weight / availablePayments);
             decimal amount = target - allocatedCumulative;
@@ -130,7 +127,8 @@ public partial class SaleService
             else if (payment.Kind == TenderKind.Credit)
             {
                 long cents = ToStoredCents(amount);
-                await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE customers SET debt = debt - {cents} WHERE id = {payment.AccountId}");
+                if (await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE customers SET debt = debt - {cents} WHERE id = {payment.AccountId}") != 1)
+                    SaleReturnEvidence.Fail();
                 CommercialLedger.Account(db, actor, operationId, AccountKind.Customer, payment.AccountId!, saleId, -amount, "RETURN_CREDIT");
             }
             else if (payment.Kind == TenderKind.Giftcard)
@@ -143,7 +141,8 @@ public partial class SaleService
             else if (payment.Kind == TenderKind.Loyalty)
             {
                 double points = (double)amount;
-                await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE customers SET puntos_saldo = puntos_saldo + {points} WHERE id = {payment.AccountId}");
+                if (await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE customers SET puntos_saldo = puntos_saldo + {points} WHERE id = {payment.AccountId}") != 1)
+                    SaleReturnEvidence.Fail();
                 CommercialLedger.Account(db, actor, operationId, AccountKind.Loyalty, payment.AccountId!, saleId, amount, "RETURN_RESTORE");
             }
             else
@@ -153,7 +152,8 @@ public partial class SaleService
             }
             db.PaymentRefunds.Add(refund);
         }
-        decimal priorQuantity = priorLines.Sum(r => r.Quantity);
+        if (allocatedCumulative != returned.TotalRefunded) SaleReturnEvidence.Fail();
+        decimal priorQuantity = evidence.Returned.Values.Sum(r => r.Quantity);
         decimal newQuantity = db.ReturnLines.Local.Where(r => r.ReturnId == returned.Id).Sum(r => r.Quantity);
         bool all = priorQuantity + newQuantity == lines.Sum(l => l.Quantity);
         sale.Status = cancel ? SaleStatus.Canceled : all ? SaleStatus.Refunded : SaleStatus.PartiallyRefunded;
@@ -161,24 +161,19 @@ public partial class SaleService
         {
             sale.IsCancelled = 1; sale.CancelledAt = returned.CreatedAt; sale.CancellationReason = reason; sale.CancellationDate = returned.CreatedAt;
         }
-        var earned = await db.AccountEntries.AsNoTracking().Where(e => e.DocumentId == saleId && e.EntryType == "SALE_REWARD").ToListAsync();
-        foreach (var reward in earned)
+        if (evidence.RewardEarned > 0)
         {
-            decimal alreadyReversed = -(await db.AccountEntries.AsNoTracking()
-                .Where(e => e.DocumentId == saleId && e.AccountKind == AccountKind.Loyalty && e.EntryType == "RETURN_REWARD")
-                .ToListAsync()).Sum(e => e.Amount);
-            var snapshots = System.Text.Json.JsonSerializer.Deserialize(sale.ItemsJson,
-                Ticketfy.Desktop.Core.Helpers.TicketfyJsonContext.Default.ListSaleItemSnapshotDto) ?? [];
-            var allReturned = priorLines.Concat(db.ReturnLines.Local.Where(r => r.ReturnId == returned.Id)).ToList();
-            decimal totalReverse = all ? reward.Amount : Math.Min(reward.Amount, CommercialLedger.Money(lines.Sum(l =>
-                (decimal)(snapshots.SingleOrDefault(s => s.SaleLineId == l.Id)?.PointsRewarded ?? 0)
-                * allReturned.Where(r => r.SaleLineId == l.Id).Sum(r => r.Quantity))));
-            decimal reversal = totalReverse - alreadyReversed;
+            var newLines = db.ReturnLines.Local.Where(r => r.ReturnId == returned.Id).ToDictionary(r => r.SaleLineId);
+            decimal totalReverse = all ? evidence.RewardEarned : Math.Min(evidence.RewardEarned, CommercialLedger.Money(evidence.Items.Sum(item =>
+                (decimal)item.PointsRewarded * ((evidence.Returned.GetValueOrDefault(item.SaleLineId!)?.Quantity ?? 0m) +
+                    (newLines.GetValueOrDefault(item.SaleLineId!)?.Quantity ?? 0m)))));
+            decimal reversal = totalReverse - evidence.RewardReversed;
             if (reversal > 0)
             {
                 double points = (double)reversal;
-                await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE customers SET puntos_saldo = puntos_saldo - {points} WHERE id = {reward.AccountId}");
-                CommercialLedger.Account(db, actor, operationId, AccountKind.Loyalty, reward.AccountId, saleId, -reversal, "RETURN_REWARD");
+                if (await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE customers SET puntos_saldo = puntos_saldo - {points} WHERE id = {sale.CustomerId}") != 1)
+                    SaleReturnEvidence.Fail();
+                CommercialLedger.Account(db, actor, operationId, AccountKind.Loyalty, sale.CustomerId!, saleId, -reversal, "RETURN_REWARD");
             }
         }
         CommercialLedger.Journal(db, actor, operationId, cancel ? "SALE_CANCELED" : "RETURN_COMPLETED", returned.Id, returned.TotalRefunded, reason);

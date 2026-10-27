@@ -27,17 +27,20 @@ public sealed partial class Stage6CommercialLedgerTests
     {
         await using var db = Db();
         var kits = new ItemKitService(db, _actor);
-        Assert.True(await kits.SaveAsync("K1", "K1-CODE", "Combo uno", 15m, "", [new("", "K1", "P", "Producto", 2)]));
-        Assert.True(await kits.SaveAsync("K2", "K2-CODE", "Combo anidado", 30m, "", [new("", "K2", "K1", "Combo uno", 1), new("", "K2", "P", "Producto", 3)]));
+        await kits.SaveAsync(new("K1", "K1-CODE", "Combo uno", 15m, "", [new("", "K1", "P", "Producto", 2)]), "CREATE-K1");
+        await kits.SaveAsync(new("K2", "K2-CODE", "Combo anidado", 30m, "", [new("", "K2", "K1", "Combo uno", 1), new("", "K2", "P", "Producto", 3)]), "CREATE-K2");
         var products = ProductsService();
         Assert.Equal(4, (await products.GetByIdAsync("K2"))!.Stock);
         Assert.Equal(4, (await products.GetByBarcodeAsync("K2-CODE"))!.Stock);
         Assert.Equal(2, (await kits.GetAllAsync()).Count);
         Assert.Equal(2, (await kits.GetByBarcodeAsync("K2-CODE"))!.Items.Count);
         Assert.Null(await kits.GetByBarcodeAsync("")); Assert.Null(await kits.GetByBarcodeAsync("MISSING"));
-        Assert.False(await kits.SaveAsync("K1", "K1-CODE", "Ciclo", 15m, "", [new("", "K1", "K2", "Otro", 1)]));
+        var draft = (await kits.GetForEditAsync("K1"))!;
+        await Assert.ThrowsAsync<Ticketfy.Services.KitCommandRejectedException>(() => kits.SaveAsync(
+            draft with { Name = "Ciclo", Items = [new("", "K1", "K2", "Otro", 1)] }, "CYCLE"));
         Assert.Equal(2, (await kits.GetByBarcodeAsync("K1-CODE"))!.Items.Single().Quantity);
-        Assert.True(await kits.DeleteAsync("K2")); Assert.False(await kits.DeleteAsync("MISSING"));
+        await kits.SetActiveAsync("K2", false, "INACTIVATE-K2");
+        await Assert.ThrowsAsync<Ticketfy.Services.KitCommandRejectedException>(() => kits.SetActiveAsync("MISSING", false, "MISSING"));
         Assert.Single(await kits.GetAllAsync()); Assert.Null(await kits.GetByBarcodeAsync("K2-CODE"));
         Assert.Equal(3, await db.ItemKitItems.CountAsync());
     }
@@ -111,7 +114,7 @@ public sealed partial class Stage6CommercialLedgerTests
         var products = ProductsService();
         await products.UpdateAsync((await products.GetByIdAsync("P"))! with { Category = "General viejo" });
         var promotions = new PromotionService(factory, _actor);
-        await promotions.SaveAsync(new("CAT-PROMO", "Promo categoría", 10m, true, TargetCategory: "General viejo"));
+        await promotions.SaveAsync(new("CAT-PROMO", "Promo categoría", 10m, true, TargetCategory: "General viejo"), "CREATE-CATEGORY-PROMO");
         await categories.SaveAsync("CAT", "Nuevo");
         Assert.Equal("Nuevo", (await products.GetByIdAsync("P"))!.Category);
         Assert.Equal("Nuevo", (await promotions.GetAllAsync()).Single().TargetCategory);
@@ -129,10 +132,10 @@ public sealed partial class Stage6CommercialLedgerTests
         var saved = await Sales.SaveAsync(Sale("PERFORMANCE"));
         await Sales.ProcessPartialReturnAsync(saved.Id, "P", 1, "Cliente", operationId: "PERFORMANCE-RETURN");
         await using var db = Db();
-        db.Attendances.Add(new AttendanceEntity { UserId = CommercialTestSession.UserId, CheckInTime = DateTime.Today.AddHours(8), CheckOutTime = DateTime.Today.AddHours(10) });
+        db.Attendances.Add(new AttendanceEntity { UserId = CommercialTestSession.UserId, CheckInTime = Ticketfy.Core.Helpers.BusinessTime.Today.AddHours(8), CheckOutTime = Ticketfy.Core.Helpers.BusinessTime.Today.AddHours(10), Status = Ticketfy.Core.Enums.AttendanceStatus.Completed });
         await db.SaveChangesAsync();
         var service = new PerformanceAnalyticsService(db, _actor);
-        var row = Assert.Single(await service.CalculateTrueCashierProductivityAsync(DateTime.Today, DateTime.Today));
+        var row = Assert.Single(await service.CalculateTrueCashierProductivityAsync(Ticketfy.Core.Helpers.BusinessTime.Today, Ticketfy.Core.Helpers.BusinessTime.Today));
         Assert.Equal(10m, row.GrossSales); Assert.Equal(2, row.TotalHoursWorked);
         Assert.Equal(5m, row.TrueSalesPerHour); Assert.Equal(0m, row.EstimatedCommission);
         Assert.Equal(10m, row.AverageTicketValue);
@@ -165,10 +168,10 @@ public sealed partial class Stage6CommercialLedgerTests
         await expenses.CreateAsync(new("CASHUP-E", "General", 5m, "", "Gasto", "Efectivo", ""));
         var shifts = new ShiftService(new TestDbContextFactory(_options), _actor);
         await shifts.CloseAsync("SHIFT-1", 15m);
-        var cashup = Assert.Single(await shifts.GetCashupsAsync(DateTime.Today, DateTime.Today));
+        var cashup = Assert.Single(await shifts.GetCashupsAsync(Ticketfy.Core.Helpers.BusinessTime.Today, Ticketfy.Core.Helpers.BusinessTime.Today));
         Assert.Equal(20m, cashup.TotalSales); Assert.Equal(5m, cashup.TotalExpenses);
         var reconciliation = new CommercialReconciliationService(new TestDbContextFactory(_options), _actor);
-        Assert.True(Assert.Single(await reconciliation.ReconcileAsync(DateTime.Today)).IsBalanced);
+        Assert.True(Assert.Single(await reconciliation.ReconcileAsync(Ticketfy.Core.Helpers.BusinessTime.Today)).IsBalanced);
     }
     [Fact]
     public async Task CloseRejectsMissingCashDocumentEvenWhenGrandTotalsMatch()

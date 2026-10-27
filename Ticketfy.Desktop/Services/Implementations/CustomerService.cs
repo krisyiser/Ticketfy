@@ -21,14 +21,33 @@ public sealed class CustomerService : ICustomerService
     private static CustomerDto Map(CustomerEntity c) => new(c.Id, c.Name, c.Phone, c.Email, c.Rfc, c.CreditLimit, c.Debt, c.PuntosSaldo, c.Debt, c.CustomerCode);
     public async Task<List<CustomerDto>> GetAllAsync()
     {
-        await using var db = await _factory.CreateDbContextAsync();
-        return (await db.Customers.AsNoTracking().Where(c => c.IsActive).OrderBy(c => c.Name).ToListAsync()).Select(Map).ToList();
+        var page = await GetPageAsync(0, LegacyCatalogReadPolicy.Limit);
+        LegacyCatalogReadPolicy.RequireComplete(page.HasMore);
+        return page.Items;
     }
     public async Task<CustomerDto?> GetByIdAsync(string id)
     {
         await using var db = await _factory.CreateDbContextAsync();
+        await AuthorizeAsync(db, PermissionCatalog.CustomersView);
         var c = await db.Customers.AsNoTracking().SingleOrDefaultAsync(c => c.Id == id);
         return c is null ? null : Map(c);
+    }
+    public async Task<List<CustomerDto>> SearchAsync(string? search = null) => (await GetPageAsync(0, 100, search)).Items;
+    public async Task<CatalogPage<CustomerDto>> GetPageAsync(int page, int size = 100, string? search = null)
+    {
+        if (page < 0 || size is < 1 or > 200) throw new ArgumentOutOfRangeException(nameof(page));
+        int offset = checked(page * size);
+        await using var db = await _factory.CreateDbContextAsync();
+        await AuthorizeAsync(db, PermissionCatalog.CustomersView);
+        var query = db.Customers.AsNoTracking().Where(c => c.IsActive);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            string value = search.Trim().ToLowerInvariant();
+            query = query.Where(c => c.Name.ToLower().Contains(value) || c.CustomerCode.ToLower().Contains(value)
+                || c.Phone.Contains(value) || c.Rfc.ToLower().Contains(value) || c.Email.ToLower().Contains(value));
+        }
+        var rows = await query.OrderBy(c => c.Name).ThenBy(c => c.Id).Skip(offset).Take(size + 1).ToListAsync();
+        return new(rows.Take(size).Select(Map).ToList(), rows.Count > size);
     }
     public async Task AddAsync(CustomerDto customer)
     {
@@ -83,13 +102,23 @@ public sealed class CustomerService : ICustomerService
         await using var db = await _factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
         var actor = await AuthorizeAsync(db, PermissionCatalog.CashInOut, true);
+        await PostCustomerPaymentAsync(db, actor, customerId, amount, method, notes, operation);
+        await db.SaveChangesAsync(); await tx.CommitAsync();
+        return true;
+    }
+
+    // Caller owns authorization and the transaction. Supervised transfer recovery
+    // uses the original financial identity, never an impersonated session.
+    internal static async Task PostCustomerPaymentAsync(AppDbContext db, OperationIdentity actor, string customerId,
+        decimal amount, string method, string notes, string operation)
+    {
         await CommandIdentity.BindAsync(db, actor, operation, "CUSTOMER_PAYMENT", customerId, amount, method, notes);
         var previous = await db.CustomerPayments.SingleOrDefaultAsync(p => p.OperationId == operation);
         if (previous is not null)
         {
             if (previous.CustomerId != customerId || previous.Amount != amount || previous.Method != method)
                 throw new InvalidOperationException("Clave de abono reutilizada con datos diferentes.");
-            return true;
+            return;
         }
         var customer = await db.Customers.AsNoTracking().SingleAsync(c => c.Id == customerId);
         TenderConfirmationEntity? proof = method == "Transferencia"
@@ -127,19 +156,19 @@ public sealed class CustomerService : ICustomerService
         if (proof is null) await CommercialLedger.CashAsync(db, actor, operation, payment.Id, amount, false, MovementType.AbonoCliente, notes);
         else db.IncomingTransferReceipts.Add(IncomingTransferService.Receipt(actor, proof, payment.Id));
         CommercialLedger.Journal(db, actor, operation, "CUSTOMER_PAYMENT_COMPLETED", payment.Id, amount, method);
-        await db.SaveChangesAsync(); await tx.CommitAsync();
-        return true;
     }
     public async Task<AccountStatementDto> GetStatementAsync(string customerId)
     {
+        var page = await GetStatementPageAsync(customerId, size: CommercialLedgerReader.LegacyLimit);
+        CommercialLedgerReader.RequireComplete(page.HasMore);
+        return new(customerId, page.Balance, page.Entries, page.HasUnreconciledHistory);
+    }
+    public async Task<AccountStatementPageDto> GetStatementPageAsync(string customerId, int page = 0, int size = 100, LedgerReadCut? cut = null)
+    {
         await using var db = await _factory.CreateDbContextAsync();
+        await using var snapshot = await ReadSnapshot.BeginAsync(db);
         await AuthorizeAsync(db, PermissionCatalog.CustomersView);
-        var entries = await db.AccountEntries.AsNoTracking().Where(e => e.AccountKind == AccountKind.Customer && e.AccountId == customerId)
-            .OrderBy(e => e.CreatedAtUtc).ToListAsync();
-        var customer = await db.Customers.AsNoTracking().SingleAsync(c => c.Id == customerId);
-        bool unverified = customer.Debt != entries.Sum(e => e.Amount) || (entries.Any(e => e.EntryType == "MIGRATION_OPENING")
-            && !await db.HistoricalBalanceReconciliations.AnyAsync(r => r.Scope == HistoricalBalanceScope.CustomerAccount && r.TargetId == customerId));
-        return new(customerId, entries.Sum(e => e.Amount), entries, unverified);
+        return await CommercialLedgerReader.AccountAsync(db, AccountKind.Customer, customerId, page, size, cut);
     }
     public async Task<List<CustomerPaymentDto>> GetPaymentsAsync(string customerId)
     {
@@ -161,6 +190,7 @@ public sealed class CustomerService : ICustomerService
     public async Task<FiscalClientDto?> GetFiscalDataAsync(string customerId)
     {
         await using var db = await _factory.CreateDbContextAsync();
+        await AuthorizeAsync(db, PermissionCatalog.CustomersView);
         var f = await db.FiscalClients.FindAsync(customerId);
         return f is null ? null : new(f.Id, f.Id, f.Rfc, f.RazonSocial, f.RegimenFiscal, f.CodigoPostal, f.UsoCfdi);
     }

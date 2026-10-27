@@ -94,7 +94,7 @@ public class PrintDispatcherService : IPrintDispatcherService
             }
             catch (Exception ex)
             {
-                Log.Error(ex, $"Fallo al imprimir certificado para {item.Name}");
+                Log.Error(ex, "Fallo al imprimir certificado de producto");
                 Ticketfy.Core.Messages.HardwareFeedbackMessage.Report($"Venta {sale.Id} registrada, pero falló el envío del certificado. No vuelva a cobrar.", true);
             }
         }

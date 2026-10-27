@@ -22,6 +22,16 @@ public partial class PersonalizacionSettingsViewModel : ObservableObject
     private readonly ISettingsService? _settingsService;
     private readonly ThemeEngine _themeEngine = ThemeEngine.Instance;
     private CancellationTokenSource? _saveDebounceCts;
+    private bool _sessionActive = true;
+    private long _loadVersion;
+    public bool HasLoadedData { get; private set; }
+    public void DeactivateSession()
+    {
+        _sessionActive = false;
+        HasLoadedData = false;
+        _saveDebounceCts?.Cancel();
+        if (State?.Visual is not null) State.Visual.PropertyChanged -= Visual_PropertyChanged;
+    }
 
     // Sub-Tabs Navigation State inside Personalización
     [ObservableProperty] private bool _isSubTemaTab = true;
@@ -69,14 +79,14 @@ public partial class PersonalizacionSettingsViewModel : ObservableObject
         "Outfit", "Plus Jakarta Sans", "SF Pro Display", "Open Sans", "Lato", "Consolas"
     ];
 
-    public PersonalizacionSettingsViewModel(ISettingsService? settingsService = null)
+    public PersonalizacionSettingsViewModel(ISettingsService? settingsService = null, bool loadOnCreate = true)
     {
         _settingsService = settingsService;
         if (State?.Visual != null)
         {
             State.Visual.PropertyChanged += Visual_PropertyChanged;
         }
-        if (_settingsService != null) _ = LoadAsync();
+        if (loadOnCreate && _settingsService != null) _ = LoadAsync();
     }
 
     [RelayCommand]
@@ -198,22 +208,28 @@ public partial class PersonalizacionSettingsViewModel : ObservableObject
 
     public void OnVisualStateChanged()
     {
+        if (!_sessionActive) return;
         _themeEngine.Apply(State);
         ScheduleDebouncedSave();
     }
 
     public async Task LoadAsync()
     {
+        var version = ++_loadVersion;
+        HasLoadedData = false;
         if (_settingsService == null) return;
         try
         {
-            State = await _settingsService.GetAppSettingsAsync();
+            var loaded = await _settingsService.GetAppSettingsAsync();
+            if (!_sessionActive || version != _loadVersion) return;
+            State = loaded;
             if (State?.Visual != null)
             {
                 State.Visual.PropertyChanged -= Visual_PropertyChanged;
                 State.Visual.PropertyChanged += Visual_PropertyChanged;
             }
             if (State != null) _themeEngine.Apply(State);
+            HasLoadedData = true;
         }
         catch (Exception ex)
         {
@@ -221,17 +237,20 @@ public partial class PersonalizacionSettingsViewModel : ObservableObject
         }
     }
 
-    public async Task SaveAsync()
+    public async Task<bool> SaveAsync()
     {
-        if (_settingsService == null) return;
+        if (_settingsService == null || !_sessionActive) return false;
         try
         {
-            await _settingsService.SaveAppSettingsAsync(State);
+            await _settingsService.SaveSectionAsync(State, AppSettingsSection.Visual);
+            if (!_sessionActive) return false;
             _themeEngine.Apply(State);
+            return true;
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Failed saving AppSettings in PersonalizacionSettingsViewModel");
+            return false;
         }
     }
 
@@ -248,7 +267,7 @@ public partial class PersonalizacionSettingsViewModel : ObservableObject
                 await Task.Delay(300, token);
                 if (!token.IsCancellationRequested && _settingsService != null)
                 {
-                    await _settingsService.SaveAppSettingsAsync(State);
+                    await _settingsService.SaveSectionAsync(State, AppSettingsSection.Visual);
                 }
             }
             catch (TaskCanceledException) { }

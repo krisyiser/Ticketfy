@@ -89,6 +89,7 @@
         </Border>
 
         <DockPanel LastChildFill="True" Margin="0,36,0,0">
+            <controls:MaintenanceStatusControl DockPanel.Dock="Top" DataContext="{Binding Maintenance}" />
             <controls:HardwareStatusControl DockPanel.Dock="Bottom" DataContext="{Binding Hardware}" />
             <!-- ═══ SIDEBAR NAVIGATION ═══ -->
             <controls:SidebarNavigationControl />

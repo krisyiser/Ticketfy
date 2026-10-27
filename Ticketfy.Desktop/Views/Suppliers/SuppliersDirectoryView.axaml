@@ -47,6 +47,11 @@
             </StackPanel>
 
             <!-- Suppliers Table -->
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" Margin="0,8,0,0">
+                <Button Content="Anterior" Command="{Binding PreviousPageCommand}" IsEnabled="{Binding HasPreviousPage}" />
+                <TextBlock Text="{Binding PageDescription}" VerticalAlignment="Center" />
+                <Button Content="Siguiente" Command="{Binding NextPageCommand}" IsEnabled="{Binding HasNextPage}" />
+            </StackPanel>
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <ItemsControl ItemsSource="{Binding Suppliers}">
                     <ItemsControl.ItemTemplate>

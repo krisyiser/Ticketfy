@@ -178,15 +178,19 @@ public sealed class Stage5OperationsTests
     {
         var backup = new RecordingBackupService();
         var telemetry = new RecordingTelemetry();
-        using var worker = new BackupMaintenanceWorker(
+        var clock = new ManualMaintenanceClock();
+        await using var worker = new BackupMaintenanceWorker(
             backup,
             BackupPolicy.Default,
             telemetry,
-            TimeSpan.FromMilliseconds(10));
+            clock: clock);
 
         worker.Start();
-        await backup.Executed.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        await telemetry.Executed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(0, backup.CallCount);
+        clock.Tick();
+        // Only a deadlock guard; the test advances the timer explicitly instead of waiting for wall time.
+        await backup.Executed.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        await telemetry.Executed.Task.WaitAsync(TimeSpan.FromSeconds(30));
 
         Assert.True(backup.CallCount >= 1);
         Assert.Equal("backup.maintenance", telemetry.EventName);

@@ -52,6 +52,10 @@ public record ProductDto(
     { }
 
     public decimal CostPrice => Cost;
+    public bool CostsVisible { get; init; } = true;
+    public string? InventoryWarning { get; init; }
+    public string UnavailableLabel => InventoryWarning is null ? "AGOTADO" : "REVISAR COMBO";
+    public string CostDisplay => CostsVisible ? Cost.ToString("C2") : "Restringido";
     public decimal SalePrice => Price;
     public bool IsOutOfStock => Stock <= 0.0;
     public bool IsAvailable => Stock > 0.0;
@@ -125,8 +129,14 @@ public record PromotionDto(
     double FreeQuantity = 0.0,
     DateTime? StartDate = null,
     DateTime? EndDate = null,
-    int Priority = 0
-);
+    int Priority = 0,
+    string? ReadWarning = null,
+    long? Revision = null
+)
+{
+    public string StatusDisplay => ReadWarning is not null ? "Revisar vigencia" : IsActive ? "Habilitada" : "Inactiva";
+    public string ScheduleDisplay => ReadWarning ?? $"{StartDate:dd/MM/yyyy HH:mm} — {EndDate:dd/MM/yyyy HH:mm}";
+}
 
 public record UserDto(string Id, string Username, string FullName, string Role, bool IsActive)
 {
@@ -326,6 +336,12 @@ public record SaleDto(
 )
 {
     public decimal NetTotal => Total - RefundedAmount;
+    public bool DetailsAvailable { get; init; } = true;
+    public string DetailWarning { get; init; } = "";
+    public bool CostsVisible { get; init; } = true;
+    public decimal? CreditDocumentBalance { get; init; }
+    /// <summary>Server-produced composition fingerprint in the durable checkout payload; never trusted from a caller.</summary>
+    public string? CheckoutInventoryFingerprint { get; init; }
     public SaleDto(string Id, string Date, List<SaleItemSnapshotDto> Items,
         double Total, double TotalCost, double Profit, double PaidAmount, double ChangeAmount,
         string PaymentMethod, string? CustomerId, bool IsCredit, bool IsCancelled,
@@ -348,13 +364,15 @@ public record SaleDto(
     {
         get
         {
+            if (!DetailsAvailable) return "DESGLOSE NO VERIFICADO";
             if (IsCancelled) return "CANCELADO";
             if (Items != null && System.Linq.Enumerable.Any(Items, i => i.ReturnedQuantity > 0))
             {
                 bool allReturned = System.Linq.Enumerable.All(Items, i => i.ReturnedQuantity >= i.Quantity);
                 return allReturned ? "DEVUELTO TOTAL" : "DEVOLUCIÓN PARCIAL";
             }
-            return IsCredit ? "CRÉDITO (PENDIENTE)" : "COBRADO";
+            if (!IsCredit) return "COBRADO";
+            return CreditDocumentBalance < 0 ? "SALDO A FAVOR" : CreditDocumentBalance == 0 ? "CRÉDITO LIQUIDADO" : "CRÉDITO (PENDIENTE)";
         }
     }
 
@@ -390,6 +408,8 @@ public record PurchaseItemDto(
     decimal TotalPrice
 )
 {
+    public decimal? ReturnedQuantity { get; init; }
+    public decimal? ReturnableQuantity => ReturnedQuantity is { } returned ? (decimal)Quantity - returned : null;
     public PurchaseItemDto(string Id, string PurchaseId, string ProductId, string ProductName,
         double UnitPrice, double Quantity, double TotalPrice)
         : this(Id, PurchaseId, ProductId, ProductName, Convert.ToDecimal(UnitPrice), Quantity,
@@ -411,7 +431,18 @@ public record PurchaseDto(
     decimal PaidAmount = 0m,
     string? PaymentReference = null,
     string? DueDate = null
-);
+)
+{
+    public bool DetailsAvailable { get; init; } = true;
+    public string DetailWarning { get; init; } = "";
+    public string DetailStatus => DetailsAvailable ? "Desglose disponible" : DetailWarning;
+    public PurchaseFinancialSummary? Financial { get; init; }
+    public bool IsHistoricalDocument { get; init; }
+    public string FinancialWarning { get; init; } = "Estado financiero no verificado. No equivale a deuda ni pagos cero.";
+    public string FinancialStatus => Financial?.Status ?? FinancialWarning;
+    public string RecordedPaymentsDisplay => Financial is { } f ? f.Payments.ToString("C2") : "No calculado";
+    public string BalanceDisplay => Financial is { } f ? f.Balance.ToString("C2") : "No calculado";
+}
 
 public record ExpenseDto(
     string Id,
@@ -423,9 +454,19 @@ public record ExpenseDto(
     string RegisteredByUser,
     string? OperationId = null,
     string? Reference = null,
-    bool IsCancelled = false
+    bool IsCancelled = false,
+    string? CancelledAtUtc = null,
+    string? CancellationReason = null,
+    string? ShiftId = null,
+    string? RegisterId = null
 )
 {
+    public string DateDisplay => DisplayDate(Date);
+    public string CancellationDateDisplay => IsCancelled ? DisplayDate(CancelledAtUtc) : "";
+    private static string DisplayDate(string? value) =>
+        Ticketfy.Core.Helpers.BusinessTime.TryLocal(value, out var local)
+            ? local.ToString("dd/MM/yyyy HH:mm", System.Globalization.CultureInfo.InvariantCulture)
+            : "Fecha sin verificar";
     public ExpenseDto(string Id, string Category, double Amount, string Date,
         string Description, string PaymentMethod, string RegisteredByUser)
         : this(Id, Category, Convert.ToDecimal(Amount), Date, Description, PaymentMethod, RegisteredByUser) { }
@@ -439,7 +480,8 @@ public record FinancialSummaryDto(
     decimal NetProfit,
     decimal CashRevenue = 0m,
     decimal CashExpenses = 0m,
-    decimal CardRevenue = 0m
+    decimal CardRevenue = 0m,
+    decimal TransferRevenue = 0m
 );
 
 public record ItemKitItemDto(
@@ -474,5 +516,9 @@ public record CashierPerformanceDto(
     decimal TotalRevenue,
     decimal AverageTicketValue,
     decimal CommissionRatePct,
-    decimal EarnedCommissionAmount
-);
+    decimal EarnedCommissionAmount,
+    bool AttributionVerified = true
+)
+{
+    public string EarnedCommissionDisplay => AttributionVerified ? EarnedCommissionAmount.ToString("C2") : "No atribuible";
+}

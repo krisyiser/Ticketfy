@@ -1,230 +1,176 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
+using Ticketfy.Core.Security;
 using Ticketfy.Data;
 using Ticketfy.Data.Dtos;
 using Ticketfy.Data.Entities;
 using Ticketfy.Services.Interfaces;
-using Serilog;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace Ticketfy.Services.Implementations;
 
-public class ItemKitService : IItemKitService
+public partial class ItemKitService : IItemKitService
 {
     private readonly IDbContextFactory<AppDbContext> _factory;
     private readonly CommercialOperationContext? _operations;
-
     public ItemKitService(AppDbContext db, CommercialOperationContext? operations = null)
-    { _factory = new AppDbContextFactoryImpl<AppDbContext>(db.Options); _operations = operations; }
+        : this(new AppDbContextFactoryImpl<AppDbContext>(db.Options), operations) { }
+    public ItemKitService(IDbContextFactory<AppDbContext> factory, CommercialOperationContext? operations = null)
+    { _factory = factory; _operations = operations; }
 
-    public async Task<List<ItemKitDto>> GetAllAsync()
+    public async Task SaveAsync(KitDraft draft, string operationId)
     {
-        await using var _db = await _factory.CreateDbContextAsync();
+        if (draft is null) throw new KitCommandRejectedException("Se requiere el borrador completo del combo.");
+        // Own the list across asynchronous boundaries; a UI edit must not change an in-flight command.
+        draft = draft with { Items = draft.Items?.ToArray()! };
+        await using var db = await _factory.CreateDbContextAsync();
+        await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
-            var kits = await _db.ItemKits.Where(k => _db.Products.Any(p => p.Id == k.ParentProductId && p.IsActive)).ToListAsync();
-            var allKitItems = await _db.ItemKitItems.ToListAsync();
-            var products = await _db.Products.ToDictionaryAsync(p => p.Id, p => p.Name);
+            operationId = CommercialLedger.OperationId(operationId);
+            var actor = await (_operations ?? throw new UnauthorizedAccessException("Sesión requerida."))
+                .RequireAsync(db, draft.Revision.HasValue ? PermissionCatalog.InventoryEdit : PermissionCatalog.InventoryCreate);
+            ValidateDraft(draft);
+            bool replay = await db.CommandReceipts.AnyAsync(c => c.OperationId == operationId);
+            await CommandIdentity.BindAsync(db, actor, operationId, "KIT_SAVE", draft.ProductId, draft.Barcode,
+                draft.Name, draft.Price, draft.Description, draft.Revision, draft.IsActive,
+                string.Concat(draft.Items.Select(i => CommandIdentity.Hash(i.ProductId, i.Quantity))));
+            if (replay) return;
 
-            var result = new List<ItemKitDto>();
-            foreach (var k in kits)
-            {
-                var items = allKitItems
-                    .Where(ki => ki.ItemKitId == k.Id)
-                    .Select(ki => new ItemKitItemDto(
-                        ki.Id,
-                        ki.ItemKitId,
-                        ki.ProductId,
-                        products.TryGetValue(ki.ProductId, out var pName) ? pName : "Producto no encontrado",
-                        ki.Quantity
-                    ))
-                    .ToList();
+            var product = await db.Products.SingleOrDefaultAsync(p => p.Id == draft.ProductId);
+            if (product is null ? draft.Revision.HasValue : !product.IsKit || draft.Revision != product.StockVersion)
+                throw new KitConflictException();
+            if (product is not null && product.IsActive != draft.IsActive || product is null && !draft.IsActive)
+                throw new KitCommandRejectedException("Cambie la habilitación desde el directorio, no desde el formulario de composición.");
+            string barcode = draft.Barcode.Trim();
+            if (await db.Products.AnyAsync(p => p.Id != draft.ProductId && p.Barcode == barcode))
+                throw new KitCommandRejectedException("El código ya pertenece a otro producto o combo.");
 
-                result.Add(new ItemKitDto(k.Id, k.KitBarcode, k.Name, k.Price, k.Description, items));
-            }
-            return result;
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error getting item kits");
-            return [];
-        }
-    }
-
-    public async Task<ItemKitDto?> GetByBarcodeAsync(string barcode)
-    {
-        await using var _db = await _factory.CreateDbContextAsync();
-        if (string.IsNullOrWhiteSpace(barcode)) return null;
-        try
-        {
-            var kit = await _db.ItemKits.FirstOrDefaultAsync(k => k.KitBarcode == barcode.Trim());
-            if (kit == null || !await _db.Products.AnyAsync(p => p.Id == kit.ParentProductId && p.IsActive)) return null;
-
-            var kitItems = await _db.ItemKitItems.Where(ki => ki.ItemKitId == kit.Id).ToListAsync();
-            var products = await _db.Products.ToDictionaryAsync(p => p.Id, p => p.Name);
-
-            var items = kitItems
-                .Select(ki => new ItemKitItemDto(
-                    ki.Id,
-                    ki.ItemKitId,
-                    ki.ProductId,
-                    products.TryGetValue(ki.ProductId, out var pName) ? pName : "Producto",
-                    ki.Quantity
-                ))
-                .ToList();
-
-            return new ItemKitDto(kit.Id, kit.KitBarcode, kit.Name, kit.Price, kit.Description, items);
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error finding item kit by barcode {Barcode}", barcode);
-            return null;
-        }
-    }
-
-    public async Task<bool> SaveAsync(string id, string barcode, string name, decimal price, string description, List<ItemKitItemDto> items)
-    {
-        await using var _db = await _factory.CreateDbContextAsync();
-        var actor = await (_operations ?? throw new UnauthorizedAccessException("Sesión requerida."))
-            .RequireAsync(_db, Ticketfy.Core.Security.PermissionCatalog.InventoryCreate);
-        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(barcode) || price < 0 || items.Count == 0
-            || items.Any(i => i.Quantity <= 0 || !double.IsFinite(i.Quantity) || Math.Round(i.Quantity, 3) != i.Quantity || i.ProductId == id))
-            throw new InvalidOperationException("El combo requiere nombre, código, precio y componentes válidos.");
-        await using var tx = await _db.Database.BeginTransactionAsync();
-        try
-        {
-            var cleanBarcode = string.IsNullOrWhiteSpace(barcode) ? $"750{Random.Shared.Next(100000000, 999999999)}" : barcode.Trim();
-            var cleanName = string.IsNullOrWhiteSpace(name) ? "Combo / Promoción" : name.Trim();
-
-            _db.ChangeTracker.Clear();
-
-            // 1. Sync ProductEntity so it appears in POS Catalog under category "Promociones"
-            var product = await _db.Products.FirstOrDefaultAsync(p => (!string.IsNullOrEmpty(id) && p.Id == id) || (p.Barcode != null && p.Barcode == cleanBarcode));
-            if (product is not null && !product.IsKit) throw new InvalidOperationException("El código pertenece a un producto individual.");
-            var targetId = product?.Id ?? (string.IsNullOrWhiteSpace(id) ? Guid.NewGuid().ToString() : id);
-
-            if (product == null)
+            var matches = await db.ItemKits.Where(k => k.ParentProductId == draft.ProductId).Take(2).ToListAsync();
+            if (matches.Count > 1 || product is not null && matches.Count != 1 || product is null && matches.Count != 0)
+                throw new KitCommandRejectedException("El vínculo de la receta requiere revisión; no se reemplazó ninguna composición.");
+            var recipe = matches.SingleOrDefault();
+            var previousItems = recipe is null ? [] : await db.ItemKitItems.Where(i => i.ItemKitId == recipe.Id)
+                .OrderBy(i => i.Id).Take(KitInventoryGraph.MaximumDirectComponents + 1).ToListAsync();
+            if (previousItems.Count > KitInventoryGraph.MaximumDirectComponents)
+                throw new KitCommandRejectedException("La receta supera 200 componentes. Requiere revisión sin truncar el historial.");
+            var before = product is null ? null : Snapshot(product, recipe!, previousItems);
+            if (product is null)
             {
                 product = new ProductEntity
                 {
-                    Id = targetId,
-                    Barcode = cleanBarcode,
-                    Name = cleanName,
-                    Price = price,
-                    Cost = 0m,
+                    Id = draft.ProductId,
+                    IsKit = true,
                     Category = "Promociones",
                     Unit = "Pza",
-                    Stock = 0,
-                    MinStock = 1.0,
-                    IsKit = true,
-                    CreatedAt = DateTime.Now.ToString("s")
+                    CreatedAt = DateTimeOffset.UtcNow.ToString("O")
                 };
-                _db.Products.Add(product);
-            }
-            else
-            {
-                await _operations.RequireAsync(_db, Ticketfy.Core.Security.PermissionCatalog.InventoryEdit);
-                product.Barcode = cleanBarcode;
-                product.Name = cleanName;
-                product.Price = price;
-                product.Category = "Promociones";
-                product.IsKit = true;
-                product.StockVersion++;
-                _db.Products.Update(product);
-            }
-
-            // 2. Sync ItemKitEntity & ItemKitItems
-            var existingKit = await _db.ItemKits.FirstOrDefaultAsync(k => k.Id == targetId || k.ParentProductId == targetId || k.KitBarcode == cleanBarcode);
-            string actualKitId = existingKit?.Id ?? targetId;
-
-            if (existingKit == null)
-            {
-                existingKit = new ItemKitEntity
+                db.Products.Add(product);
+                recipe = new ItemKitEntity
                 {
-                    Id = actualKitId,
-                    ParentProductId = targetId,
-                    KitBarcode = cleanBarcode,
-                    Name = cleanName,
-                    Price = price,
-                    Description = description ?? string.Empty,
-                    CreatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                    Id = Guid.NewGuid().ToString("N"),
+                    ParentProductId = product.Id,
+                    CreatedAt = DateTimeOffset.UtcNow.ToString("O")
                 };
-                _db.ItemKits.Add(existingKit);
+                db.ItemKits.Add(recipe);
             }
-            else
+            else AdvanceRevision(product);
+            product.Name = draft.Name.Trim(); product.Barcode = barcode; product.Price = draft.Price;
+            recipe!.Name = product.Name; recipe.KitBarcode = barcode; recipe.Price = product.Price;
+            recipe.Description = draft.Description;
+            db.ItemKitItems.RemoveRange(previousItems);
+            var items = draft.Items.Select(i => new ItemKitItemEntity
             {
-                existingKit.ParentProductId = targetId;
-                existingKit.KitBarcode = cleanBarcode;
-                existingKit.Name = cleanName;
-                existingKit.Price = price;
-                existingKit.Description = description ?? string.Empty;
-
-                var oldItems = await _db.ItemKitItems.Where(ki => ki.ItemKitId == actualKitId).ToListAsync();
-                _db.ItemKitItems.RemoveRange(oldItems);
-            }
-
-            if (items != null)
-            {
-                foreach (var item in items)
-                {
-                    if (string.IsNullOrWhiteSpace(item.ProductId)) continue;
-                    _db.ItemKitItems.Add(new ItemKitItemEntity
-                    {
-                        Id = Guid.NewGuid().ToString(),
-                        ItemKitId = actualKitId,
-                        ProductId = item.ProductId,
-                        Quantity = item.Quantity > 0 ? item.Quantity : 1.0
-                    });
-                }
-            }
-
-            foreach (var component in items ?? throw new InvalidOperationException("El kit requiere componentes."))
-            {
-                if (!await _db.Products.AnyAsync(p => p.Id == component.ProductId && p.IsActive))
-                    throw new InvalidOperationException("Componente inexistente o inactivo.");
-                if (await ReachesAsync(_db, component.ProductId, targetId, new HashSet<string>()))
-                    throw new InvalidOperationException("El combo produciría un ciclo de componentes.");
-            }
-            CommercialLedger.Journal(_db, actor, Guid.NewGuid().ToString("N"), "KIT_SAVED", targetId, 0, "Composición de combo");
-            await _db.SaveChangesAsync();
-            await tx.CommitAsync();
-            Log.Information("Saved ItemKit {Name} ({Barcode}) with {Count} items as Product in 'Promociones'", cleanName, cleanBarcode, items?.Count ?? 0);
-            return true;
+                Id = Guid.NewGuid().ToString("N"),
+                ItemKitId = recipe.Id,
+                ProductId = i.ProductId,
+                Quantity = i.Quantity
+            }).ToList();
+            db.ItemKitItems.AddRange(items);
+            // Validate provisional rows using exactly the same bounded graph as checkout, in this transaction.
+            await db.SaveChangesAsync();
+            await ValidateCompositionAsync(db, product);
+            CommercialLedger.Journal(db, actor, operationId, "KIT_SAVED", product.Id, 0,
+                JsonSerializer.Serialize(new { Before = before, After = Snapshot(product, recipe, items) }));
+            await db.SaveChangesAsync();
         }
-        catch (Exception ex)
-        {
-            _db.ChangeTracker.Clear();
-            Console.WriteLine($"[ItemKitService.SaveAsync EXCEPTION]: {ex}");
-            Log.Error(ex, "Error saving ItemKit {Name}", name);
-            return false;
-        }
+        catch (KitCommandRejectedException) { throw; }
+        catch (DbUpdateConcurrencyException) { throw new KitConflictException(); }
+        catch (InvalidOperationException ex) { throw new KitCommandRejectedException(ex.Message); }
+        // Do not classify a lost commit response as a rejection; replay must keep the same identity.
+        await tx.CommitAsync();
     }
 
-    public async Task<bool> DeleteAsync(string id)
+    private static void ValidateDraft(KitDraft draft)
+    {
+        if (string.IsNullOrWhiteSpace(draft.ProductId) || draft.ProductId.Length > 128
+            || string.IsNullOrWhiteSpace(draft.Barcode) || draft.Barcode.Length > 128
+            || string.IsNullOrWhiteSpace(draft.Name) || draft.Name.Length > 200
+            || draft.Description is null || draft.Description.Length > 2000
+            || draft.Price < 0 || draft.Price > long.MaxValue / 100m || CommercialLedger.Money(draft.Price) != draft.Price
+            || draft.Items is null || draft.Items.Count is < 1 or > KitInventoryGraph.MaximumDirectComponents
+            || draft.Items.Any(i => i is null || string.IsNullOrWhiteSpace(i.ProductId) || i.ProductId.Length > 128
+                || i.ProductId == draft.ProductId || !double.IsFinite(i.Quantity) || i.Quantity <= 0
+                || i.Quantity > (double)(long.MaxValue / 1000m) || Math.Round(i.Quantity, 3) != i.Quantity))
+            throw new KitCommandRejectedException("Revise nombre (200), código (128), notas (2000), precio y de 1 a 200 componentes con cantidades válidas.");
+    }
+
+    private static KitDraft Snapshot(ProductEntity product, ItemKitEntity recipe, List<ItemKitItemEntity> items) =>
+        new(product.Id, product.Barcode ?? "", product.Name, product.Price, recipe.Description,
+            items.Select(i => new ItemKitItemDto(i.Id, i.ItemKitId, i.ProductId, "", i.Quantity)).ToList(),
+            product.StockVersion, product.IsActive);
+
+    private static void AdvanceRevision(ProductEntity product)
+    {
+        if (product.StockVersion < 0 || product.StockVersion == long.MaxValue)
+            throw new KitCommandRejectedException("La revisión del combo requiere revisión técnica.");
+        product.StockVersion++;
+    }
+
+    private static async Task ValidateCompositionAsync(AppDbContext db, ProductEntity product)
+    {
+        // Inactive recipes may be repaired without being silently reactivated.
+        var validationRoot = new ProductEntity
+        {
+            Id = product.Id,
+            Name = product.Name,
+            IsKit = true,
+            IsActive = true,
+            IsBulk = product.IsBulk,
+            Unit = product.Unit
+        };
+        (await KitInventoryGraph.LoadAsync(db, [validationRoot])).RequirePlan(product.Id);
+    }
+
+    public async Task SetActiveAsync(string productId, bool active, string operationId)
     {
         await using var db = await _factory.CreateDbContextAsync();
-        var actor = await (_operations ?? throw new UnauthorizedAccessException("Sesión requerida."))
-            .RequireAsync(db, Ticketfy.Core.Security.PermissionCatalog.InventoryDelete);
-        var product = await db.Products.SingleOrDefaultAsync(p => p.Id == id && p.IsKit);
-        if (product is null) return false;
-        product.IsActive = false;
-        CommercialLedger.Journal(db, actor, Guid.NewGuid().ToString("N"), "KIT_INACTIVATED", id, 0, "Baja lógica de combo");
-        await db.SaveChangesAsync();
-        return true;
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            operationId = CommercialLedger.OperationId(operationId);
+            var actor = await (_operations ?? throw new UnauthorizedAccessException("Sesión requerida."))
+                .RequireAsync(db, active ? PermissionCatalog.InventoryEdit : PermissionCatalog.InventoryDelete);
+            bool replay = await db.CommandReceipts.AnyAsync(c => c.OperationId == operationId);
+            await CommandIdentity.BindAsync(db, actor, operationId, "KIT_STATUS", productId, active);
+            if (replay) return;
+            var product = await db.Products.SingleOrDefaultAsync(p => p.Id == productId && p.IsKit)
+                ?? throw new KitCommandRejectedException("El combo ya no existe. Actualice el directorio.");
+            if (active) await ValidateCompositionAsync(db, product);
+            if (product.IsActive != active)
+            {
+                AdvanceRevision(product); product.IsActive = active;
+                CommercialLedger.Journal(db, actor, operationId, active ? "KIT_ACTIVATED" : "KIT_INACTIVATED",
+                    productId, 0, $"Habilitación del combo; revisión {product.StockVersion}. Se conserva la receta.");
+            }
+            // Even a no-op needs a durable receipt, so its replay cannot undo a later change.
+            await db.SaveChangesAsync();
+        }
+        catch (KitCommandRejectedException) { throw; }
+        catch (DbUpdateConcurrencyException) { throw new KitConflictException(); }
+        catch (InvalidOperationException ex) { throw new KitCommandRejectedException(ex.Message); }
+        await tx.CommitAsync();
     }
+
     public Task<bool> DeductKitStockAsync(string kitId, double kitQuantity) =>
         throw new InvalidOperationException("El inventario de combos se descuenta únicamente dentro de una venta.");
-
-    private static async Task<bool> ReachesAsync(AppDbContext db, string current, string target, HashSet<string> visited)
-    {
-        if (current == target) return true;
-        if (!visited.Add(current)) return false;
-        var kit = await db.ItemKits.AsNoTracking().SingleOrDefaultAsync(k => k.ParentProductId == current || k.Id == current);
-        if (kit is null) return false;
-        foreach (var item in await db.ItemKitItems.AsNoTracking().Where(i => i.ItemKitId == kit.Id).ToListAsync())
-            if (await ReachesAsync(db, item.ProductId, target, visited)) return true;
-        return false;
-    }
 }

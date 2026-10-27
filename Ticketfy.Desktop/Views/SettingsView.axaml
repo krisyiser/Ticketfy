@@ -23,6 +23,7 @@
                         BorderThickness="0,0,0,1"
                         Padding="20,0">
                     <Grid ColumnDefinitions="*,Auto">
+                        <Button Grid.Column="1" Content="Actualizar sección" Command="{Binding RefreshSectionCommand}" IsEnabled="{Binding !IsSectionLoading}" VerticalAlignment="Center" />
                         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                             <mi:MaterialIcon Kind="CogOutline" Width="22" Height="22" Foreground="{DynamicResource AccentPrimaryBrush}" />
                             <TextBlock Text="Motor Unificado de Configuración &amp; Personalización" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
@@ -37,13 +38,13 @@
                         BorderThickness="0,1,0,0"
                         Padding="20,12">
                     <Grid ColumnDefinitions="*,Auto,Auto">
-                        <TextBlock Text="{Binding FeedbackMessage}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource AccentSuccessBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding FeedbackMessage}" TextWrapping="Wrap" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
 
-                        <Button Grid.Column="1" Command="{Binding CloseCommand}" Content="Cancelar" Padding="20,10" Margin="0,0,12,0"
+                        <Button Grid.Column="1" Command="{Binding CloseCommand}" Content="Volver al POS" Padding="20,10" Margin="0,0,12,0"
                                 Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                                 Foreground="{DynamicResource TextPrimaryBrush}" FontSize="13" FontWeight="SemiBold" CornerRadius="{DynamicResource AppCornerRadius}" Cursor="Hand" />
 
-                        <Button Grid.Column="2" Command="{Binding SaveAllSettingsCommand}" Padding="20,10" Classes="primary-action" FontSize="13" FontWeight="Bold" CornerRadius="{DynamicResource AppCornerRadius}" Cursor="Hand">
+                        <Button Grid.Column="2" Command="{Binding SaveAllSettingsCommand}" IsEnabled="{Binding CanEditSection}" Padding="20,10" Classes="primary-action" FontSize="13" FontWeight="Bold" CornerRadius="{DynamicResource AppCornerRadius}" Cursor="Hand">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <mi:MaterialIcon Kind="ContentSave" Width="18" Height="18" />
                                 <TextBlock Text="GUARDAR CONFIGURACIÓN" VerticalAlignment="Center" />
@@ -94,7 +95,8 @@
 
                     <!-- ─── ATOMIC VIEW HOST (TRANSITIONING CONTENT CONTROL - ZERO OVERLAP GUARANTEE) ─── -->
                     <Grid Grid.Column="1" Margin="20">
-                        <TransitioningContentControl Content="{Binding CurrentSectionViewModel}">
+                        <TextBlock Text="Cargando configuración..." IsVisible="{Binding IsSectionLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <TransitioningContentControl x:Name="SettingsSectionHost" Content="{Binding CurrentSectionViewModel}" IsEnabled="{Binding CanEditSection}" IsVisible="{Binding CanEditSection}">
                             <TransitioningContentControl.PageTransition>
                                 <CrossFade Duration="0:0:0.200" />
                             </TransitioningContentControl.PageTransition>

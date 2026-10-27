@@ -28,6 +28,10 @@ public partial class UserEntity
     [Column("password_hash")]
     public string PasswordHash { get; set; } = string.Empty;
 
+    /// <summary>0: legacy/unverified, -1: verified proof requires rotation, positive: accepted policy version.</summary>
+    [Column("password_policy_version")]
+    public int PasswordPolicyVersion { get; set; }
+
     [Column("password_salt")]
     public byte[]? PasswordSalt { get; set; }
 

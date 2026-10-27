@@ -22,6 +22,7 @@ public class PermissionItemModel : ObservableObject
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string Category { get; set; } = string.Empty;
+    public bool IsEditable { get; set; } = true;
 
     private bool _isGranted;
     public bool IsGranted
@@ -40,8 +41,26 @@ public partial class UsuariosSettingsViewModel : ObservableObject
 {
     private readonly IUserService? _userService;
     private readonly ISettingsService? _settingsService;
-    private readonly IAuditService? _auditService;
-    private readonly Func<string>? _auditActor;
+    private long _securityVersion;
+    private long _permissionLoadVersion;
+    private string? _loadedPermissionRole;
+    private bool _roleMutation;
+    [ObservableProperty] private bool _isPermissionLoading;
+    public Task Initialization { get; }
+    public void ClearSessionSecrets()
+    {
+        ++_securityVersion;
+        ++_permissionLoadVersion;
+        _loadedPermissionRole = null;
+        ResetUserEditor();
+        IsPermissionLoading = false;
+        IsAdminUnlocked = false;
+        NewUsername = NewFullName = NewPassword = NewPasswordHint = NewPin1 = NewPin2 = NewPin3 = NewPin4 = AdminPasswordInput = AdminDeletePassword = CustomRoleName = string.Empty;
+        UserToDelete = null; IsConfirmingAdminDelete = false; Users.Clear(); RolePermissions.Clear();
+        RoleOptions.Clear();
+        foreach (string role in BaseRoles) RoleOptions.Add(role);
+        FeedbackMessage = PermissionFeedbackMessage = "";
+    }
 
     public static readonly HashSet<string> BaseRoles = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -112,19 +131,29 @@ public partial class UsuariosSettingsViewModel : ObservableObject
     [RelayCommand]
     private async Task AddCustomRoleAsync()
     {
-        if (string.IsNullOrWhiteSpace(CustomRoleName)) return;
-
-        string normalized = CustomRoleName.Trim().ToUpper();
-        if (!RoleOptions.Contains(normalized))
+        if (_roleMutation || string.IsNullOrWhiteSpace(CustomRoleName)) return;
+        long version = _securityVersion;
+        _roleMutation = true;
+        string normalized = CustomRoleName.Trim().ToUpperInvariant();
+        try
         {
-            RoleOptions.Add(normalized);
-            await SaveCustomRolesListAsync();
+            if (_settingsService == null) throw new InvalidOperationException("Servicio de configuración no disponible.");
+            if (BaseRoles.Contains(normalized) || normalized == "ADMIN") throw new InvalidOperationException("El rol ya existe como rol base.");
+            await _settingsService.AddCustomRoleAsync(normalized);
+            if (version != _securityVersion) return;
+            if (!RoleOptions.Contains(normalized)) RoleOptions.Add(normalized);
+            NewRole = normalized;
+            SelectedPermissionRole = normalized;
+            CustomRoleName = string.Empty;
+            IsAddingCustomRole = false;
+            FeedbackMessage = $"Rol '{normalized}' guardado. Configure sus permisos antes de asignarlo.";
         }
-        NewRole = normalized;
-        SelectedPermissionRole = normalized;
-        CustomRoleName = string.Empty;
-        IsAddingCustomRole = false;
-        FeedbackMessage = $"¡Nuevo rol '{normalized}' agregado correctamente! Puede personalizar sus permisos a continuación.";
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error creating custom role");
+            if (version == _securityVersion) FeedbackMessage = "No se guardó el rol. Revise el nombre, sus permisos y la configuración.";
+        }
+        finally { _roleMutation = false; }
     }
 
     [RelayCommand]
@@ -133,51 +162,40 @@ public partial class UsuariosSettingsViewModel : ObservableObject
         string target = string.IsNullOrWhiteSpace(roleToDelete) ? SelectedPermissionRole : roleToDelete;
         if (string.IsNullOrWhiteSpace(target)) return;
 
-        string normalized = target.Trim().ToUpper();
+        if (_roleMutation) return;
+        string normalized = target.Trim().ToUpperInvariant();
         if (BaseRoles.Contains(normalized))
         {
             PermissionFeedbackMessage = "Los roles base del sistema (ADMINISTRADOR, GERENTE, SUPERVISOR, CAJERO, VENDEDOR) no se pueden eliminar.";
             return;
         }
 
-        RoleOptions.Remove(normalized);
-        await SaveCustomRolesListAsync();
-
-        if (_settingsService != null)
-        {
-            try
-            {
-                await _settingsService.SetAsync($"RolePermissions_{normalized}", string.Empty);
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Error clearing permissions for deleted custom role {Role}", normalized);
-            }
-        }
-
-        SelectedPermissionRole = "ADMINISTRADOR";
-        PermissionFeedbackMessage = $"¡Rol personalizado '{normalized}' eliminado correctamente!";
-        OnPropertyChanged(nameof(IsSelectedRoleCustom));
-    }
-
-    private async Task SaveCustomRolesListAsync()
-    {
-        if (_settingsService == null) return;
+        long version = _securityVersion;
+        _roleMutation = true;
         try
         {
-            var customRoles = RoleOptions.Where(r => !BaseRoles.Contains(r.Trim())).ToList();
-            string json = JsonSerializer.Serialize(customRoles);
-            await _settingsService.SetAsync("CustomRolesList", json);
+            if (_settingsService == null) throw new InvalidOperationException("Servicio de configuración no disponible.");
+            // The backend removes the policy in the same transaction and refuses assigned roles.
+            await _settingsService.DeleteCustomRoleAsync(normalized);
+            if (version != _securityVersion) return;
+            RoleOptions.Remove(normalized);
+            if (NewRole == normalized) NewRole = "CAJERO";
+            SelectedPermissionRole = "ADMINISTRADOR";
+            PermissionFeedbackMessage = $"Rol '{normalized}' eliminado.";
+            OnPropertyChanged(nameof(IsSelectedRoleCustom));
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Error saving CustomRolesList to SQLite settings");
+            Log.Error(ex, "Error deleting custom role");
+            if (version == _securityVersion) PermissionFeedbackMessage = "No se eliminó el rol. Reasigne primero todas sus cuentas y compruebe sus permisos.";
         }
+        finally { _roleMutation = false; }
     }
 
     private async Task LoadCustomRolesListAsync()
     {
         if (_settingsService == null) return;
+        long version = _securityVersion;
         try
         {
             string? json = await _settingsService.GetAsync("CustomRolesList");
@@ -188,9 +206,10 @@ public partial class UsuariosSettingsViewModel : ObservableObject
                 {
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
+                        if (version != _securityVersion) return;
                         foreach (var role in customRoles)
                         {
-                            string norm = role.Trim().ToUpper();
+                            string norm = role.Trim().ToUpperInvariant();
                             if (!string.IsNullOrWhiteSpace(norm) && !RoleOptions.Contains(norm))
                             {
                                 RoleOptions.Add(norm);
@@ -223,57 +242,55 @@ public partial class UsuariosSettingsViewModel : ObservableObject
             return;
         }
 
+        long version = _securityVersion;
+        IsAdminUnlocked = false;
         try
         {
-            var users = await _userService.GetAllAsync();
-            var adminUser = users.FirstOrDefault(u => u.Rol.Equals("ADMINISTRADOR", StringComparison.OrdinalIgnoreCase) || u.Rol.Equals("ADMIN", StringComparison.OrdinalIgnoreCase));
-
-            if (adminUser != null)
+            bool valid = await _userService.ConfirmCurrentAdministratorAsync(AdminPasswordInput);
+            if (version != _securityVersion) return;
+            AdminPasswordInput = string.Empty;
+            if (valid)
             {
-                string? hash = await _userService.GetPasswordHashAsync(adminUser.Id);
-                bool valid = !string.IsNullOrEmpty(hash)
-                    && (Ticketfy.Core.Helpers.CryptoHelper.VerifyPassword(AdminPasswordInput, hash)
-                        || Ticketfy.Services.Security.SecurityManager.VerifyPassword(AdminPasswordInput, hash));
-
-                if (valid)
-                {
-                    IsAdminUnlocked = true;
-                    AdminPasswordInput = string.Empty;
-                    AdminGateErrorMessage = string.Empty;
-                    return;
-                }
+                IsAdminUnlocked = true;
+                AdminGateErrorMessage = string.Empty;
+                if (_loadedPermissionRole != SelectedPermissionRole.Trim().ToUpperInvariant())
+                    await LoadRolePermissionsAsync(SelectedPermissionRole);
+                return;
             }
             AdminGateErrorMessage = "Contraseña de Administrador incorrecta.";
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error validating admin password for RBAC gate");
-            AdminGateErrorMessage = "Error validando credenciales de administrador.";
+            if (version == _securityVersion)
+            { IsAdminUnlocked = false; AdminPasswordInput = ""; AdminGateErrorMessage = "Error validando credenciales de administrador."; }
         }
     }
 
     [RelayCommand]
     private void LockAdminPermissions()
     {
+        ++_securityVersion;
         IsAdminUnlocked = false;
         AdminPasswordInput = string.Empty;
         AdminGateErrorMessage = string.Empty;
     }
 
-    public UsuariosSettingsViewModel(IUserService? userService = null, ISettingsService? settingsService = null, IAuditService? auditService = null, Func<string>? auditActor = null)
+    public UsuariosSettingsViewModel(IUserService? userService = null, ISettingsService? settingsService = null, IAuditService? auditService = null, Func<string>? auditActor = null, bool loadOnCreate = true)
     {
         _userService = userService;
         _settingsService = settingsService;
-        _auditService = auditService;
-        _auditActor = auditActor;
 
-        _ = InitAsync();
+        Initialization = loadOnCreate ? InitAsync() : Task.CompletedTask;
     }
 
-    private async Task InitAsync()
+    public async Task InitAsync()
     {
+        long version = _securityVersion;
         await LoadCustomRolesListAsync();
+        if (version != _securityVersion) return;
         if (_userService != null) await LoadAsync();
+        if (version != _securityVersion) return;
         await LoadRolePermissionsAsync(SelectedPermissionRole);
     }
 
@@ -289,16 +306,28 @@ public partial class UsuariosSettingsViewModel : ObservableObject
     public async Task LoadAsync()
     {
         if (_userService == null) return;
+        long version = _securityVersion;
+        _usersReadFailed = false;
+        Users.Clear();
         try
         {
             var list = await _userService.GetAllAsync();
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
+                if (version != _securityVersion) return;
                 Users.Clear();
                 foreach (var u in list) Users.Add(u);
             });
         }
-        catch (Exception ex) { Log.Error(ex, "UsuariosSettingsViewModel: error loading users"); }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "UsuariosSettingsViewModel: error loading users");
+            if (version == _securityVersion)
+            {
+                Users.Clear(); _usersReadFailed = true;
+                FeedbackMessage = "No se pudo actualizar la lista de usuarios. Verifique su sesión e intente de nuevo.";
+            }
+        }
     }
 
     public Task LoadUsersAsync() => LoadAsync();
@@ -306,73 +335,69 @@ public partial class UsuariosSettingsViewModel : ObservableObject
     // ── RBAC Permission Engine ─────────────────────────────────────────────
     public async Task LoadRolePermissionsAsync(string roleName)
     {
+        long load = ++_permissionLoadVersion, security = _securityVersion;
+        string role = roleName.Trim().ToUpperInvariant();
+        _loadedPermissionRole = null;
+        RolePermissions.Clear();
+        IsPermissionLoading = true;
         var allPermissions = GetDefaultPermissionCatalog();
-        Dictionary<string, bool>? savedPermissions = null;
-
-        if (_settingsService != null)
+        var permissions = GetDefaultRolePreset(role);
+        try
         {
-            try
+            if (_settingsService != null)
             {
-                var json = await _settingsService.GetAsync($"RolePermissions_{roleName.ToUpper()}");
+                var json = await _settingsService.GetAsync($"RolePermissions_{role}");
                 if (!string.IsNullOrWhiteSpace(json))
                 {
-                    savedPermissions = JsonSerializer.Deserialize<Dictionary<string, bool>>(json);
+                    var overrides = JsonSerializer.Deserialize<Dictionary<string, bool>>(json)
+                        ?? throw new InvalidOperationException("Política inválida.");
+                    foreach (var entry in overrides) permissions[entry.Key] = entry.Value;
                 }
             }
-            catch (Exception ex)
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                Log.Error(ex, "Error loading saved permissions for role {Role}", roleName);
-            }
-        }
-
-        // Default Presets if no custom settings exist yet
-        if (savedPermissions == null)
-        {
-            savedPermissions = GetDefaultRolePreset(roleName);
-        }
-
-        await Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            RolePermissions.Clear();
-            foreach (var perm in allPermissions)
-            {
-                if (savedPermissions.TryGetValue(perm.Key, out bool granted))
+                if (load != _permissionLoadVersion || security != _securityVersion || SelectedPermissionRole.Trim().ToUpperInvariant() != role) return;
+                foreach (var perm in allPermissions)
                 {
-                    perm.IsGranted = granted;
+                    perm.IsGranted = permissions.GetValueOrDefault(perm.Key);
+                    perm.IsEditable = role != "ADMINISTRADOR" || !PermissionCatalog.AdministratorRecovery.Contains(perm.Key);
+                    if (!perm.IsEditable) perm.Description += " Obligatorio para conservar el acceso administrativo y la recuperación.";
+                    RolePermissions.Add(perm);
                 }
-                RolePermissions.Add(perm);
-            }
-        });
+                _loadedPermissionRole = role;
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error loading role permissions");
+            if (load == _permissionLoadVersion && security == _securityVersion)
+                PermissionFeedbackMessage = "No se pudo leer la política. No se puede guardar hasta cargarla correctamente.";
+        }
+        finally { if (load == _permissionLoadVersion) IsPermissionLoading = false; }
     }
 
     [RelayCommand]
     private async Task SaveRolePermissionsAsync()
     {
-        if (_settingsService == null) return;
+        string role = SelectedPermissionRole.Trim().ToUpperInvariant();
+        if (_settingsService == null || !IsAdminUnlocked || IsPermissionLoading || _loadedPermissionRole != role)
+        { PermissionFeedbackMessage = "Desbloquee y cargue la política del rol antes de guardar."; return; }
+        long version = _securityVersion;
+        long load = _permissionLoadVersion;
         try
         {
             var dict = RolePermissions.ToDictionary(p => p.Key, p => p.IsGranted);
             string json = JsonSerializer.Serialize(dict);
-            if (_auditService != null)
-            {
-                await _auditService.LogAsync(new Ticketfy.Data.Entities.AuditLogEntity
-                {
-                    UserId = _auditActor?.Invoke() ?? "SYSTEM",
-                    EntityName = "RolePermissions",
-                    EntityId = SelectedPermissionRole.ToUpperInvariant(),
-                    ActionType = Ticketfy.Core.Enums.AuditActionType.RolePermissionsChanged,
-                    RiskLevel = Ticketfy.Core.Enums.RiskLevel.Critical,
-                    NewValue = json,
-                    Reason = "Administrative RBAC matrix change"
-                });
-            }
-            await _settingsService.SetAsync($"RolePermissions_{SelectedPermissionRole.ToUpper()}", json);
-            PermissionFeedbackMessage = $"¡Permisos del rol '{SelectedPermissionRole}' guardados y aplicados correctamente en SQLite!";
+            // The settings service authorizes and journals the committed change with the real actor.
+            await _settingsService.SetAsync($"RolePermissions_{role}", json);
+            if (version == _securityVersion && load == _permissionLoadVersion)
+                PermissionFeedbackMessage = $"Permisos del rol '{role}' guardados.";
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error saving permissions for role {Role}", SelectedPermissionRole);
-            PermissionFeedbackMessage = "Error al guardar los permisos del rol.";
+            if (version == _securityVersion && load == _permissionLoadVersion)
+                PermissionFeedbackMessage = "No se guardaron los permisos. El administrador debe conservar acceso a usuarios, roles, configuración y recuperación.";
         }
     }
 
@@ -429,7 +454,11 @@ public partial class UsuariosSettingsViewModel : ObservableObject
         new() { Key = PermissionCatalog.ExpensesManage, Category = "9. Operaciones comerciales", Title = "Gestionar gastos", Description = "Permite registrar y cancelar gastos con evidencia de recuperación" },
         new() { Key = PermissionCatalog.PromotionsManage, Category = "9. Operaciones comerciales", Title = "Gestionar promociones", Description = "Permite crear, modificar e inactivar promociones" },
         new() { Key = PermissionCatalog.WalletManage, Category = "9. Operaciones comerciales", Title = "Gestionar monederos", Description = "Permite crear, recargar y consultar monederos" },
-        new() { Key = PermissionCatalog.PaymentsReconcile, Category = "9. Operaciones comerciales", Title = "Conciliar pagos externos", Description = "Permite verificar transferencias y reembolsos bancarios, y resolver cobros pendientes" },
+        new() { Key = PermissionCatalog.PaymentsReconcile, Category = "9. Operaciones comerciales", Title = "Conciliar pagos externos", Description = "Permite verificar transferencias y reembolsos bancarios" },
+        new() { Key = PermissionCatalog.CheckoutRecover, Category = "9. Operaciones comerciales", Title = "Supervisar cobros interrumpidos", Description = "Permite resolver intentos en la caja original, conservando al cajero original y registrando al aprobador" },
+        new() { Key = PermissionCatalog.AttendanceManage, Category = "9. Operaciones comerciales", Title = "Revisar asistencias", Description = "Permite marcar asistencias inciertas para revisión, sin inventar horas trabajadas" },
+        new() { Key = PermissionCatalog.ShiftNotesManage, Category = "9. Operaciones comerciales", Title = "Supervisar notas de caja", Description = "Permite corregir, resolver y cancelar notas de otros usuarios en esta caja, conservando revisiones" },
+        new() { Key = PermissionCatalog.AccountCreditSettle, Category = "9. Operaciones comerciales", Title = "Liquidar saldos a favor", Description = "Permite aplicar créditos entre documentos o registrar reembolsos comprobados. Los bancarios también requieren conciliación" },
         new() { Key = PermissionCatalog.HistoryReconcile, Category = "9. Operaciones comerciales", Title = "Conciliar saldos históricos", Description = "Permite ajustar saldos actuales con evidencia, sin modificar documentos originales ni efectivo" }
     ];
 
@@ -440,57 +469,20 @@ public partial class UsuariosSettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task SaveUserAsync()
-    {
-        if (_userService == null) return;
-        if (string.IsNullOrWhiteSpace(NewUsername) || string.IsNullOrWhiteSpace(NewFullName))
-        {
-            FeedbackMessage = "Nombre y Usuario son obligatorios";
-            return;
-        }
-
-        try
-        {
-            string finalPass = string.IsNullOrWhiteSpace(NewPassword)
-                ? string.Empty
-                : Ticketfy.Core.Helpers.CryptoHelper.HashPassword(NewPassword);
-
-            string finalPin = $"{NewPin1}{NewPin2}{NewPin3}{NewPin4}";
-            if (finalPin.Length != 4)
-            {
-                FeedbackMessage = "El PIN debe ser de 4 dígitos";
-                return;
-            }
-
-            await _userService.SaveAsync(Guid.NewGuid().ToString(), NewFullName, NewUsername, NewRole, finalPass, finalPin, NewPasswordHint);
-            await LoadAsync();
-
-            NewUsername = string.Empty;
-            NewFullName = string.Empty;
-            NewPin1 = string.Empty; NewPin2 = string.Empty; NewPin3 = string.Empty; NewPin4 = string.Empty;
-            NewPassword = string.Empty;
-            NewPasswordHint = string.Empty;
-            NewRole = "CAJERO";
-            FeedbackMessage = "¡Cajero / Usuario registrado correctamente!";
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "UsuariosSettingsViewModel: error creating user");
-            FeedbackMessage = "Error al crear usuario";
-        }
-    }
+    private Task SaveUserAsync() => SaveUserCoreAsync();
 
     [RelayCommand]
     private void RequestDeleteUser(UserDto user)
     {
-        if (user == null) return;
+        if (user == null || IsUserSaving) return;
+        ++_securityVersion;
 
         if (user.Role.ToUpper() == "ADMINISTRADOR" || user.Role.ToUpper() == "ADMIN")
         {
             UserToDelete = user;
             IsConfirmingAdminDelete = true;
             AdminDeletePassword = string.Empty;
-            FeedbackMessage = "Para eliminar un administrador, confirma con su contraseña.";
+            FeedbackMessage = "Para desactivar un administrador, confirma tu propia contraseña de administrador.";
         }
         else
         {
@@ -501,6 +493,7 @@ public partial class UsuariosSettingsViewModel : ObservableObject
     [RelayCommand]
     private void CancelAdminDelete()
     {
+        ++_securityVersion;
         IsConfirmingAdminDelete = false;
         UserToDelete = null;
         AdminDeletePassword = string.Empty;
@@ -512,35 +505,45 @@ public partial class UsuariosSettingsViewModel : ObservableObject
     {
         if (UserToDelete == null || _userService == null) return;
 
-        string savedHash = await _userService.GetPasswordHashAsync(UserToDelete.Id) ?? string.Empty;
-        bool valid = !string.IsNullOrEmpty(savedHash)
-            && Ticketfy.Services.Security.SecurityManager.VerifyPassword(AdminDeletePassword, savedHash);
-
-        if (valid)
+        long version = _securityVersion;
+        var target = UserToDelete;
+        try
         {
-            await ConfirmDeleteUserAsync(UserToDelete);
-            CancelAdminDelete();
+            bool valid = await _userService.ConfirmCurrentAdministratorAsync(AdminDeletePassword);
+            if (version != _securityVersion || UserToDelete != target) return;
+            AdminDeletePassword = string.Empty;
+            if (valid)
+            {
+                await ConfirmDeleteUserAsync(target);
+                if (version == _securityVersion) CancelAdminDelete();
+            }
+            else FeedbackMessage = "Credencial incorrecta o temporalmente bloqueada. No se puede desactivar.";
         }
-        else
+        catch (Exception ex)
         {
-            FeedbackMessage = "Contraseña de administrador incorrecta. No se puede eliminar.";
+            Log.Warning(ex, "Administrative account deactivation verification failed");
+            if (version == _securityVersion) { AdminDeletePassword = ""; FeedbackMessage = "No se pudo confirmar tu autorización."; }
         }
     }
 
     private async Task ConfirmDeleteUserAsync(UserDto user)
     {
         if (_userService == null || user == null) return;
+        long version = _securityVersion;
         try
         {
             await _userService.DeleteAsync(user.Id);
+            if (version != _securityVersion) return;
             await LoadAsync();
+            if (version != _securityVersion) return;
             WeakReferenceMessenger.Default.Send(new UserDeletedMessage(user.Id));
-            FeedbackMessage = $"Usuario {user.FullName} eliminado exitosamente.";
+            FeedbackMessage = $"Usuario {user.FullName} desactivado. El historial se conserva."
+                + (_usersReadFailed ? " No se pudo actualizar la lista." : "");
         }
         catch (Exception ex)
         {
             Log.Error(ex, "UsuariosSettingsViewModel: error deleting user");
-            FeedbackMessage = "Error al eliminar usuario.";
+            if (version == _securityVersion) FeedbackMessage = "Error al desactivar usuario.";
         }
     }
 }

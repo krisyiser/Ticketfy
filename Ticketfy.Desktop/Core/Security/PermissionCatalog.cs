@@ -43,7 +43,13 @@ public static class PermissionCatalog
     public const string PromotionsManage = "promotions.manage";
     public const string WalletManage = "wallet.manage";
     public const string PaymentsReconcile = "payments.reconcile";
+    public const string CheckoutRecover = "pos.recover_checkout";
+    public const string AttendanceManage = "attendance.manage";
+    public const string ShiftNotesManage = "cash.notes_manage";
+    public const string AccountCreditSettle = "accounts.settle_credit";
     public const string HistoryReconcile = "history.reconcile";
+    public static IReadOnlySet<string> AdministratorRecovery { get; } =
+        new HashSet<string>([UsersManage, UsersRoles, SettingsBusiness, SettingsSecurity], StringComparer.Ordinal);
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -53,7 +59,8 @@ public static class PermissionCatalog
         CustomersView, CustomersCreateEdit, CustomersDelete, CustomersCreditLimit,
         QuotesManage, ReportsView, ReportsProfits, ReportsExport,
         UsersView, UsersManage, UsersRoles, SettingsBusiness, SettingsHardware, SettingsSecurity,
-        PurchasesManage, SuppliersManage, ExpensesManage, PromotionsManage, WalletManage, PaymentsReconcile, HistoryReconcile
+        PurchasesManage, SuppliersManage, ExpensesManage, PromotionsManage, WalletManage, PaymentsReconcile, CheckoutRecover, HistoryReconcile,
+        AttendanceManage, ShiftNotesManage, AccountCreditSettle
     };
 
     private static readonly IReadOnlyDictionary<string, IReadOnlySet<string>> Grants =
@@ -63,7 +70,7 @@ public static class PermissionCatalog
             ["GERENTE"] = SetExcept(InventoryDelete, CustomersDelete, UsersManage, UsersRoles, SettingsBusiness, SettingsSecurity, HistoryReconcile),
             ["SUPERVISOR"] = Set(PosCheckout, PosDiscount, PosCancelSale, PosRefund, PosApplyPoints,
                 CashOpen, CashClose, CashInOut, CashHistory, InventoryView, CustomersView,
-                CustomersCreateEdit, QuotesManage, ReportsView, UsersView),
+                CustomersCreateEdit, QuotesManage, ReportsView, UsersView, CheckoutRecover, AttendanceManage, ShiftNotesManage),
             ["VENDEDOR"] = Set(PosCheckout, PosApplyPoints, InventoryView, CustomersView, CustomersCreateEdit, QuotesManage),
             ["CAJERO"] = Set(PosCheckout, PosApplyPoints, CashOpen, CashClose, CashInOut, InventoryView, CustomersView)
         };

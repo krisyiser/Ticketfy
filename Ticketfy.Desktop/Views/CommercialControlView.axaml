@@ -1,19 +1,74 @@
 <UserControl xmlns="https://github.com/avaloniaui"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- xmlns:vm="using:Ticketfy.ViewModels" xmlns:dto="using:Ticketfy.Data.Dtos"
+ xmlns:vm="using:Ticketfy.ViewModels" xmlns:dto="using:Ticketfy.Data.Dtos" xmlns:svc="using:Ticketfy.Services.Implementations" xmlns:entity="using:Ticketfy.Data.Entities" xmlns:views="using:Ticketfy.Views"
  x:Class="Ticketfy.Views.CommercialControlView" x:DataType="vm:CommercialControlViewModel">
  <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="20">
   <DockPanel>
    <Button DockPanel.Dock="Right" Content="Actualizar catálogos" Command="{Binding RefreshCommand}" />
    <TextBlock Text="Control comercial y conciliación" FontSize="23" FontWeight="Bold" />
   </DockPanel>
-  <TextBlock Grid.Row="1" Text="{Binding Message}" TextWrapping="Wrap" Foreground="{DynamicResource AccentWarningBrush}" />
+  <StackPanel Grid.Row="1" Spacing="5">
+   <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Foreground="{DynamicResource AccentWarningBrush}" />
+   <Grid ColumnDefinitions="*,Auto" IsEnabled="{Binding !IsBusy}">
+    <TextBox Text="{Binding CatalogSearch}" Watermark="Buscar en todos los catálogos por nombre, código o factura" />
+    <Button Grid.Column="1" Content="Buscar catálogos" Command="{Binding SearchCatalogsCommand}" />
+   </Grid>
+   <TextBlock Text="Cada catálogo e histórico muestra hasta 100 coincidencias. Para encontrar un registro fuera de esta lista, precise la búsqueda. Las solicitudes de dinero pendientes no se filtran aquí." FontSize="11" TextWrapping="Wrap" />
+  </StackPanel>
   <Grid Grid.Row="2" ColumnDefinitions="160,*,*" Margin="0,10" IsEnabled="{Binding !IsBusy}">
    <StackPanel><TextBlock Text="Importe ($)" /><NumericUpDown Value="{Binding Amount}" Minimum="0" FormatString="N2" /></StackPanel>
    <StackPanel Grid.Column="1"><TextBlock Text="Motivo / concepto" /><TextBox Text="{Binding Reason}" /></StackPanel>
    <StackPanel Grid.Column="2"><TextBlock Text="Referencia bancaria / comprobante" /><TextBox Text="{Binding Reference}" /></StackPanel>
   </Grid>
   <TabControl Grid.Row="3" IsEnabled="{Binding !IsBusy}">
+   <TabItem Header="Saldos a favor" IsVisible="{Binding CanSettleCredit}">
+    <ScrollViewer MaxHeight="360"><StackPanel Spacing="8" Margin="0,12">
+     <CheckBox Content="Proveedor (desmarque para cliente)" IsChecked="{Binding CreditSupplier}" />
+     <ComboBox ItemsSource="{Binding Customers}" SelectedItem="{Binding Customer}" PlaceholderText="Cliente" IsVisible="{Binding !CreditSupplier}">
+      <ComboBox.ItemTemplate><DataTemplate x:DataType="dto:CustomerDto"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+     </ComboBox>
+     <ComboBox ItemsSource="{Binding Suppliers}" SelectedItem="{Binding Supplier}" PlaceholderText="Proveedor" IsVisible="{Binding CreditSupplier}">
+      <ComboBox.ItemTemplate><DataTemplate x:DataType="dto:SupplierDto"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+     </ComboBox>
+     <Button Content="Consultar documentos con saldo" Command="{Binding LoadCreditDocumentsCommand}" />
+     <TextBlock Text="{Binding CreditExplanation}" TextWrapping="Wrap" />
+     <TextBlock Text="{Binding CreditDocumentPagesLabel}" TextWrapping="Wrap" />
+     <StackPanel Orientation="Horizontal" Spacing="8">
+      <Button Content="A favor anteriores" Command="{Binding PreviousCreditSourcesCommand}" IsEnabled="{Binding HasPreviousCreditSources}" />
+      <Button Content="A favor siguientes" Command="{Binding NextCreditSourcesCommand}" IsEnabled="{Binding HasMoreCreditSources}" />
+      <Button Content="Deudas anteriores" Command="{Binding PreviousCreditTargetsCommand}" IsEnabled="{Binding HasPreviousCreditTargets}" />
+      <Button Content="Deudas siguientes" Command="{Binding NextCreditTargetsCommand}" IsEnabled="{Binding HasMoreCreditTargets}" />
+     </StackPanel>
+     <ComboBox ItemsSource="{Binding CreditSources}" SelectedItem="{Binding CreditSource}" PlaceholderText="Origen: documento a favor">
+      <ComboBox.ItemTemplate><DataTemplate x:DataType="svc:AccountDocumentBalance"><TextBlock Text="{Binding Label}" /></DataTemplate></ComboBox.ItemTemplate>
+     </ComboBox>
+     <ComboBox ItemsSource="{Binding CreditTargets}" SelectedItem="{Binding CreditTarget}" PlaceholderText="Destino: deuda de la misma cuenta (sólo para aplicar)">
+      <ComboBox.ItemTemplate><DataTemplate x:DataType="svc:AccountDocumentBalance"><TextBlock Text="{Binding Label}" /></DataTemplate></ComboBox.ItemTemplate>
+     </ComboBox>
+     <CheckBox Content="Verifiqué documentos, cuenta e importe. Para reembolso: aún no entregaré ni recibiré dinero hasta guardar la solicitud." IsChecked="{Binding CreditActionVerified}" />
+     <Button Content="Aplicar a la deuda seleccionada (sin mover dinero)" Command="{Binding ApplyAccountCreditCommand}" />
+     <StackPanel Orientation="Horizontal" Spacing="8">
+      <ComboBox ItemsSource="{Binding PaymentMethods}" SelectedItem="{Binding Method}" />
+      <Button Content="1. Guardar solicitud ANTES de mover dinero" Command="{Binding PrepareAccountCreditRefundCommand}" />
+     </StackPanel>
+     <Button Content="Consultar solicitudes pendientes (también después de reiniciar)" Command="{Binding LoadCreditRefundsCommand}" />
+     <TextBox Text="{Binding CreditRefundSearch}" MaxLength="128" Watermark="Buscar solicitud, cuenta, documento, turno u operador" />
+     <StackPanel Orientation="Horizontal" Spacing="8">
+      <Button Content="Buscar solicitudes" Command="{Binding SearchCreditRefundsCommand}" />
+      <Button Content="Solicitudes anteriores" Command="{Binding PreviousCreditRefundsCommand}" IsEnabled="{Binding HasPreviousCreditRefunds}" />
+      <Button Content="Solicitudes siguientes" Command="{Binding NextCreditRefundsCommand}" IsEnabled="{Binding HasNextCreditRefunds}" />
+     </StackPanel>
+     <TextBlock Text="{Binding CreditRefundPageLabel}" TextWrapping="Wrap" />
+     <ComboBox ItemsSource="{Binding PendingCreditRefunds}" SelectedItem="{Binding PendingCreditRefund}" PlaceholderText="2. Solicitud guardada por resolver">
+      <ComboBox.ItemTemplate><DataTemplate x:DataType="dto:CreditRefundHeader"><TextBlock Text="{Binding Label}" TextWrapping="Wrap" /></DataTemplate></ComboBox.ItemTemplate>
+     </ComboBox>
+     <CheckBox Content="Verifiqué que el dinero de esta solicitud YA fue entregado al cliente o recibido del proveedor; indiqué evidencia y referencia arriba" IsChecked="{Binding CreditRefundFundsVerified}" />
+     <Button Content="3. Confirmar reembolso sin volver a mover dinero" Command="{Binding RefundAccountCreditCommand}" />
+     <CheckBox Content="Comprobé que NO se movió dinero para esta solicitud y documenté el motivo" IsChecked="{Binding CreditRefundNotExecutedVerified}" />
+     <Button Content="Descartar solicitud no ejecutada y liberar saldo" Command="{Binding CancelAccountCreditRefundCommand}" />
+     <TextBlock Text="Las solicitudes reservan saldo y bloquean el cierre hasta resolverse. Tras un apagado consulte la solicitud; nunca repita automáticamente la entrega. No se ejecutan transferencias bancarias desde esta pantalla." TextWrapping="Wrap" />
+    </StackPanel></ScrollViewer>
+   </TabItem>
    <TabItem Header="Históricos" IsVisible="{Binding CanHistorical}">
     <ScrollViewer MaxHeight="320"><StackPanel Spacing="8" Margin="0,12">
      <TextBlock Text="Ajuste administrativo de saldo actual con evidencia. No reescribe documentos, no mueve efectivo ni inventario." TextWrapping="Wrap" />
@@ -41,7 +96,20 @@
       <ComboBox.ItemTemplate><DataTemplate x:DataType="dto:CustomerDto"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
      </ComboBox>
      <Button Content="Preparar intento con el importe y concepto indicados arriba" Command="{Binding PrepareTransferCommand}" />
-     <ComboBox ItemsSource="{Binding PendingTransfers}" SelectedItem="{Binding PendingTransfer}" PlaceholderText="Intento guardado (persiste después de reiniciar)">
+     <TextBlock Text="Resuelva desde la caja original. Recuperar pendientes de otro cajero requiere permiso de recuperación; los movimientos conservan su turno original y la aprobación queda auditada." TextWrapping="Wrap" />
+     <TextBox Text="{Binding TransferSearch}" MaxLength="128" Watermark="Buscar referencia local o destino; en historial también referencia bancaria" />
+     <WrapPanel>
+      <Button Content="Consultar pendientes" Command="{Binding PendingTransfersCommand}" IsEnabled="{Binding !IsBusy}" />
+      <Button Content="Historial de depósitos aplicados / devueltos" Command="{Binding TransferHistoryCommand}" IsEnabled="{Binding !IsBusy}" />
+      <Button Content="Buscar transferencias / actualizar" Command="{Binding SearchTransfersCommand}" IsEnabled="{Binding !IsBusy}" />
+     </WrapPanel>
+     <StackPanel Orientation="Horizontal" Spacing="8" IsEnabled="{Binding !IsBusy}">
+      <Button Content="Página anterior" Command="{Binding PreviousTransfersCommand}" IsEnabled="{Binding HasPreviousTransfers}" />
+      <Button Content="Página siguiente" Command="{Binding NextTransfersCommand}" IsEnabled="{Binding HasNextTransfers}" />
+     </StackPanel>
+     <TextBlock Text="{Binding TransferPageLabel}" TextWrapping="Wrap" />
+     <StackPanel Spacing="8" IsVisible="{Binding !TransferHistoryMode}">
+     <ComboBox ItemsSource="{Binding PendingTransfers}" SelectedItem="{Binding PendingTransfer}" IsEnabled="{Binding !IsBusy}" PlaceholderText="Intento guardado (persiste después de reiniciar)">
       <ComboBox.ItemTemplate><DataTemplate x:DataType="dto:PendingTransferDto"><TextBlock Text="{Binding Label}" TextWrapping="Wrap" /></DataTemplate></ComboBox.ItemTemplate>
      </ComboBox>
      <TextBox Text="{Binding TransferReference}" Watermark="Referencia única del depósito confirmado" />
@@ -52,7 +120,7 @@
      <TextBox Text="{Binding TransferRefundReference}" Watermark="Referencia del reembolso bancario (si no se puede aplicar el depósito)" />
      <CheckBox Content="Verifiqué la devolución bancaria efectiva y su referencia; no es una solicitud de reembolso" IsChecked="{Binding TransferRefundVerified}" />
      <Button Content="Documentar devolución de depósito pendiente" Command="{Binding RefundPendingTransferCommand}" />
-     <Button Content="Historial de depósitos aplicados / devueltos" Command="{Binding TransferHistoryCommand}" />
+     </StackPanel>
     </StackPanel></ScrollViewer>
    </TabItem>
    <TabItem Header="Kardex" IsVisible="{Binding CanInventory}">
@@ -82,13 +150,21 @@
        <StackPanel Orientation="Horizontal" Spacing="12"><TextBlock Text="{Binding SupplierName}" /><TextBlock Text="{Binding InvoiceNumber}" /><TextBlock Text="{Binding TotalCost, StringFormat='{}{0:C2}'}" /></StackPanel>
       </DataTemplate></ComboBox.ItemTemplate>
      </ComboBox>
+     <TextBlock Text="{Binding Purchase.DetailStatus}" TextWrapping="Wrap" />
+     <TextBlock Text="{Binding Purchase.FinancialStatus}" TextWrapping="Wrap" />
+     <TextBlock Text="{Binding Purchase.RecordedPaymentsDisplay, StringFormat='Pagos documentados: {0}'}" />
+     <TextBlock Text="{Binding Purchase.BalanceDisplay, StringFormat='Saldo (+ deuda / - crédito): {0}'}" />
+     <Button Content="Consultar partidas de la compra seleccionada" Command="{Binding LoadPurchaseDetailCommand}" />
      <StackPanel Orientation="Horizontal" Spacing="10">
       <ComboBox ItemsSource="{Binding PaymentMethods}" SelectedItem="{Binding Method}" />
       <Button Content="Registrar pago del importe indicado" Command="{Binding PaySupplierCommand}" />
      </StackPanel>
      <Grid ColumnDefinitions="*,130,Auto">
       <ComboBox ItemsSource="{Binding PurchaseLines}" SelectedItem="{Binding PurchaseLine}" HorizontalAlignment="Stretch">
-       <ComboBox.ItemTemplate><DataTemplate x:DataType="dto:PurchaseItemDto"><TextBlock Text="{Binding ProductName}" /></DataTemplate></ComboBox.ItemTemplate>
+       <ComboBox.ItemTemplate><DataTemplate x:DataType="dto:PurchaseItemDto"><StackPanel>
+        <TextBlock Text="{Binding ProductName}" />
+        <TextBlock Text="{Binding ReturnableQuantity, StringFormat='Disponible para devolver: {0:N3}'}" />
+       </StackPanel></DataTemplate></ComboBox.ItemTemplate>
       </ComboBox>
       <NumericUpDown Grid.Column="1" Value="{Binding Quantity}" Minimum="0.001" Increment="1" FormatString="N3" />
       <Button Grid.Column="2" Content="Devolver al proveedor" Command="{Binding ReturnSupplierCommand}" />
@@ -104,6 +180,7 @@
     </StackPanel>
    </TabItem>
    <TabItem Header="Monedero" IsVisible="{Binding CanWallet}">
+    <ScrollViewer MaxHeight="380">
     <StackPanel Spacing="8" Margin="0,12">
      <TextBox Text="{Binding WalletNumber}" Watermark="Número del monedero" />
      <StackPanel Orientation="Horizontal" Spacing="10">
@@ -112,32 +189,85 @@
       <Button Content="Historial y saldo" Command="{Binding WalletStatementCommand}" />
      </StackPanel>
      <TextBlock Text="La recarga utiliza el importe indicado y registra una entrada en el turno actual." />
+     <Expander Header="Buscar y consultar monederos">
+      <views:WalletDirectoryView DataContext="{Binding WalletDirectory}" />
+     </Expander>
     </StackPanel>
+    </ScrollViewer>
    </TabItem>
    <TabItem Header="Conciliación" IsVisible="{Binding CanReconcile}">
-    <StackPanel Spacing="8" Margin="0,12">
+    <ScrollViewer MaxHeight="360"><StackPanel Spacing="8" Margin="0,12">
      <StackPanel Orientation="Horizontal" Spacing="10">
       <TextBox Text="{Binding Day}" Watermark="aaaa-mm-dd" Width="140" />
       <Button Content="Conciliar turnos del día" Command="{Binding ReconcileCommand}" />
+      <Button Content="Turnos anteriores" Command="{Binding PreviousReconciliationCommand}" IsEnabled="{Binding HasPreviousReconciliation}" />
+      <Button Content="Turnos siguientes" Command="{Binding NextReconciliationCommand}" IsEnabled="{Binding HasMoreReconciliation}" />
      </StackPanel>
+     <TextBox Text="{Binding BankRefundSearch}" MaxLength="128" Watermark="Buscar reembolso, devolución, caja, turno u operador" />
+     <StackPanel Orientation="Horizontal" Spacing="8">
+      <Button Content="Buscar reembolsos" Command="{Binding SearchBankRefundsCommand}" />
+      <Button Content="Reembolsos anteriores" Command="{Binding PreviousBankRefundsCommand}" IsEnabled="{Binding HasPreviousBankRefunds}" />
+      <Button Content="Reembolsos siguientes" Command="{Binding NextBankRefundsCommand}" IsEnabled="{Binding HasNextBankRefunds}" />
+     </StackPanel>
+     <TextBlock Text="{Binding BankRefundPageLabel}" TextWrapping="Wrap" />
      <ComboBox ItemsSource="{Binding PendingRefunds}" SelectedItem="{Binding Refund}" HorizontalAlignment="Stretch" PlaceholderText="Reembolso bancario pendiente">
-      <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:PendingRefundChoice"><TextBlock Text="{Binding Label}" /></DataTemplate></ComboBox.ItemTemplate>
+      <ComboBox.ItemTemplate><DataTemplate x:DataType="dto:BankRefundHeader"><TextBlock Text="{Binding Label}" TextWrapping="Wrap" /></DataTemplate></ComboBox.ItemTemplate>
      </ComboBox>
      <CheckBox Content="Verifiqué el reembolso en el portal bancario y su referencia" IsChecked="{Binding ExternalRefundVerified}" />
      <Button Content="Conciliar reembolso externo" Command="{Binding SettleRefundCommand}" />
-     <ComboBox ItemsSource="{Binding PendingCheckouts}" SelectedItem="{Binding PendingCheckout}" PlaceholderText="Cobro interrumpido">
-      <ComboBox.ItemTemplate><DataTemplate x:DataType="dto:PendingCheckoutDto"><StackPanel Orientation="Horizontal" Spacing="8">
-       <TextBlock Text="{Binding OperationId}" /><TextBlock Text="{Binding Amount, StringFormat='{}{0:C2}'}" /><TextBlock Text="{Binding State}" />
-      </StackPanel></DataTemplate></ComboBox.ItemTemplate>
-     </ComboBox>
-     <CheckBox Content="Completar el cobro (desmarque sólo si comprobó que NO se recibió dinero)" IsChecked="{Binding CompleteCheckout}" />
-     <CheckBox Content="Verifiqué caja y banco; indiqué motivo. Estoy en el turno y operador originales." IsChecked="{Binding CheckoutFundsVerified}" />
-     <Button Content="Resolver intento sin volver a cobrar" Command="{Binding ResolveCheckoutCommand}" />
      <ComboBox ItemsSource="{Binding LegacyShifts}" SelectedItem="{Binding LegacyShift}" PlaceholderText="Turno anterior sin caja / usuario">
       <ComboBox.ItemTemplate><DataTemplate x:DataType="dto:ShiftDto"><TextBlock Text="{Binding Id}" /></DataTemplate></ComboBox.ItemTemplate>
      </ComboBox>
      <CheckBox Content="Conté el efectivo histórico; indiqué arriba importe y referencia del acta" IsChecked="{Binding LegacyCountVerified}" />
      <Button Content="Cerrar turno histórico con acta de conciliación" Command="{Binding ReconcileLegacyShiftCommand}" />
+    </StackPanel></ScrollViewer>
+   </TabItem>
+   <TabItem Header="Recuperar cobros" IsVisible="{Binding CanRecoverCheckout}">
+    <ScrollViewer MaxHeight="360"><StackPanel Spacing="8" Margin="0,12">
+     <TextBlock Text="Supervise el cobro en su caja original. La venta conserva al cajero y turno originales; su usuario queda registrado como aprobador." TextWrapping="Wrap" />
+      <TextBox Text="{Binding PendingCheckoutSearch}" MaxLength="128" Watermark="Buscar referencia local del cobro" />
+      <StackPanel Orientation="Horizontal" Spacing="8" IsEnabled="{Binding !IsBusy}">
+       <Button Content="Buscar pendientes / actualizar" Command="{Binding SearchPendingCheckoutsCommand}" />
+       <Button Content="Anteriores" Command="{Binding PreviousPendingCheckoutsCommand}" IsEnabled="{Binding HasPreviousPendingCheckouts}" />
+       <Button Content="Siguientes" Command="{Binding NextPendingCheckoutsCommand}" IsEnabled="{Binding HasNextPendingCheckouts}" />
+      </StackPanel>
+      <TextBlock Text="{Binding PendingCheckoutPageLabel}" TextWrapping="Wrap" />
+      <ComboBox ItemsSource="{Binding PendingCheckouts}" SelectedItem="{Binding PendingCheckout}" PlaceholderText="Cobro interrumpido de esta caja" IsEnabled="{Binding !IsBusy}">
+      <ComboBox.ItemTemplate><DataTemplate x:DataType="dto:PendingCheckoutDto"><StackPanel Orientation="Horizontal" Spacing="8">
+       <TextBlock Text="{Binding OperationId}" /><TextBlock Text="{Binding Amount, StringFormat='{}{0:C2}'}" /><TextBlock Text="{Binding State}" />
+      </StackPanel></DataTemplate></ComboBox.ItemTemplate>
+     </ComboBox>
+     <StackPanel IsVisible="{Binding CanQueryCheckoutBank}" IsEnabled="{Binding !IsBusy}" Spacing="6">
+      <TextBlock Text="Consultar la orden bancaria no vuelve a cobrar. Si Ticketfy perdió el ID, indique el de la orden original comprobada con el proveedor; no use el folio local." TextWrapping="Wrap" />
+      <TextBox Text="{Binding CheckoutProviderOrderId}" MaxLength="64" Watermark="ID de orden del proveedor, sólo si falta en Ticketfy" />
+      <Button Content="Consultar banco sin volver a cobrar" Command="{Binding QueryCheckoutBankCommand}" />
+     </StackPanel>
+     <TextBlock Text="{Binding CheckoutBankStatus}" TextWrapping="Wrap" FontWeight="SemiBold" />
+     <CheckBox Content="Completar el cobro (desmarque sólo si comprobó que NO se recibió dinero)" IsChecked="{Binding CompleteCheckout}" />
+     <CheckBox Content="Como supervisor, comprobé efectivo y banco e indiqué el motivo de resolución." IsChecked="{Binding CheckoutFundsVerified}" />
+     <Button Content="Resolver intento sin volver a cobrar" Command="{Binding ResolveCheckoutCommand}" />
+     </StackPanel></ScrollViewer>
+   </TabItem>
+   <TabItem Header="Asistencias" IsVisible="{Binding CanReviewAttendance}">
+    <StackPanel Spacing="8" Margin="0,12">
+     <TextBlock Text="Las entradas olvidadas no generan horas trabajadas automáticamente. Revise el usuario y su evidencia de salida; indique el motivo arriba. El usuario no debe tener un turno abierto." TextWrapping="Wrap" />
+     <Button Content="Detectar y consultar anomalías" Command="{Binding ReviewAttendancesCommand}" />
+     <ComboBox ItemsSource="{Binding AttendanceReviews}" SelectedItem="{Binding AttendanceReview}" PlaceholderText="Asistencia pendiente">
+      <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:AttendanceReviewChoice"><TextBlock Text="{Binding Label}" /></DataTemplate></ComboBox.ItemTemplate>
+     </ComboBox>
+     <TextBox Text="{Binding ConfirmedAttendanceEnd}" Watermark="Salida confirmada: aaaa-mm-dd hh:mm (hora comercial)" />
+     <CheckBox Content="Verifiqué con evidencia la hora de salida y el usuario correspondiente" IsChecked="{Binding AttendanceEvidenceVerified}" />
+     <Button Content="Registrar resolución supervisada" Command="{Binding ResolveAttendanceCommand}" />
+    </StackPanel>
+   </TabItem>
+   <TabItem Header="Notas históricas" IsVisible="{Binding CanReviewNotes}">
+    <StackPanel Spacing="8" Margin="0,12">
+     <TextBlock Text="Revise hasta 100 notas antiguas sin caja asignada. Asignar conserva el texto y el autor histórico sin verificar; no atribuye la nota al supervisor." TextWrapping="Wrap" />
+     <Button Content="Consultar notas sin asignar" Command="{Binding ReviewHistoricalNotesCommand}" />
+     <ComboBox ItemsSource="{Binding HistoricalNotes}" SelectedItem="{Binding HistoricalNote}" PlaceholderText="Nota histórica">
+      <ComboBox.ItemTemplate><DataTemplate x:DataType="dto:ShiftNoteDto"><TextBlock Text="{Binding NoteText}" TextWrapping="Wrap" /></DataTemplate></ComboBox.ItemTemplate>
+     </ComboBox>
+     <Button Content="Asignar a esta caja con el motivo indicado" Command="{Binding AssignHistoricalNoteCommand}" />
     </StackPanel>
    </TabItem>
   </TabControl>
@@ -146,13 +276,23 @@
     <DataGridTextColumn Header="Fecha" Binding="{Binding Date}" Width="1.1*" />
     <DataGridTextColumn Header="Documento" Binding="{Binding Document}" Width="*" />
     <DataGridTextColumn Header="Movimiento" Binding="{Binding Event}" Width="1.1*" />
-    <DataGridTextColumn Header="Importe / cantidad" Binding="{Binding Amount, StringFormat='{}{0:N3}'}" Width="*" />
-    <DataGridTextColumn Header="Saldo / diferencia" Binding="{Binding Balance, StringFormat='{}{0:N3}'}" Width="*" />
+    <DataGridTextColumn Header="Importe / cantidad" Binding="{Binding AmountDisplay}" Width="*" />
+    <DataGridTextColumn Header="Saldo / diferencia" Binding="{Binding BalanceDisplay}" Width="*" />
     <DataGridTextColumn Header="Operador" Binding="{Binding User}" Width="*" />
     <DataGridTextColumn Header="Caja" Binding="{Binding Register}" Width="*" />
     <DataGridTextColumn Header="Turno" Binding="{Binding Shift}" Width="*" />
    </DataGrid.Columns>
   </DataGrid>
-  <TextBlock Grid.Row="5" Text="{Binding Summary}" TextWrapping="Wrap" />
+  <StackPanel Grid.Row="5" Spacing="6">
+   <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
+   <StackPanel IsVisible="{Binding LedgerVisible}" IsEnabled="{Binding !IsBusy}" Spacing="6">
+    <TextBlock Text="{Binding LedgerPageLabel}" />
+    <StackPanel Orientation="Horizontal" Spacing="8">
+     <Button Content="Más recientes" Command="{Binding RecentLedgerCommand}" IsEnabled="{Binding HasRecentLedger}" />
+     <Button Content="Más antiguos" Command="{Binding OlderLedgerCommand}" IsEnabled="{Binding HasOlderLedger}" />
+     <Button Content="Actualizar consulta" Command="{Binding RefreshLedgerCommand}" />
+    </StackPanel>
+   </StackPanel>
+  </StackPanel>
  </Grid>
 </UserControl>

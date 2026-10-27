@@ -81,4 +81,18 @@ public class CashupEntity
 
     [NotMapped]
     public decimal? TotalExpenses { get; set; }
+    [NotMapped]
+    public string LocalDateDisplay => Ticketfy.Core.Helpers.DateTimeExtensions.ToLocalDisplayString(Timestamp);
+    [NotMapped]
+    public string TotalSalesDisplay => TotalSales?.ToString("C2") ?? "Sin desglose";
+    [NotMapped]
+    public string TotalExpensesDisplay => TotalExpenses?.ToString("C2") ?? "Sin desglose";
+    [NotMapped]
+    public string BreakdownStatus => TotalSales.HasValue && TotalExpenses.HasValue ? "Desglose verificable" : "Requiere conciliación histórica";
+    [NotMapped]
+    public Ticketfy.Core.Models.CashDenominationCount Denominations => new(Count1000, Count500, Count200, Count100,
+        Count50, Count20, Count10, Count5, Count2, Count1, Count050);
+    [NotMapped]
+    public string DenominationStatus => !Denominations.IsConsistentWith(ClosedCashAmount) ? "Desglose inconsistente: requiere revisión"
+        : Denominations.HasPieces ? "Conteo por denominaciones" : "Conteo agregado: sin detalle de piezas";
 }

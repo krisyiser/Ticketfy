@@ -48,11 +48,14 @@ public partial class PosHeaderViewModel : ObservableObject
     public event Action? OpenPartialCashupRequested;
     public event Action? OpenFinalCashupRequested;
 
-    public PosHeaderViewModel(ISessionManager? sessionManager, IShiftNoteService? shiftNoteService, CartStateStore cartStateStore)
+    private long _noteReadVersion;
+    private readonly bool _loadOnSessionChange;
+    public PosHeaderViewModel(ISessionManager? sessionManager, IShiftNoteService? shiftNoteService, CartStateStore cartStateStore, bool loadOnCreate = true)
     {
         _sessionManager = sessionManager;
         _shiftNoteService = shiftNoteService;
         _cartStateStore = cartStateStore;
+        _loadOnSessionChange = loadOnCreate;
 
         ParkedTickets.CollectionChanged += (s, e) => OnPropertyChanged(nameof(HasParkedTickets));
         ActiveShiftNotes.CollectionChanged += (s, e) => OnPropertyChanged(nameof(HasShiftNotes));
@@ -66,14 +69,18 @@ public partial class PosHeaderViewModel : ObservableObject
             }
         }
 
-        _ = LoadActiveShiftNotesAsync();
     }
 
-    private void OnCashierChanged(Ticketfy.Core.Models.UserModel user)
+    private void OnCashierChanged(Ticketfy.Core.Models.UserModel? user)
     {
+        ++_noteReadVersion;
+        ActiveShiftNotes.Clear();
+        NewShiftNoteText = string.Empty;
+        ActiveCashierName = "Sin sesión";
         if (user == null) return;
         string roleDisplay = user.DisplayRole;
         ActiveCashierName = $"{user.FullName} ({roleDisplay})";
+        if (_loadOnSessionChange) _ = LoadActiveShiftNotesAsync();
     }
 
     [RelayCommand]
@@ -93,12 +100,17 @@ public partial class PosHeaderViewModel : ObservableObject
 
     public async Task LoadActiveShiftNotesAsync()
     {
-        if (_shiftNoteService == null) return;
+        var session = _sessionManager;
+        if (_shiftNoteService == null || session?.CurrentCashier is null || session.IsTerminalLocked) return;
+        var version = ++_noteReadVersion;
+        var sessionVersion = session.SessionVersion;
         try
         {
+            var userId = session.CurrentCashier.Id;
             var list = await _shiftNoteService.GetActiveNotesAsync();
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
+                if (version != _noteReadVersion || sessionVersion != session.SessionVersion || session.IsTerminalLocked || userId != session.CurrentCashier?.Id) return;
                 ActiveShiftNotes.Clear();
                 foreach (var n in list)
                 {
@@ -108,6 +120,8 @@ public partial class PosHeaderViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            await Dispatcher.UIThread.InvokeAsync(() => { if (version == _noteReadVersion && sessionVersion == session.SessionVersion) ActiveShiftNotes.Clear(); });
+            if (ex is UnauthorizedAccessException) return;
             Log.Error(ex, "Error loading shift notes");
         }
     }
@@ -118,15 +132,24 @@ public partial class PosHeaderViewModel : ObservableObject
         if (string.IsNullOrWhiteSpace(NewShiftNoteText) || _shiftNoteService == null || _sessionManager?.CurrentCashier == null)
             return;
 
-        var success = await _shiftNoteService.SaveNoteAsync(
-            _sessionManager.CurrentCashier.FullName,
-            NewShiftNoteText.Trim(),
-            "General"
-        );
-        if (success)
+        try
         {
-            NewShiftNoteText = string.Empty;
-            await LoadActiveShiftNotesAsync();
+            var success = await _shiftNoteService.SaveNoteAsync(
+                _sessionManager.CurrentCashier.FullName,
+                NewShiftNoteText.Trim(),
+                "General"
+            );
+            if (success)
+            {
+                NewShiftNoteText = string.Empty;
+                await LoadActiveShiftNotesAsync();
+            }
+            else { FeedbackIsError = true; FeedbackMessage = "No se pudo guardar la nota."; }
+        }
+        catch (Exception ex)
+        {
+            FeedbackIsError = true;
+            FeedbackMessage = ex is UnauthorizedAccessException or InvalidOperationException ? ex.Message : "No se pudo guardar la nota. Intente nuevamente.";
         }
     }
 
@@ -134,10 +157,18 @@ public partial class PosHeaderViewModel : ObservableObject
     private async Task ResolveShiftNoteAsync(ShiftNoteDto note)
     {
         if (note == null || _shiftNoteService == null) return;
-        var success = await _shiftNoteService.ResolveNoteAsync(note.Id);
-        if (success)
+        try
         {
-            ActiveShiftNotes.Remove(note);
+            var success = await _shiftNoteService.ResolveNoteAsync(note.Id);
+            if (success)
+            {
+                ActiveShiftNotes.Remove(note);
+            }
+        }
+        catch (Exception ex)
+        {
+            FeedbackIsError = true;
+            FeedbackMessage = ex is UnauthorizedAccessException ? ex.Message : "No se pudo resolver la nota.";
         }
     }
 

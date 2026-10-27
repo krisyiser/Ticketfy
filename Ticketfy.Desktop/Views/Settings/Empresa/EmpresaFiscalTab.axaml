@@ -5,6 +5,7 @@
              x:DataType="vm:EmpresaSettingsViewModel">
 
     <StackPanel Spacing="16">
+        <TextBlock Text="Facturación deshabilitada en esta edición. Los certificados y su contraseña no se configuran ni verifican." IsVisible="{Binding !IsFiscalIntegrationEnabled}" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
         <Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="*,*">
             <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,8,12" Spacing="6">
                 <TextBlock Text="RFC de la Empresa" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
@@ -26,17 +27,17 @@
                 <ComboBox ItemsSource="{Binding UsoCfdiOptions}" SelectedItem="{Binding EmpresaUsoCfdiPorDefecto, Mode=TwoWay}" HorizontalAlignment="Stretch" Padding="10,8" />
             </StackPanel>
 
-            <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,0,8,12" Spacing="6">
+            <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,0,8,12" Spacing="6" IsEnabled="{Binding IsFiscalIntegrationEnabled}">
                 <TextBlock Text="Certificado CSD (.cer)" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
                 <TextBox Text="{Binding EmpresaCertificadoCerPath, Mode=TwoWay}" Padding="10,8" Watermark="Ruta al archivo .cer" />
             </StackPanel>
 
-            <StackPanel Grid.Row="2" Grid.Column="1" Margin="8,0,0,12" Spacing="6">
+            <StackPanel Grid.Row="2" Grid.Column="1" Margin="8,0,0,12" Spacing="6" IsEnabled="{Binding IsFiscalIntegrationEnabled}">
                 <TextBlock Text="Llave Privada CSD (.key)" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
                 <TextBox Text="{Binding EmpresaCertificadoKeyPath, Mode=TwoWay}" Padding="10,8" Watermark="Ruta al archivo .key" />
             </StackPanel>
 
-            <StackPanel Grid.Row="3" Grid.Column="0" Margin="0,0,8,0" Spacing="6">
+            <StackPanel Grid.Row="3" Grid.Column="0" Margin="0,0,8,0" Spacing="6" IsEnabled="{Binding IsFiscalIntegrationEnabled}">
                 <TextBlock Text="Contraseña CSD" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
                 <TextBox Text="{Binding EmpresaPasswordKeyCsd, Mode=TwoWay}" PasswordChar="*" Padding="10,8" />
             </StackPanel>
@@ -44,7 +45,7 @@
             <StackPanel Grid.Row="3" Grid.Column="1" Margin="8,0,0,12" Spacing="6">
                 <TextBlock Text="Estatus CSD SAT" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
                 <Border Background="{DynamicResource BgTertiaryBrush}" CornerRadius="{DynamicResource AppCornerRadius}" Padding="12,8">
-                    <TextBlock Text="{Binding CsdValidityStatus}" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource AccentSuccessBrush}" HorizontalAlignment="Center" />
+                    <TextBlock Text="{Binding CsdValidityStatus}" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center" />
                 </Border>
             </StackPanel>
         </Grid>

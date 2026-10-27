@@ -9,7 +9,7 @@ using Ticketfy.Services.Interfaces;
 
 namespace Ticketfy.Services.Implementations;
 
-public sealed class ShiftService : IShiftService
+public sealed partial class ShiftService : IShiftService
 {
     private readonly IDbContextFactory<AppDbContext> _factory;
     private readonly CommercialOperationContext? _operations;
@@ -22,9 +22,29 @@ public sealed class ShiftService : IShiftService
     public async Task<ShiftDto?> GetActiveAsync()
     {
         await using var db = await _factory.CreateDbContextAsync();
-        if (_operations is null) return null;
-        var entity = await db.Shifts.AsNoTracking().SingleOrDefaultAsync(s => s.IsOpen == 1 && s.RegisterId == _operations.RegisterId);
+        var actor = await Operations.RequireAsync(db, PermissionCatalog.PosCheckout, false);
+        var entity = await db.Shifts.AsNoTracking().SingleOrDefaultAsync(s => s.IsOpen == 1 && s.RegisterId == actor.RegisterId);
+        if (entity is not null && entity.CashierUserId != actor.UserId)
+            await Operations.RequireAsync(db, PermissionCatalog.CashHistory, false);
         return entity is null ? null : Map(entity);
+    }
+    public async Task<ShiftCashSummary?> GetActiveCashSummaryAsync()
+    {
+        await using var db = await _factory.CreateDbContextAsync();
+        await using var snapshot = await ReadSnapshot.BeginAsync(db);
+        var actor = await Operations.RequireAsync(db, PermissionCatalog.CashClose, false);
+        var shift = await db.Shifts.AsNoTracking().SingleOrDefaultAsync(s => s.IsOpen == 1 && s.RegisterId == actor.RegisterId);
+        if (shift is null) return null;
+        if (shift.CashierUserId != actor.UserId) throw new UnauthorizedAccessException("El turno pertenece a otro operador. Inicie sesión con el responsable de la caja.");
+        decimal inflows = 0m, outflows = 0m;
+        await foreach (var movement in db.ShiftMovements.AsNoTracking().Where(m => m.ShiftId == shift.Id)
+            .Select(m => new { m.Amount, m.IsOutflow }).AsAsyncEnumerable())
+        {
+            if (movement.IsOutflow) outflows += movement.Amount;
+            else inflows += movement.Amount;
+        }
+        ShiftLedgerValidator.ValidateCashProjection(shift, shift.OpeningBalance + inflows - outflows);
+        return new(Map(shift), inflows, outflows);
     }
     public Task<ShiftDto> OpenAsync(decimal openingBalance) => OpenAsync(openingBalance, Guid.NewGuid().ToString("N"));
     public async Task<ShiftDto> OpenAsync(decimal openingBalance, string operationId)
@@ -70,30 +90,42 @@ public sealed class ShiftService : IShiftService
     public async Task<ShiftDto> CloseWithCashupAsync(string shiftId, CashupEntity cashup)
     {
         string operation = CommercialLedger.OperationId(cashup.OperationId);
-        if (cashup.ClosedCashAmount < 0 || CommercialLedger.Money(cashup.ClosedCashAmount) != cashup.ClosedCashAmount)
-            throw new InvalidOperationException("Conteo de caja inválido.");
+        CashCountEvidence.Validate(cashup);
         await using var db = await _factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
         var actor = await Operations.RequireAsync(db, PermissionCatalog.CashClose, false);
+        var budget = new ReconciliationReadBudget();
+        if (!await budget.ReserveAsync<ShiftEntity>(db, "id = {0}", shiftId))
+            throw new InvalidOperationException(ReconciliationReadBudget.CloseBlocked);
         var shift = await db.Shifts.SingleOrDefaultAsync(s => s.Id == shiftId)
             ?? throw new InvalidOperationException("Turno inexistente.");
         if (shift.RegisterId != actor.RegisterId || shift.CashierUserId != actor.UserId)
             throw new UnauthorizedAccessException("Este turno pertenece a otro usuario o caja.");
         actor = actor with { ShiftId = shift.Id };
-        await CommandIdentity.BindAsync(db, actor, operation, "SHIFT_CLOSE", shiftId, cashup.ClosedCashAmount, cashup.Notes);
+        if (!await budget.FitsShiftAsync(db, shift) ||
+            !await budget.ReserveAsync<CommandReceiptEntity>(db, "OperationId = {0}", operation) ||
+            !await budget.ReserveAsync<CashupEntity>(db, "OperationId = {0}", operation))
+            throw new InvalidOperationException(ReconciliationReadBudget.CloseBlocked);
+        var recorded = await CashCountEvidence.BindAsync(db, actor, operation, "SHIFT_CLOSE", shiftId, cashup);
         if (shift.IsOpen == 0)
         {
-            if (shift.CloseOperationId == operation && shift.ActualBalance == cashup.ClosedCashAmount) return Map(shift);
+            if (shift.CloseOperationId == operation && shift.ActualBalance == cashup.ClosedCashAmount && recorded is not null)
+            {
+                CashCountEvidence.CopyRecordedResult(recorded, cashup);
+                return Map(shift);
+            }
             throw new InvalidOperationException("El turno ya fue cerrado.");
         }
         if (await ShiftLedgerValidator.HasPendingCheckoutsAsync(db, shift.Id))
             throw new InvalidOperationException("Hay cobros pendientes de conciliación en este turno.");
         if (await IncomingTransferService.HasPendingAsync(db, shiftId))
             throw new InvalidOperationException("Hay transferencias de abonos o recargas pendientes. Aplíquelas o resuelva sus fondos antes de cerrar.");
+        if (await AccountCreditSettlementService.HasPendingAsync(db, shiftId))
+            throw new InvalidOperationException("Hay reembolsos de saldo a favor sin resolución. Confirme si se movieron los fondos antes de cerrar.");
         var movements = await db.ShiftMovements.AsNoTracking().Where(m => m.ShiftId == shiftId).ToListAsync();
         decimal expected = ShiftLedgerValidator.ExpectedCash(shift, movements);
-        var payments = await db.SalePayments.AsNoTracking().Where(p => p.ShiftId == shiftId).ToListAsync();
-        var sales = await db.Sales.AsNoTracking().Where(s => s.ShiftId == shiftId).ToListAsync();
+        var payments = await ShiftLedgerValidator.Payments(db, shiftId).ToListAsync();
+        var sales = await ShiftLedgerValidator.Sales(db, shiftId).ToListAsync();
         ShiftLedgerValidator.ValidateSales(shift, sales, payments);
         await ShiftLedgerValidator.ValidateCashAsync(db, shift, payments, movements);
         ShiftLedgerValidator.ValidateCashProjection(shift, expected);
@@ -139,13 +171,19 @@ public sealed class ShiftService : IShiftService
     {
         if (cashup.Type == "Final") { await CloseWithCashupAsync(shiftId, cashup); return; }
         string operation = CommercialLedger.OperationId(cashup.OperationId);
-        if (cashup.ClosedCashAmount < 0 || CommercialLedger.Money(cashup.ClosedCashAmount) != cashup.ClosedCashAmount) throw new InvalidOperationException("Conteo inválido.");
+        CashCountEvidence.Validate(cashup);
+        if (cashup.Type is not ("Parcial" or "Partial")) throw new InvalidOperationException("Tipo de arqueo inválido.");
+        cashup.Type = "Parcial";
         await using var db = await _factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
         var actor = await Operations.RequireAsync(db, PermissionCatalog.CashClose);
         if (actor.ShiftId != shiftId) throw new UnauthorizedAccessException("Turno ajeno.");
-        await CommandIdentity.BindAsync(db, actor, operation, "COUNT", shiftId, cashup.ClosedCashAmount, cashup.Notes);
-        if (await db.Cashups.AnyAsync(c => c.OperationId == operation)) return;
+        var recorded = await CashCountEvidence.BindAsync(db, actor, operation, "COUNT", shiftId, cashup);
+        if (recorded is not null)
+        {
+            CashCountEvidence.CopyRecordedResult(recorded, cashup);
+            return;
+        }
         var shift = await db.Shifts.SingleAsync(s => s.Id == shiftId);
         var movements = await db.ShiftMovements.AsNoTracking().Where(m => m.ShiftId == shiftId).ToListAsync();
         cashup.ShiftId = shiftId; cashup.RegisterId = actor.RegisterId; cashup.CashierUserId = actor.UserId;
@@ -166,22 +204,17 @@ public sealed class ShiftService : IShiftService
     }
     public async Task<List<CashupEntity>> GetCashupsAsync(DateTime start, DateTime end)
     {
-        await using var db = await _factory.CreateDbContextAsync();
-        await Operations.RequireAsync(db, PermissionCatalog.CashHistory, false);
-        var cashups = (await db.Cashups.AsNoTracking().ToListAsync()).Where(c => c.Timestamp.IsInDateRange(start, end)).ToList();
-        foreach (var cashup in cashups) await PopulateCashupAsync(db, cashup);
-        return cashups.OrderByDescending(c => c.Timestamp).ToList();
+        var page = await GetCashupPageAsync(start, end, 0, 200);
+        if (page.HasMore) throw new InvalidOperationException("El período supera 200 cortes. Utilice la consulta paginada del historial.");
+        return page.Items;
     }
     private static async Task PopulateCashupAsync(AppDbContext db, CashupEntity cashup, bool captureActor = false)
     {
-        if (cashup.RegisterId is null || cashup.ShiftId is null || !DateTimeOffset.TryParse(cashup.Timestamp, out var end)) return;
-        var movements = (await db.ShiftMovements.AsNoTracking().Where(m => m.ShiftId == cashup.ShiftId).ToListAsync())
-            .Where(m => DateTimeOffset.TryParse(m.Timestamp, out var at) && at <= end).ToList();
-        cashup.TotalSales = movements.Where(m => m.MovementType == MovementType.VentaEfectivo && !m.IsOutflow).Sum(m => m.Amount);
-        cashup.TotalExpenses = movements.Where(m => m.IsOutflow).Sum(m => m.Amount);
+        await PopulateCashupsAsync(db, [cashup], BusinessTime.Zone);
         if (captureActor && Guid.TryParse(cashup.CashierUserId, out var userId))
         {
-            var user = await db.Users.AsNoTracking().SingleAsync(u => u.Id == userId);
+            var user = await db.Users.AsNoTracking().Where(u => u.Id == userId)
+                .Select(u => new { u.FullName, u.RoleString, u.Role }).SingleAsync();
             cashup.CashierName = user.FullName;
             cashup.CashierRole = string.IsNullOrEmpty(user.RoleString) ? user.Role.ToString() : user.RoleString;
         }

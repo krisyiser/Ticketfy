@@ -13,6 +13,11 @@
             <!-- ROW 0: Customer & Header -->
             <Border x:Name="PosCustomerSelector" Grid.Row="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12">
                 <StackPanel Spacing="6">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Text="{Binding CustomerSearch}" Watermark="Buscar cliente por nombre o código" FontSize="11" />
+                        <Button Grid.Column="1" Content="Buscar" Command="{Binding SearchCustomersCommand}" Margin="4,0,0,0" Padding="6,4" />
+                    </Grid>
+                    <TextBlock Text="{Binding CustomerLoadMessage}" FontSize="11" TextWrapping="Wrap" />
                     <Grid ColumnDefinitions="*, Auto">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <mi:MaterialIcon Kind="AccountBox" Width="18" Height="18" Foreground="{DynamicResource AccentPrimaryBrush}" VerticalAlignment="Center"/>
@@ -85,18 +90,14 @@
             <Border Grid.Row="2" Background="{DynamicResource BgTertiaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="12">
                 <StackPanel Spacing="10">
                     <!-- Subtotal, Discount, Tax -->
-                    <Grid RowDefinitions="Auto, Auto, Auto" ColumnDefinitions="*, Auto">
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Subtotal:" Foreground="{DynamicResource TextMutedBrush}"/>
+                    <Grid RowDefinitions="Auto, Auto" ColumnDefinitions="*, Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Antes de promociones:" Foreground="{DynamicResource TextMutedBrush}"/>
                         <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding CartState.Subtotal, StringFormat='${0:N2}'}" Foreground="{DynamicResource TextPrimaryBrush}" FontFamily="{DynamicResource AppFontFamily}"/>
 
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Descuento:" Foreground="{DynamicResource TextMutedBrush}"/>
-                        <!-- We assume Discount is zero since CartStateStore doesn't handle it yet -->
-                        <TextBlock Grid.Row="1" Grid.Column="1" Text="-$0.00" Foreground="{DynamicResource AccentDangerBrush}" FontFamily="{DynamicResource AppFontFamily}"/>
-
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="IVA (16%):" Foreground="{DynamicResource TextMutedBrush}"/>
-                        <!-- Same for Tax -->
-                        <TextBlock Grid.Row="2" Grid.Column="1" Text="$0.00" Foreground="{DynamicResource TextPrimaryBrush}" FontFamily="{DynamicResource AppFontFamily}"/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Promociones:" Foreground="{DynamicResource TextMutedBrush}"/>
+                        <TextBlock x:Name="PromotionDiscountTotal" Grid.Row="1" Grid.Column="1" Text="{Binding CartState.DiscountTotal, StringFormat='-${0:N2}'}" Foreground="{DynamicResource AccentDangerBrush}" FontFamily="{DynamicResource AppFontFamily}"/>
                     </Grid>
+                    <TextBlock Text="Precios con impuestos incluidos" FontSize="11" Foreground="{DynamicResource TextMutedBrush}"/>
 
                     <Separator Background="{DynamicResource BorderBrush}" Height="1"/>
 
@@ -107,6 +108,8 @@
                                    FontSize="{DynamicResource PosPriceFontSize}" FontWeight="ExtraBold" Foreground="{DynamicResource AccentPrimaryBrush}" FontFamily="{DynamicResource AppFontFamily}"/>
                     </Grid>
 
+                    <TextBlock x:Name="CheckoutFeedback" Text="{Binding CheckoutMessage}" TextWrapping="Wrap" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                    <TextBlock x:Name="PricingProgress" Text="{Binding CartState.PricingFeedback}" TextWrapping="Wrap" Foreground="{DynamicResource TextMutedBrush}"/>
                     <!-- PRIMARY CHECKOUT CTA -->
                     <Button Command="{Binding CheckoutCommand}" CommandParameter="Efectivo" Height="50" Background="{DynamicResource AccentSuccessBrush}" Foreground="White" CornerRadius="{DynamicResource AppCornerRadius}" HorizontalAlignment="Stretch" Cursor="Hand">
                         <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">

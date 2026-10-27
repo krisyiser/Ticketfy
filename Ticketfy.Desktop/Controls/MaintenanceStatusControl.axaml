@@ -1,0 +1,50 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Ticketfy.ViewModels.Shell"
+             x:Class="Ticketfy.Controls.MaintenanceStatusControl"
+             x:DataType="vm:MaintenanceStatusViewModel">
+    <UserControl.Styles>
+        <Style Selector="Border.maintenance">
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+        <Style Selector="Border.warning">
+            <Setter Property="BorderBrush" Value="#D99B27" />
+            <Setter Property="BorderThickness" Value="4,0,0,1" />
+        </Style>
+        <Style Selector="Border.blocked">
+            <Setter Property="BorderBrush" Value="#D84848" />
+            <Setter Property="BorderThickness" Value="4,0,0,1" />
+        </Style>
+    </UserControl.Styles>
+    <Border Classes="maintenance"
+            Classes.warning="{Binding HasWarnings}" Classes.blocked="{Binding WritesBlocked}"
+            Background="{DynamicResource BgSecondaryBrush}" Padding="12,4">
+        <Expander Header="{Binding Summary}" HorizontalAlignment="Stretch">
+            <ScrollViewer MaxHeight="280">
+                <StackPanel Spacing="8" Margin="0,6">
+                    <TextBlock Text="{Binding Guidance}" TextWrapping="Wrap" />
+                    <ItemsControl ItemsSource="{Binding Tasks}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:MaintenanceRow">
+                                <StackPanel Margin="0,4">
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding State}" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding LastSuccess}" FontSize="11" />
+                                    <TextBlock Text="{Binding Warning}" FontSize="11" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <WrapPanel>
+                        <Button Name="VerifyMaintenanceButton" Content="Volver a verificar auditoría"
+                                Command="{Binding VerifyCommand}" Margin="0,0,8,0" />
+                        <Button Name="ExportMaintenanceDiagnosticButton" Content="Exportar diagnóstico seguro"
+                                Command="{Binding ExportDiagnosticCommand}" />
+                    </WrapPanel>
+                    <TextBlock Text="{Binding Feedback}" TextWrapping="Wrap" />
+                </StackPanel>
+            </ScrollViewer>
+        </Expander>
+    </Border>
+</UserControl>

@@ -19,6 +19,10 @@
                 <Grid ColumnDefinitions="*,*">
                     <StackPanel Grid.Column="0" Margin="0,0,4,0" Spacing="4">
                         <TextBlock Text="Proveedor" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBox Text="{Binding SupplierSearch}" Watermark="Buscar proveedor" />
+                            <Button Grid.Column="1" Content="Buscar" Command="{Binding SearchSuppliersCommand}" />
+                        </Grid>
                         <ComboBox PlaceholderText="Seleccione Proveedor..." ItemsSource="{Binding Suppliers}" SelectedItem="{Binding SelectedSupplierForPurchase, Mode=TwoWay}" HorizontalAlignment="Stretch" Padding="8">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate x:DataType="dto:SupplierDto">
@@ -37,6 +41,12 @@
                 <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,4" />
 
                 <!-- Add Item Row -->
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBox Text="{Binding ProductSearch}" Watermark="Buscar producto por nombre o código" />
+                    <Button Grid.Column="1" Content="Buscar" Command="{Binding SearchProductsCommand}" />
+                </Grid>
+                <CheckBox Content="Sólo productos con este proveedor preferido" IsChecked="{Binding PreferredSupplierOnly}" />
+                <TextBlock Text="{Binding CatalogMessage}" FontSize="11" TextWrapping="Wrap" />
                 <Grid x:Name="AddPurchaseItemRow" ColumnDefinitions="2.5*, 1*, 1*, Auto">
                     <StackPanel Grid.Column="0" Margin="0,0,4,0" Spacing="4">
                         <TextBlock Text="Producto" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />

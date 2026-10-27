@@ -11,9 +11,20 @@ namespace Ticketfy.Core.Configuration;
 /// </summary>
 public static class AppDataPaths
 {
-    public static string RootDirectory => Path.Combine(
+    private static string? _selectedDataDirectory;
+    public static string RootDirectory => _selectedDataDirectory ?? Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Ticketfy");
+
+    /// <summary>Explicit startup selection for a separately restored installation or isolated laboratory.</summary>
+    internal static void UseDataDirectory(string directory)
+    {
+        if (!Path.IsPathFullyQualified(directory)) throw new ArgumentException("La carpeta de datos debe ser una ruta absoluta.");
+        string full = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (full.Length <= (Path.GetPathRoot(full)?.Length ?? 0) || File.Exists(full))
+            throw new ArgumentException("Seleccione una carpeta de datos específica, no la raíz del disco ni un archivo.");
+        _selectedDataDirectory = full;
+    }
 
     public static string DatabaseDirectory => Path.Combine(RootDirectory, "Database");
     public static string DatabaseFile => Path.Combine(DatabaseDirectory, AppConstants.DatabaseFileName);

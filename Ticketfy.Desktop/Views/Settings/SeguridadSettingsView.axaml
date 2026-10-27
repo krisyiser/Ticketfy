@@ -22,6 +22,14 @@
                 </Grid>
             </Border>
 
+            <Border Padding="16" Background="{DynamicResource BgSecondaryBrush}" CornerRadius="{DynamicResource AppCornerRadius}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Zona horaria comercial" FontSize="14" FontWeight="Bold" />
+                    <ComboBox ItemsSource="{Binding BusinessTimeZones}" SelectedItem="{Binding State.Company.TimeZoneId, Mode=TwoWay}" />
+                    <TextBlock Text="Determina los días y horas de reportes, independientemente de Windows. Cierre todos los turnos antes de cambiarla y reinicie después de guardar. Las fechas históricas sin zona se interpretan como hora del negocio; cambiar la zona puede cambiar el día de agrupación de los instantes UTC." TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
             <!-- 1. COPIAS DE SEGURIDAD SQLITE -->
             <Border Padding="16" Background="{DynamicResource BgSecondaryBrush}" CornerRadius="{DynamicResource AppCornerRadius}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                 <StackPanel Spacing="14">
@@ -86,6 +94,27 @@
                     <TextBlock Text="2. Privacidad y telemetría" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
                     <ToggleSwitch IsChecked="{Binding AnonymousTelemetryEnabled, Mode=TwoWay}" OffContent="Telemetría operativa anónima (desactivada)" OnContent="Telemetría operativa anónima (activada)" />
                     <TextBlock Text="Desactivada por defecto. Sólo registra localmente nombre del evento, fecha y resultado; nunca ventas, importes, clientes, credenciales o identificadores del equipo." FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource TextMutedBrush}" />
+                </StackPanel>
+            </Border>
+
+            <Border Padding="16" Background="{DynamicResource BgSecondaryBrush}" CornerRadius="{DynamicResource AppCornerRadius}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Recuperación ante pérdida del equipo" FontSize="14" FontWeight="Bold" />
+                    <TextBlock Text="El respaldo .db no reemplaza este paquete: incluye base comercial, auditoría y llaves cifradas. Cierre todos los turnos para crearlo. No incluye licencias ni credenciales de integraciones." TextWrapping="Wrap" />
+                    <TextBox Text="{Binding RecoveryPath}" Watermark="Ruta absoluta de un archivo .tfyrecovery" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="Elegir destino nuevo" Command="{Binding SelectRecoveryDestinationCommand}" />
+                        <Button Content="Abrir paquete para verificar" Command="{Binding SelectRecoveryBundleCommand}" />
+                    </StackPanel>
+                    <TextBox Text="{Binding RecoveryPassphrase}" PasswordChar="●" Watermark="Frase de recuperación (mínimo 20 caracteres)" />
+                    <TextBox Text="{Binding RecoveryPassphraseConfirmation}" PasswordChar="●" Watermark="Repetir frase (al crear)" />
+                    <CheckBox IsChecked="{Binding RecoveryCustodyConfirmed}" Content="He guardado la frase fuera de este equipo. Si la pierdo, no se podrá recuperar el paquete." />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="Crear paquete integral" Command="{Binding CreateRecoveryBundleCommand}" IsEnabled="{Binding !IsExecutingBackup}" />
+                        <Button Content="Verificar paquete" Command="{Binding VerifyRecoveryBundleCommand}" IsEnabled="{Binding !IsExecutingBackup}" />
+                    </StackPanel>
+                    <TextBlock Text="Para recuperar: cierre Ticketfy e inícielo con --recovery. El asistente sólo acepta una carpeta nueva; no sobrescribe la instalación actual. Guarde el paquete fuera del disco de trabajo." TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding FeedbackMessage}" TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
 

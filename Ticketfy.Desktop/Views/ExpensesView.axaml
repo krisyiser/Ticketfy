@@ -19,7 +19,7 @@
                         <mi:MaterialIcon Kind="CashMinus" Width="22" Height="22" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <StackPanel VerticalAlignment="Center" Spacing="2">
-                        <TextBlock Text="Control de Gastos Operativos y Balance de Utilidad Neta Real" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
+                        <TextBlock Text="Gastos operativos y resultado comercial" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
                         <TextBlock Text="{Binding PeriodSubtitleDisplay}" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" />
                     </StackPanel>
                 </StackPanel>
@@ -32,12 +32,12 @@
 
                 <!-- Direct Cash Cutoff / Reset Button -->
                 <Button Grid.Column="2" Command="{Binding PerformCashCutoffCommand}"
-                        ToolTip.Tip="Realizar Arqueo y Corte de Caja para cerrar el turno actual y reiniciar todos los contadores a $0.00"
+                        ToolTip.Tip="Contar el efectivo y cerrar el turno actual. El historial y los totales de otros períodos se conservan."
                         Padding="12,8" CornerRadius="{DynamicResource AppCornerRadius}"
                         Background="{DynamicResource BgTertiaryBrush}" BorderBrush="{DynamicResource AccentWarningBrush}" BorderThickness="1.5" Cursor="Hand" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <mi:MaterialIcon Kind="CashRegister" Width="18" Height="18" Foreground="{DynamicResource AccentWarningBrush}" />
-                        <TextBlock Text="CORTE DE CAJA / REINICIAR" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AccentWarningBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="CORTE DE CAJA" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AccentWarningBrush}" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
             </Grid>
@@ -47,7 +47,10 @@
         <controls:AlertBannerControl Grid.Row="1" Message="{Binding FeedbackMessage, Mode=TwoWay}" IsError="{Binding IsFeedbackError}" Margin="0,0,0,12" />
 
         <!-- 2. Financial Metrics Cards -->
-        <expenses:NetProfitAnalyticsView Grid.Row="2" Margin="0,0,0,16" />
+        <StackPanel Grid.Row="2" Margin="0,0,0,16" Spacing="8">
+            <TextBlock Text="{Binding ReadMessage}" TextWrapping="Wrap" />
+            <expenses:NetProfitAnalyticsView IsVisible="{Binding FinancialVisible}" />
+        </StackPanel>
 
         <!-- 3. Main Workspace -->
         <expenses:ExpenseEntryView Grid.Row="3" />

@@ -12,7 +12,7 @@
         <converters:StringToDoubleConverter x:Key="StringToDoubleConverter"/>
     </UserControl.Resources>
 
-    <Border Width="520" Padding="24" Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="12">
+    <Border Width="520" MaxHeight="600" Padding="24" Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="12">
         <Grid>
             <DockPanel LastChildFill="True">
             <!-- Header -->
@@ -32,9 +32,14 @@
             <!-- Bottom Action Buttons -->
             <StackPanel DockPanel.Dock="Bottom" Margin="0,16,0,0" Spacing="10">
                 <controls:AlertBannerControl Message="{Binding ErrorMessage}" IsError="True" />
+                <TextBlock IsVisible="{Binding RequiresReconciliation}" TextWrapping="Wrap"
+                           Text="Pendiente de conciliación. Cerrar esta ventana no cancela el pago. Revise la referencia en Control comercial; no vuelva a cobrar."
+                           Foreground="#DC2626" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding OperationReference, StringFormat='Referencia local: {0}'}" FontSize="11"
+                           TextWrapping="Wrap" />
 
                 <Grid ColumnDefinitions="*,Auto,Auto">
-                    <Button Grid.Column="0" Command="{Binding CancelCommand}" Content="CANCELAR" Margin="0,0,16,0" Padding="16,12"
+                    <Button Grid.Column="0" Command="{Binding CancelCommand}" Content="CERRAR" IsEnabled="{Binding !IsProcessing}" Margin="0,0,16,0" Padding="16,12"
                             Background="#F87171" BorderBrush="#DC2626" BorderThickness="1"
                             Foreground="White" FontWeight="Bold" CornerRadius="8" HorizontalAlignment="Left" />
                     
@@ -55,7 +60,7 @@
 
             <!-- Middle Payment Details & CFDI 4.0 -->
             <ScrollViewer VerticalScrollBarVisibility="Visible" Padding="0,0,12,0" Margin="0,0,-12,0">
-                <StackPanel Spacing="16">
+                <StackPanel Spacing="16" IsEnabled="{Binding CanEditTender}">
                     <!-- Total Display Box -->
                     <Border Background="{DynamicResource BgTertiaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
                         <Grid ColumnDefinitions="*, Auto">
@@ -354,7 +359,7 @@
                     <mi:MaterialIcon Kind="CreditCardWireless" Width="64" Height="64" Foreground="#10B981" />
                     <TextBlock Text="{Binding TerminalStatusMessage}" FontSize="18" FontWeight="Bold" Foreground="White" TextAlignment="Center" />
                     <ProgressBar IsIndeterminate="True" Width="200" Foreground="#10B981" Height="4" />
-                    <Button Content="CANCELAR COBRO EN TERMINAL" Command="{Binding CancelTerminalPaymentCommand}"
+                    <Button Content="DETENER ESPERA (NO CANCELA EL COBRO)" Command="{Binding CancelTerminalPaymentCommand}"
                             Background="#EF4444" Foreground="White" FontWeight="Bold" CornerRadius="6" Padding="16,10" HorizontalAlignment="Center" Margin="0,16,0,0"/>
                 </StackPanel>
             </Border>

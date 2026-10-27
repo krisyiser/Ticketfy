@@ -18,6 +18,24 @@ namespace Ticketfy.ViewModels.Inventory;
 public partial class InventoryCatalogViewModel : ObservableObject
 {
     private readonly IProductService _productService;
+    private int _loadVersion;
+    [ObservableProperty] private int _page;
+    [ObservableProperty] private bool _hasMore;
+    [ObservableProperty] private string _loadMessage = "";
+    private decimal _stockCost, _stockSale;
+    private bool _costsVisible;
+    public void ClearSessionData()
+    {
+        SearchQuery = string.Empty;
+        ++_loadVersion;
+        Page = 0;
+        Products.Clear(); FilteredProducts.Clear();
+        _stockCost = _stockSale = 0m; _costsVisible = false;
+        HasMore = false; IsLoading = false; LoadMessage = string.Empty;
+        OnPropertyChanged(nameof(TotalStockCost)); OnPropertyChanged(nameof(TotalStockCostDisplay));
+        OnPropertyChanged(nameof(TotalStockSale)); OnPropertyChanged(nameof(PageLabel));
+    }
+    public string PageLabel => $"Página {Page + 1} · hasta 100 productos · totales de TODOS los resultados físicos filtrados";
 
     public ObservableCollection<ProductDto> Products { get; } = [];
     public ObservableCollection<ProductDto> FilteredProducts { get; } = [];
@@ -27,12 +45,12 @@ public partial class InventoryCatalogViewModel : ObservableObject
 
     partial void OnSearchQueryChanged(string value)
     {
-        ApplyFilter();
+        Page = 0; _ = ReloadAfterSearchAsync();
     }
 
     partial void OnShowOnlyLowStockChanged(bool value)
     {
-        ApplyFilter();
+        Page = 0; _ = LoadProductsAsync();
     }
 
     [RelayCommand] public void ToggleLowStockFilter() => ShowOnlyLowStock = !ShowOnlyLowStock;
@@ -40,42 +58,27 @@ public partial class InventoryCatalogViewModel : ObservableObject
     public void ScanBarcode(string query)
     {
         SearchQuery = query;
-        ApplyFilter();
     }
 
-    private static readonly string SettingsPath = System.IO.Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        ".gemini", "antigravity-ide", "pos_settings.json"
-    );
-
-    public static double LoadDefaultMinStock()
+    public double DefaultMinStock { get; private set; } = 5d;
+    public async Task SetDefaultMinStockAsync(double value)
     {
-        try
-        {
-            if (System.IO.File.Exists(SettingsPath))
-            {
-                var text = System.IO.File.ReadAllText(SettingsPath);
-                if (double.TryParse(text.Trim(), out double val)) return val;
-            }
-        }
-        catch { }
-        return 5.0;
-    }
-
-    public static void SaveDefaultMinStock(double val)
-    {
-        try
-        {
-            var dir = System.IO.Path.GetDirectoryName(SettingsPath);
-            if (dir != null && !System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
-            System.IO.File.WriteAllText(SettingsPath, val.ToString());
-        }
-        catch { }
+        await _productService.SetDefaultMinStockAsync(value);
+        DefaultMinStock = value; Page = 0; await LoadProductsAsync();
     }
     [ObservableProperty] private bool _isLoading = false;
 
-    public decimal TotalStockCost => FilteredProducts.Sum(p => p.Cost * (decimal)p.Stock);
-    public decimal TotalStockSale => FilteredProducts.Sum(p => p.Price * (decimal)p.Stock);
+    public decimal TotalStockCost => _stockCost;
+    public string TotalStockCostDisplay => _costsVisible ? TotalStockCost.ToString("C2") : "Restringido";
+    public decimal TotalStockSale => _stockSale;
+    [RelayCommand] private async Task PreviousPageAsync() { if (Page > 0 && !IsLoading) { Page--; await LoadProductsAsync(); } }
+    [RelayCommand] private async Task NextPageAsync() { if (HasMore && !IsLoading) { Page++; await LoadProductsAsync(); } }
+    private async Task ReloadAfterSearchAsync()
+    {
+        int version = ++_loadVersion;
+        await Task.Delay(150);
+        if (version == _loadVersion) await LoadProductsAsync();
+    }
 
     public InventoryCatalogViewModel(IProductService productService)
     {
@@ -84,50 +87,38 @@ public partial class InventoryCatalogViewModel : ObservableObject
 
     public async Task LoadProductsAsync()
     {
+        int version = ++_loadVersion;
         try
         {
             IsLoading = true;
-            var items = await _productService.GetAllAsync();
+            DefaultMinStock = await _productService.GetDefaultMinStockAsync();
+            if (version != _loadVersion) return;
+            var result = await _productService.GetInventoryPageAsync(Page, search: SearchQuery, lowStockOnly: ShowOnlyLowStock);
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                Products.Clear();
-                foreach (var item in items) Products.Add(item);
-                ApplyFilter();
+                if (version != _loadVersion) return;
+                Products.Clear(); FilteredProducts.Clear();
+                foreach (var item in result.Items) { Products.Add(item); FilteredProducts.Add(item); }
+                HasMore = result.HasMore; _stockCost = result.StockCost; _stockSale = result.StockSale; _costsVisible = result.CostsVisible;
+                LoadMessage = "";
+                OnPropertyChanged(nameof(TotalStockCost)); OnPropertyChanged(nameof(TotalStockCostDisplay));
+                OnPropertyChanged(nameof(TotalStockSale)); OnPropertyChanged(nameof(PageLabel));
             });
         }
         catch (Exception ex)
         {
             Log.Error(ex, "InventoryCatalogViewModel: error loading products");
+            if (version == _loadVersion)
+            {
+                ClearSessionData();
+                LoadMessage = "No se pudo actualizar el inventario. Verifique permisos y conexión a la base.";
+            }
         }
         finally
         {
-            IsLoading = false;
+            if (version == _loadVersion) IsLoading = false;
         }
     }
 
-    public void ApplyFilter()
-    {
-        var query = SearchQuery.Trim().ToLower();
-        var items = Products.AsEnumerable();
-
-        if (ShowOnlyLowStock)
-        {
-            double defaultMin = 5.0;
-            items = items.Where(p => p.Stock <= p.MinStock || p.Stock <= defaultMin);
-        }
-
-        if (!string.IsNullOrWhiteSpace(query))
-        {
-            items = items.Where(p =>
-                (p.Name != null && p.Name.ToLower().Contains(query)) ||
-                (p.Barcode != null && p.Barcode.ToLower().Contains(query)) ||
-                (p.Category != null && p.Category.ToLower().Contains(query)));
-        }
-
-        FilteredProducts.Clear();
-        foreach (var item in items) FilteredProducts.Add(item);
-
-        OnPropertyChanged(nameof(TotalStockCost));
-        OnPropertyChanged(nameof(TotalStockSale));
-    }
+    public void ApplyFilter() { Page = 0; _ = LoadProductsAsync(); }
 }

@@ -10,7 +10,7 @@
         <Border Width="450" Padding="32" CornerRadius="12"
                 Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                 HorizontalAlignment="Center" VerticalAlignment="Center">
-            <StackPanel Spacing="20">
+            <StackPanel Spacing="20" IsEnabled="{Binding !IsProfileLoading}">
                 <StackPanel HorizontalAlignment="Center" Spacing="8">
                     <Border Width="56" Height="56" CornerRadius="8" Background="{DynamicResource AccentPrimaryBrush}" HorizontalAlignment="Center">
                         <mi:MaterialIcon Kind="Security" Width="32" Height="32" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -19,10 +19,11 @@
                     <TextBlock Text="Cree la cuenta de Administrador Maestro" FontSize="13" Foreground="{DynamicResource TextMutedBrush}" HorizontalAlignment="Center" />
                 </StackPanel>
 
-                <StackPanel Spacing="12">
-                    <TextBox Text="{Binding AdminFullName, Mode=TwoWay}" Watermark="Nombre Completo" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
-                    <TextBox Text="{Binding AdminUsername, Mode=TwoWay}" Watermark="Nombre de Usuario" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
-                    <TextBox Text="{Binding AdminPassword, Mode=TwoWay}" PasswordChar="•" Watermark="Contraseña" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
+                <StackPanel Spacing="12" IsEnabled="{Binding CanCreate}">
+                    <TextBox Text="{Binding AdminFullName, Mode=TwoWay}" MaxLength="256" Watermark="Nombre Completo" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
+                    <TextBox Text="{Binding AdminUsername, Mode=TwoWay}" MaxLength="128" Watermark="Nombre de Usuario" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
+                    <TextBox Text="{Binding AdminPassword, Mode=TwoWay}" MaxLength="1024" PasswordChar="•" Watermark="Contraseña" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
+                    <TextBlock Text="Use una frase de al menos 15 caracteres. Se admiten espacios." TextWrapping="Wrap" FontSize="12" />
                     <StackPanel Spacing="4">
                         <TextBlock Text="PIN rápido de 4 Dígitos" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
                         <controls:PinInputControl Pin1="{Binding AdminPin1, Mode=TwoWay}" Pin2="{Binding AdminPin2, Mode=TwoWay}" Pin3="{Binding AdminPin3, Mode=TwoWay}" Pin4="{Binding AdminPin4, Mode=TwoWay}" HorizontalAlignment="Left" />

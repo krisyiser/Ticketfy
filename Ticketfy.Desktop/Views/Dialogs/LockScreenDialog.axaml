@@ -19,17 +19,22 @@
                     <TextBlock Text="{Binding CashierName, StringFormat='Cajero: {0}'}" FontSize="13" Foreground="#64748B" HorizontalAlignment="Center"/>
                 </StackPanel>
 
-                <TextBlock Text="Ingrese PIN de 4 dígitos (Cajero o Supervisor) para desbloquear" FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap" TextAlignment="Center"/>
+                <TextBlock Text="Use la contraseña del usuario de esta sesión. El PIN sólo sirve durante 15 minutos desde una verificación primaria en esta ejecución." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap" TextAlignment="Center"/>
+                <CheckBox IsChecked="{Binding UsePassword}" Content="Usar contraseña" />
+                <StackPanel Spacing="8" IsVisible="{Binding UsePassword}">
+                    <TextBox Text="{Binding Password}" PasswordChar="•" MaxLength="1024" Watermark="Contraseña" />
+                    <Button Command="{Binding VerifyPasswordCommand}" Content="Verificar y desbloquear" />
+                </StackPanel>
 
-                <Border Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Height="48" Width="220">
-                    <TextBlock Text="{Binding EnteredPin}" FontSize="24" FontWeight="Bold" LetterSpacing="12" 
+                <Border IsVisible="{Binding !UsePassword}" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Height="48" Width="220">
+                    <TextBlock Text="{Binding MaskedPin}" FontSize="24" FontWeight="Bold" LetterSpacing="12"
                                HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#0F172A"/>
                 </Border>
 
-                <TextBlock Text="{Binding ErrorMessage}" Foreground="#EF4444" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center" Height="18"/>
+                <TextBlock Text="{Binding ErrorMessage}" Foreground="#EF4444" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center" TextWrapping="Wrap" MaxWidth="350"/>
 
                 <!-- Numeric Keypad -->
-                <Grid RowDefinitions="Auto, Auto, Auto, Auto" ColumnDefinitions="Auto, Auto, Auto" HorizontalAlignment="Center">
+                <Grid IsVisible="{Binding !UsePassword}" RowDefinitions="Auto, Auto, Auto, Auto" ColumnDefinitions="Auto, Auto, Auto" HorizontalAlignment="Center">
                     <Button Grid.Row="0" Grid.Column="0" Content="1" Command="{Binding AppendPinDigitCommand}" CommandParameter="1" Margin="6" Width="64" Height="64" CornerRadius="32" FontSize="24" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Background="#F1F5F9" Foreground="#0F172A"/>
                     <Button Grid.Row="0" Grid.Column="1" Content="2" Command="{Binding AppendPinDigitCommand}" CommandParameter="2" Margin="6" Width="64" Height="64" CornerRadius="32" FontSize="24" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Background="#F1F5F9" Foreground="#0F172A"/>
                     <Button Grid.Row="0" Grid.Column="2" Content="3" Command="{Binding AppendPinDigitCommand}" CommandParameter="3" Margin="6" Width="64" Height="64" CornerRadius="32" FontSize="24" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Background="#F1F5F9" Foreground="#0F172A"/>

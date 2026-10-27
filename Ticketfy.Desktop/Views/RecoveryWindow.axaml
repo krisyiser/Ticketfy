@@ -1,0 +1,18 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Ticketfy.ViewModels" x:Class="Ticketfy.Views.RecoveryWindow" x:DataType="vm:RecoveryViewModel"
+        Title="Ticketfy — Recuperación integral" Width="760" Height="640" MinWidth="620" MinHeight="500"
+        WindowStartupLocation="CenterScreen">
+ <ScrollViewer><StackPanel Margin="24" Spacing="12" IsEnabled="{Binding !IsBusy}">
+  <TextBlock Text="Recuperar en una carpeta nueva" FontSize="24" FontWeight="Bold" />
+  <TextBlock Text="Este asistente funciona sin iniciar la base operativa. Requiere el paquete integral y su frase de recuperación. Una copia .db por sí sola no contiene la auditoría ni las llaves." TextWrapping="Wrap" />
+  <TextBox Text="{Binding BundlePath}" Watermark="Archivo .tfyrecovery" />
+  <Button Content="Seleccionar paquete" Command="{Binding SelectBundleCommand}" />
+  <TextBlock Text="Frase de recuperación" />
+  <TextBox Text="{Binding Passphrase}" PasswordChar="●" />
+  <TextBlock Text="Ruta absoluta de una carpeta nueva (su carpeta padre debe existir)" />
+  <TextBox Text="{Binding NewDataDirectory}" Watermark="C:\TicketfyRecuperado" />
+  <CheckBox IsChecked="{Binding DestinationConfirmed}" Content="Confirmo la carpeta nueva y conservaré los datos originales. No se copiarán credenciales bancarias ni licencias." />
+  <Button Content="Verificar y recuperar copia" Command="{Binding RestoreCommand}" />
+  <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
+ </StackPanel></ScrollViewer>
+</Window>

@@ -12,12 +12,13 @@ using Ticketfy.Logging;
 
 namespace Ticketfy.Services.Auth;
 
-public record AuthenticateResult(bool IsSuccess, UserModel? User = null);
+public record AuthenticateResult(bool IsSuccess, UserModel? User = null, bool PasswordChangeRequired = false);
 
 public sealed partial class AuthService : ObservableObject
 {
     private readonly IUserService _userService;
     private readonly IUserRolePermissionEngine _permissionEngine;
+    private long _authenticationVersion;
 
     [ObservableProperty]
     private UserDto? _currentUser;
@@ -37,16 +38,18 @@ public sealed partial class AuthService : ObservableObject
         return result.IsSuccess;
     }
 
-    public async Task<AuthenticateResult> AuthenticateAsync(string username, string password)
+    public async Task<AuthenticateResult> AuthenticateAsync(string username, string password, Func<bool>? isRequestCurrent = null)
     {
-        var user = await _userService.GetByNameAsync(username);
-        if (user is null || !user.IsActive)
-        {
-            Log.Warning("Authentication failed: user {UserReference} not found or inactive", LogSanitizer.Pseudonymize(username));
-            return new AuthenticateResult(false);
-        }
-
-        if (!await _userService.VerifyCredentialAsync(user.Id, password))
+        var version = Interlocked.Increment(ref _authenticationVersion);
+        _userService.ClearQuickAccess();
+        CurrentUser = null;
+        IsAuthenticated = false;
+        var result = await _userService.SignInAsync(username, password,
+            () => version == _authenticationVersion && isRequestCurrent?.Invoke() != false);
+        if (version != _authenticationVersion || isRequestCurrent?.Invoke() == false) return new(false);
+        if (result.PasswordChangeRequired) return new(false, PasswordChangeRequired: true);
+        var user = result.User;
+        if (user is null)
         {
             Log.Warning("Authentication failed: invalid credentials for user {UserReference}", LogSanitizer.Pseudonymize(username));
             return new AuthenticateResult(false);
@@ -54,11 +57,23 @@ public sealed partial class AuthService : ObservableObject
 
         var userModel = _permissionEngine.MapDtoToModel(user);
 
+        if (version != _authenticationVersion || isRequestCurrent?.Invoke() == false) return new AuthenticateResult(false);
+
         CurrentUser = user;
         IsAuthenticated = true;
         Log.Information("Login successful for user {UserReference} ({Role})", LogSanitizer.Pseudonymize(user.Username), userModel.RoleString);
 
         return new AuthenticateResult(true, userModel);
+    }
+
+    public async Task<bool> UpgradeOwnPasswordAsync(string username, string currentPassword, string newPassword)
+    {
+        var version = Interlocked.Increment(ref _authenticationVersion);
+        _userService.ClearQuickAccess();
+        CurrentUser = null;
+        IsAuthenticated = false;
+        bool changed = await _userService.UpgradeOwnPasswordAsync(username, currentPassword, newPassword);
+        return version == _authenticationVersion && changed;
     }
 
     public async Task<string?> GetPasswordHintAsync(string username)
@@ -68,18 +83,18 @@ public sealed partial class AuthService : ObservableObject
 
     public async Task<bool> VerifyManagerPinAsync(string userId, string pin)
     {
-        var user = (await _userService.GetManagersAsync()).SingleOrDefault(u => u.Id == userId && u.IsActive);
-        return user is not null && await _userService.VerifyCredentialAsync(userId, pin, true);
+        return await _userService.VerifyManagerCredentialAsync(userId, pin, true);
     }
 
     public async Task<bool> VerifyManagerPasswordAsync(string userId, string password)
     {
-        var user = (await _userService.GetManagersAsync()).SingleOrDefault(u => u.Id == userId && u.IsActive);
-        return user is not null && await _userService.VerifyCredentialAsync(userId, password);
+        return await _userService.VerifyManagerCredentialAsync(userId, password);
     }
 
     public void Logout()
     {
+        Interlocked.Increment(ref _authenticationVersion);
+        _userService.ClearQuickAccess();
         Log.Information("Logout for user {UserReference}", LogSanitizer.Pseudonymize(CurrentUser?.Username));
         CurrentUser = null;
         IsAuthenticated = false;

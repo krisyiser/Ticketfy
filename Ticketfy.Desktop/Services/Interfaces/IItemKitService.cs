@@ -7,8 +7,12 @@ namespace Ticketfy.Services.Interfaces;
 public interface IItemKitService
 {
     Task<List<ItemKitDto>> GetAllAsync();
+    Task<CatalogPage<KitDirectoryRow>> GetPageAsync(int page, int size = 100, string? search = null, bool includeInactive = false);
+    Task<KitComponentPage?> GetComponentsPageAsync(string id, int page, int size = 100);
     Task<ItemKitDto?> GetByBarcodeAsync(string barcode);
-    Task<bool> SaveAsync(string id, string barcode, string name, decimal price, string description, List<ItemKitItemDto> items);
-    Task<bool> DeleteAsync(string id);
+    Task<KitCapabilities> GetCapabilitiesAsync();
+    Task<KitDraft?> GetForEditAsync(string productId);
+    Task SaveAsync(KitDraft draft, string operationId);
+    Task SetActiveAsync(string productId, bool active, string operationId);
     Task<bool> DeductKitStockAsync(string kitId, double kitQuantity);
 }

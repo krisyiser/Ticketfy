@@ -65,14 +65,16 @@ public partial class ShiftNotesDialogViewModel : ObservableObject
         {
             if (IsEditing && EditingNote != null)
             {
-                await _shiftNoteService.UpdateNoteAsync(EditingNote.Id, NewNoteText, Category);
+                if (!await _shiftNoteService.UpdateNoteAsync(EditingNote.Id, NewNoteText, Category))
+                    throw new InvalidOperationException("La nota ya no está disponible para editar.");
                 FeedbackMessage = "¡Nota actualizada exitosamente!";
                 IsEditing = false;
                 EditingNote = null;
             }
             else
             {
-                await _shiftNoteService.SaveNoteAsync(CashierName, NewNoteText, Category);
+                if (!await _shiftNoteService.SaveNoteAsync(CashierName, NewNoteText, Category))
+                    throw new InvalidOperationException("No se guardó la nota.");
                 FeedbackMessage = "¡Nota guardada correctamente!";
             }
 
@@ -82,7 +84,7 @@ public partial class ShiftNotesDialogViewModel : ObservableObject
         catch (Exception ex)
         {
             Log.Error(ex, "Error saving note");
-            FeedbackMessage = "Error al guardar la nota";
+            FeedbackMessage = ex is UnauthorizedAccessException or InvalidOperationException ? ex.Message : "No se pudo guardar la nota. Intente nuevamente.";
         }
     }
 
@@ -112,13 +114,13 @@ public partial class ShiftNotesDialogViewModel : ObservableObject
         if (note == null) return;
         try
         {
-            await _shiftNoteService.DeleteNoteAsync(note.Id);
-            FeedbackMessage = "Nota eliminada";
+            FeedbackMessage = await _shiftNoteService.DeleteNoteAsync(note.Id) ? "Nota cancelada; se conserva su historial." : "La nota no está disponible.";
             await LoadNotesAsync();
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error deleting note");
+            FeedbackMessage = ex is UnauthorizedAccessException ? ex.Message : "No se pudo cancelar la nota.";
         }
     }
 
@@ -134,6 +136,7 @@ public partial class ShiftNotesDialogViewModel : ObservableObject
         catch (Exception ex)
         {
             Log.Error(ex, "Error resolving note");
+            FeedbackMessage = ex is UnauthorizedAccessException ? ex.Message : "No se pudo resolver la nota.";
         }
     }
 

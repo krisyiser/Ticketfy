@@ -7,7 +7,7 @@
              x:DataType="vm:CatalogViewModel">
 
     <!-- Product Catalog Grid & Categories -->
-    <Grid RowDefinitions="Auto,Auto,*">
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
 
         <!-- 1. Search Bar & Fast Multiplier Scanner (N*CODE) + Keybinding Badge [F3] -->
         <Border x:Name="PosSearchBorder" Grid.Row="0" Margin="0,0,0,10" Padding="12,8"
@@ -76,6 +76,7 @@
                         <Button Command="{Binding $parent[UserControl].((vm:CatalogViewModel)DataContext).AddToCartCommand}"
                                 CommandParameter="{Binding}"
                                 IsEnabled="{Binding IsAvailable}"
+                                ToolTip.Tip="{Binding InventoryWarning}"
                                 Width="165" Height="190" Margin="6" Padding="0" CornerRadius="{DynamicResource CardCornerRadius}" Cursor="Hand"
                                 Background="{DynamicResource BgSecondaryBrush}"
                                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
@@ -115,7 +116,7 @@
                                             VerticalAlignment="Center" 
                                             Padding="10,5" 
                                             CornerRadius="{DynamicResource AppCornerRadius}">
-                                        <TextBlock Text="AGOTADO" 
+                                        <TextBlock Text="{Binding UnavailableLabel}"
                                                    Foreground="White" 
                                                    FontWeight="Bold" 
                                                    FontSize="12"/>
@@ -127,5 +128,13 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </ScrollViewer>
+        <StackPanel Grid.Row="3" Spacing="6" Margin="0,8,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="8" IsEnabled="{Binding !IsLoading}">
+                <Button Content="Anterior" Command="{Binding PreviousPageCommand}" />
+                <TextBlock Text="{Binding PageLabel}" VerticalAlignment="Center" />
+                <Button Content="Siguiente" Command="{Binding NextPageCommand}" IsEnabled="{Binding HasNextPage}" />
+            </StackPanel>
+            <TextBlock Text="{Binding FeedbackMessage}" TextWrapping="Wrap" />
+        </StackPanel>
     </Grid>
 </UserControl>

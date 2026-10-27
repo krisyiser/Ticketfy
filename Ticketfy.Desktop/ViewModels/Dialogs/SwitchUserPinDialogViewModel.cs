@@ -10,71 +10,68 @@ using Ticketfy.Core.Services;
 
 namespace Ticketfy.ViewModels.Dialogs;
 
-public partial class SwitchUserPinDialogViewModel : ObservableObject
+public partial class SwitchUserPinDialogViewModel : ObservableObject, Ticketfy.ViewModels.Navigation.IDismissibleDialog
 {
     private readonly IUserRepository? _userRepository;
     private readonly ISessionManager _sessionManager;
-    private readonly Action? _closeAction;
     private readonly Action<bool>? _resultCallback;
+    private readonly long _sessionVersion;
+    private long _requestVersion;
+    private bool _finished;
+    public Task InitializationTask { get; }
+    private bool IsCurrent => !_finished && _sessionVersion == _sessionManager.SessionVersion && !_sessionManager.IsTerminalLocked;
 
     [ObservableProperty] private ObservableCollection<UserModel> _availableUsers = new();
     [ObservableProperty] private UserModel? _selectedUser;
-    [ObservableProperty] private string _enteredPin = string.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(MaskedPin))]
+    private string _enteredPin = string.Empty;
+    public string MaskedPin => new('•', EnteredPin.Length);
     [ObservableProperty] private string _errorMessage = string.Empty;
+    [ObservableProperty] private string _password = string.Empty;
+    [ObservableProperty] private bool _usePassword = true;
+    [ObservableProperty] private bool _isVerifying;
+    partial void OnUsePasswordChanged(bool value) => ClearPin();
 
     public SwitchUserPinDialogViewModel(ISessionManager sessionManager, IUserRepository? userRepository = null, Action<bool>? resultCallback = null)
     {
         _sessionManager = sessionManager;
+        _sessionVersion = sessionManager.SessionVersion;
         _userRepository = userRepository;
         _resultCallback = resultCallback;
-        _ = LoadUsersAsync();
+        InitializationTask = LoadUsersAsync();
     }
 
     public SwitchUserPinDialogViewModel(IUserRepository userRepository, ISessionManager sessionManager, Action closeAction)
-        : this(sessionManager, userRepository, (success) => { if (success) closeAction?.Invoke(); else closeAction?.Invoke(); })
-    {
-        _closeAction = closeAction;
-    }
+        : this(sessionManager, userRepository, _ => closeAction()) { }
 
     private async Task LoadUsersAsync()
     {
-        if (_userRepository != null)
+        try
         {
+            if (_userRepository is null) throw new InvalidOperationException();
             var users = await _userRepository.GetActiveUsersAsync();
-            AvailableUsers = new ObservableCollection<UserModel>(users);
+            if (!IsCurrent) return;
+            AvailableUsers = new(users);
+            SelectedUser = AvailableUsers.FirstOrDefault(u => u.Id == _sessionManager.CurrentCashier?.Id) ?? AvailableUsers.FirstOrDefault();
         }
-        else
+        catch
         {
-            ErrorMessage = "No se pudo acceder al directorio de usuarios.";
-            AvailableUsers = new ObservableCollection<UserModel>();
-        }
-
-        // Pre-select the currently active cashier session user
-        if (_sessionManager?.CurrentCashier != null)
-        {
-            var active = _sessionManager.CurrentCashier;
-            SelectedUser = AvailableUsers.FirstOrDefault(u =>
-                (u.Id != Guid.Empty && u.Id == active.Id)
-                || (!string.IsNullOrWhiteSpace(u.Username) && u.Username.Equals(active.Username, StringComparison.OrdinalIgnoreCase))
-                || (!string.IsNullOrWhiteSpace(u.FullName) && u.FullName.Equals(active.FullName, StringComparison.OrdinalIgnoreCase))
-            ) ?? AvailableUsers.FirstOrDefault();
-        }
-        else
-        {
-            SelectedUser = AvailableUsers.FirstOrDefault();
+            if (IsCurrent) { AvailableUsers.Clear(); ErrorMessage = "No se pudo consultar el directorio de usuarios."; }
         }
     }
+    partial void OnSelectedUserChanged(UserModel? value) => ClearPin();
 
     [RelayCommand]
-    private void AppendPinDigit(string digit)
+    private async Task AppendPinDigitAsync(string digit)
     {
-        if (EnteredPin.Length < 4)
+        if (IsCurrent && !UsePassword && !IsVerifying && EnteredPin.Length < 4 && digit.Length == 1 && char.IsAsciiDigit(digit[0]))
         {
             EnteredPin += digit;
             ErrorMessage = string.Empty;
             if (EnteredPin.Length == 4)
             {
-                ValidateAndSwitchAsync();
+                await ValidateAndSwitchAsync(false);
             }
         }
     }
@@ -82,48 +79,55 @@ public partial class SwitchUserPinDialogViewModel : ObservableObject
     [RelayCommand]
     private void ClearPin()
     {
+        ++_requestVersion;
         EnteredPin = string.Empty;
+        Password = string.Empty;
         ErrorMessage = string.Empty;
     }
 
     [RelayCommand]
-    private void CloseModal()
+    private void CloseModal() => OnDismissed();
+    public void OnDismissed()
     {
+        if (_finished) return;
+        _finished = true;
+        ClearPin(); AvailableUsers.Clear(); SelectedUser = null;
         _resultCallback?.Invoke(false);
-        _closeAction?.Invoke();
     }
 
-    private async void ValidateAndSwitchAsync()
+    [RelayCommand]
+    private Task VerifyPasswordAsync() => ValidateAndSwitchAsync(true);
+
+    private async Task ValidateAndSwitchAsync(bool password)
     {
-        if (SelectedUser == null) return;
-
-        bool isValid = false;
-        UserModel? validatedUser = null;
-
-        if (_userRepository != null)
+        if (!IsCurrent || IsVerifying) return;
+        var selected = SelectedUser;
+        long version = _requestVersion;
+        if (selected is null || _userRepository is null) { EnteredPin = ""; ErrorMessage = "Seleccione un usuario."; return; }
+        string secret = password ? Password : EnteredPin;
+        Password = EnteredPin = ""; IsVerifying = true;
+        try
         {
-            string lookupKey = !string.IsNullOrWhiteSpace(SelectedUser.Username)
-                ? SelectedUser.Username
-                : SelectedUser.FullName;
-
-            validatedUser = await _userRepository.ValidatePinAsync(lookupKey, EnteredPin);
-            isValid = validatedUser != null;
-        }
-        else
-        {
-            ErrorMessage = "No se pudo validar el PIN.";
-        }
-
-        if (isValid && validatedUser != null)
-        {
-            _sessionManager.SwitchCashier(validatedUser);
+            var verified = password
+                ? await _userRepository.VerifyPasswordAsync(selected.Username, secret,
+                    isRequestCurrent: () => IsCurrent && version == _requestVersion && SelectedUser == selected)
+                : await _userRepository.ValidatePinAsync(selected.Username, secret);
+            if (!IsCurrent || version != _requestVersion || SelectedUser != selected) return;
+            EnteredPin = "";
+            if (verified is null || verified.Id != selected.Id || !verified.IsActive)
+            {
+                if (!password) UsePassword = true;
+                ErrorMessage = "No se pudo verificar el acceso. Use su contraseña; el PIN requiere validarla en esta ejecución durante los últimos 15 minutos. Si necesita actualizarla, vuelva al inicio de sesión.";
+                return;
+            }
+            _finished = true; AvailableUsers.Clear(); SelectedUser = null;
+            _sessionManager.SwitchCashier(verified);
             _resultCallback?.Invoke(true);
-            _closeAction?.Invoke();
         }
-        else
+        catch
         {
-            ErrorMessage = "PIN Incorrecto";
-            EnteredPin = string.Empty;
+            if (IsCurrent && version == _requestVersion) { EnteredPin = ""; ErrorMessage = "No se pudo verificar la identidad."; }
         }
+        finally { IsVerifying = false; }
     }
 }

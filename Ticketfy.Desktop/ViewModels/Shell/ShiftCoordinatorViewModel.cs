@@ -1,6 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Messaging;
-using Ticketfy.Data;
 using Ticketfy.Services.Interfaces;
 using Ticketfy.Core.Services;
 using Ticketfy.Core.Repositories;
@@ -18,7 +17,6 @@ namespace Ticketfy.ViewModels.Shell;
 /// </summary>
 public partial class ShiftCoordinatorViewModel : ObservableObject
 {
-    private readonly AppDbContext _db;
     private readonly IShiftService _shiftService;
     private readonly ISessionManager _sessionManager;
     private readonly IEscPosPrinterService _printerService;
@@ -31,14 +29,12 @@ public partial class ShiftCoordinatorViewModel : ObservableObject
     public event Action? LogoutRequested;
 
     public ShiftCoordinatorViewModel(
-        AppDbContext db,
         IShiftService shiftService,
         ISessionManager sessionManager,
         IEscPosPrinterService printerService,
         IBackupService backupService,
         IAttendanceService attendanceService)
     {
-        _db = db;
         _shiftService = shiftService;
         _sessionManager = sessionManager;
         _printerService = printerService;
@@ -52,16 +48,18 @@ public partial class ShiftCoordinatorViewModel : ObservableObject
     /// </summary>
     public async Task<bool> ValidateShiftStatusAsync()
     {
+        var version = _sessionManager.SessionVersion;
         try
         {
             var activeShift = await _shiftService.GetActiveAsync();
+            if (!SessionIsCurrent(version)) return false;
 
             if (activeShift != null)
             {
                 if (DateTime.TryParse(activeShift.StartTime, out var startTime))
                 {
-                    var localStartTime = startTime.ToLocalTime();
-                    if (localStartTime.Date < DateTime.Today)
+                    var localStartTime = Ticketfy.Core.Helpers.DateTimeExtensions.ToBusinessLocalTime(startTime);
+                    if (localStartTime.Date < Ticketfy.Core.Helpers.BusinessTime.Today)
                     {
                         return await HandleOrphanedShiftAsync();
                     }
@@ -82,37 +80,44 @@ public partial class ShiftCoordinatorViewModel : ObservableObject
 
     public void OpenPartialCashup()
     {
-        var dialog = new CashupDialogViewModel(_db, _shiftService, _sessionManager, _printerService, _backupService,
+        var version = _sessionManager.SessionVersion;
+        if (!SessionIsCurrent(version)) return;
+        var dialog = new CashupDialogViewModel(_shiftService, _sessionManager, _printerService, _backupService,
             attendanceService: _attendanceService, isFinalZCut: false);
-        dialog.RequestClose += () => CloseDialogRequested?.Invoke();
+        dialog.RequestClose += () => { if (SessionIsCurrent(version)) CloseDialogRequested?.Invoke(); };
         ShowDialogRequested?.Invoke(dialog);
     }
 
     public void OpenFinalCashup()
     {
-        var dialog = new CashupDialogViewModel(_db, _shiftService, _sessionManager, _printerService, _backupService,
+        var version = _sessionManager.SessionVersion;
+        if (!SessionIsCurrent(version)) return;
+        var dialog = new CashupDialogViewModel(_shiftService, _sessionManager, _printerService, _backupService,
             attendanceService: _attendanceService, isFinalZCut: true);
-        dialog.RequestClose += () => CloseDialogRequested?.Invoke();
+        dialog.RequestClose += () => { if (SessionIsCurrent(version)) CloseDialogRequested?.Invoke(); };
         ShowDialogRequested?.Invoke(dialog);
     }
 
     private async Task<bool> HandleOrphanedShiftAsync()
     {
-        var tcs = new TaskCompletionSource<bool>();
+        var version = _sessionManager.SessionVersion;
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var confirmVm = new ConfirmDialogViewModel(
             "Turno Suspendido Detectado",
             "Se detectó un turno del día anterior que no fue cerrado correctamente. Debe realizar el Corte final antes de iniciar uno nuevo. ¿Proceder al corte ciego?",
             (confirmed) =>
             {
+                if (!SessionIsCurrent(version)) { tcs.TrySetResult(false); return; }
                 if (confirmed)
                 {
-                    var blindCashupVm = new CashupDialogViewModel(_db, _shiftService, _sessionManager,
+                    var blindCashupVm = new CashupDialogViewModel(_shiftService, _sessionManager,
                         _printerService, _backupService, isFinalZCut: true, isBlindMode: true,
                         attendanceService: _attendanceService);
-                    blindCashupVm.RequestClose += () =>
+                    blindCashupVm.RequestClose += async () =>
                     {
+                        if (!SessionIsCurrent(version)) { tcs.TrySetResult(false); return; }
                         CloseDialogRequested?.Invoke();
-                        _ = ValidateShiftStatusAsync().ContinueWith(t => tcs.TrySetResult(t.Result));
+                        tcs.TrySetResult(await ValidateShiftStatusAsync());
                     };
                     ShowDialogRequested?.Invoke(blindCashupVm);
                 }
@@ -124,16 +129,17 @@ public partial class ShiftCoordinatorViewModel : ObservableObject
                 }
             }
         );
-        ShowDialogRequested?.Invoke(confirmVm);
-        return await tcs.Task;
+        return await WaitForDialogAsync(confirmVm, tcs, version);
     }
 
     private async Task<bool> PromptOpenShiftAsync()
     {
-        var tcs = new TaskCompletionSource<bool>();
+        var version = _sessionManager.SessionVersion;
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var openShiftVm = new OpenShiftDialogViewModel(_shiftService, _attendanceService, _sessionManager);
         openShiftVm.RequestClose += (success) =>
         {
+            if (!SessionIsCurrent(version)) { tcs.TrySetResult(false); return; }
             CloseDialogRequested?.Invoke();
             if (success)
             {
@@ -143,7 +149,34 @@ public partial class ShiftCoordinatorViewModel : ObservableObject
             // Every monetary service independently requires an owned open shift.
             tcs.TrySetResult(success);
         };
-        ShowDialogRequested?.Invoke(openShiftVm);
-        return await tcs.Task;
+        return await WaitForDialogAsync(openShiftVm, tcs, version);
+    }
+
+    private bool SessionIsCurrent(long version) => _sessionManager.CurrentCashier is not null
+        && !_sessionManager.IsTerminalLocked && version == _sessionManager.SessionVersion;
+
+    private async Task<bool> WaitForDialogAsync(ObservableObject dialog, TaskCompletionSource<bool> decision, long version)
+    {
+        void CancelChangedSession()
+        {
+            if (SessionIsCurrent(version)) return;
+            decision.TrySetResult(false);
+            CloseDialogRequested?.Invoke();
+        }
+        void CashierChanged(Ticketfy.Core.Models.UserModel? _) => CancelChangedSession();
+        void LockChanged(bool _) => CancelChangedSession();
+        _sessionManager.CashierChanged += CashierChanged;
+        _sessionManager.LockStateChanged += LockChanged;
+        try
+        {
+            if (!SessionIsCurrent(version)) return false;
+            ShowDialogRequested?.Invoke(dialog);
+            return await decision.Task;
+        }
+        finally
+        {
+            _sessionManager.CashierChanged -= CashierChanged;
+            _sessionManager.LockStateChanged -= LockChanged;
+        }
     }
 }

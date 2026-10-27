@@ -133,10 +133,11 @@ public sealed class Stage3CommercialIntegrationTests
         using var client = new HttpClient(handler) { BaseAddress = new Uri("https://api.mercadopago.com") };
         var settings = new MemorySettings();
         await settings.SetAsync("TerminalDeviceId", "NEWLAND_N950__TEST123");
+        var actor = await CommercialTestSession.PrepareCardCheckoutAsync(fixture.Factory, "sale_ref_123", 24m);
         var service = new MercadoPagoTerminalService(
             client, settings, contextFactory: fixture.Factory,
             accessTokenProvider: () => Task.FromResult<string?>("TEST_TOKEN"),
-            pollingInterval: TimeSpan.Zero, maxPollingAttempts: 2);
+            pollingInterval: TimeSpan.Zero, maxPollingAttempts: 2, operations: actor);
 
         var result = await service.ProcessPaymentAsync(24m, "sale_ref_123", CancellationToken.None);
         var repeated = await service.ProcessPaymentAsync(24m, "sale_ref_123", CancellationToken.None);
@@ -311,12 +312,12 @@ public sealed class Stage3CommercialIntegrationTests
                 using var payload = JsonDocument.Parse(await request.Content!.ReadAsStreamAsync(cancellationToken));
                 ExternalReference = payload.RootElement.GetProperty("external_reference").GetString();
                 return Json(HttpStatusCode.Created, """
-                    {"id":"ORD123","external_reference":"sale_ref_123","status":"created","transactions":{"payments":[{"id":"PAY123","amount":"24.00","status":"created"}]}}
+                    {"id":"ORD123","type":"point","country_code":"MEX","external_reference":"sale_ref_123","status":"created","status_detail":"created","last_updated_date":"2026-10-20T12:00:00Z","config":{"point":{"terminal_id":"NEWLAND_N950__TEST123"}},"transactions":{"payments":[{"id":"PAY123","amount":"24.00","status":"created","status_detail":"created"}]}}
                     """);
             }
             LastGetPath = request.RequestUri!.AbsolutePath;
             return Json(HttpStatusCode.OK, """
-                {"id":"ORD123","external_reference":"sale_ref_123","status":"processed","transactions":{"payments":[{"id":"PAY123","amount":"24.00","status":"processed","authorization_code":"AUTH1","payment_method":{"id":"visa","card":{"last_four_digits":"4242"}}}]}}
+                {"id":"ORD123","type":"point","country_code":"MEX","external_reference":"sale_ref_123","status":"processed","status_detail":"processed","last_updated_date":"2026-10-20T12:00:01Z","config":{"point":{"terminal_id":"NEWLAND_N950__TEST123"}},"transactions":{"payments":[{"id":"PAY123","amount":"24.00","paid_amount":"24.00","status":"processed","status_detail":"accredited","authorization_code":"AUTH1","payment_method":{"id":"visa","card":{"last_four_digits":"4242"}}}]}}
                 """);
         }
 

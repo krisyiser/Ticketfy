@@ -53,25 +53,40 @@
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="{DynamicResource AppCornerRadius}">
             <DockPanel LastChildFill="True">
                 <TextBlock DockPanel.Dock="Top" Text="Historial de Gastos Registrados" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,12" />
-                <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,12">
+                <ComboBox DockPanel.Dock="Top" ItemsSource="{Binding HistoryOptions}" SelectedItem="{Binding SelectedHistory}" HorizontalAlignment="Stretch" Margin="0,0,0,8" />
+                <TextBlock DockPanel.Dock="Top" IsVisible="{Binding ShowingCancellations}" Text="{Binding CancellationAmountDisplay}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+                    <Button Content="Anteriores" Command="{Binding PreviousPageCommand}" IsEnabled="{Binding CanLoadPreviousPage}" />
+                    <Button Content="Siguientes" Command="{Binding NextPageCommand}" IsEnabled="{Binding CanLoadNextPage}" />
+                    <Button Content="Actualizar" Command="{Binding RefreshExpensesCommand}" />
+                    <TextBlock Text="{Binding PageStatus}" VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,12" IsVisible="{Binding !ShowingCancellations}">
                     <TextBox Text="{Binding CancellationReason}" Watermark="Motivo obligatorio para cancelar un gasto" />
                     <CheckBox IsChecked="{Binding ReversalVerified}" Content="Confirmo la devolución del efectivo a esta caja / el abono bancario" />
                     <TextBlock Text="No cancele un gasto pagado si el dinero no ha sido restituido." TextWrapping="Wrap" />
                 </StackPanel>
 
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{Binding Expenses}">
+                    <StackPanel>
+                    <ItemsControl ItemsSource="{Binding Expenses}" IsVisible="{Binding !ShowingCancellations}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="dto:ExpenseDto">
                                 <Border Margin="0,0,0,6" Padding="14,10" CornerRadius="{DynamicResource AppCornerRadius}" Background="{DynamicResource BgTertiaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                                     <Grid ColumnDefinitions="140,*,120,Auto">
                                         <StackPanel Grid.Column="0" Spacing="2">
                                             <TextBlock Text="{Binding Category}" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" />
-                                            <TextBlock Text="{Binding Date}" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" />
+                                            <TextBlock Text="{Binding DateDisplay}" ToolTip.Tip="{Binding Date}" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" />
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Margin="8,0">
                                             <TextBlock Text="{Binding Description}" FontSize="13" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding PaymentMethod}" FontSize="11" />
+                                            <TextBlock Text="{Binding Reference}" FontSize="10" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding RegisterId, StringFormat='Caja de origen: {0}'}" FontSize="10" />
+                                            <TextBlock Text="{Binding ShiftId, StringFormat='Turno de origen: {0}'}" FontSize="10" TextTrimming="CharacterEllipsis" />
                                             <TextBlock Text="CANCELADO · original conservado" IsVisible="{Binding IsCancelled}" FontSize="11" />
+                                            <TextBlock Text="{Binding CancellationDateDisplay}" ToolTip.Tip="{Binding CancelledAtUtc}" IsVisible="{Binding IsCancelled}" FontSize="10" />
+                                            <TextBlock Text="{Binding CancellationReason}" IsVisible="{Binding IsCancelled}" FontSize="11" TextWrapping="Wrap" />
                                         </StackPanel>
                                         <TextBlock Grid.Column="2" Text="{Binding Amount, StringFormat='-${0:N2}'}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource AccentDangerBrush}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="8,0" />
                                         <Button Grid.Column="3" IsEnabled="{Binding !IsCancelled}" Command="{Binding $parent[UserControl].((vm:ExpensesViewModel)DataContext).DeleteExpenseCommand}" CommandParameter="{Binding}" Background="Transparent" BorderThickness="0" Padding="4" ToolTip.Tip="Cancelar con restitución verificada">
@@ -82,6 +97,37 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <ItemsControl ItemsSource="{Binding Cancellations}" IsVisible="{Binding ShowingCancellations}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="dto:ExpenseCancellationDto">
+                                <Border Margin="0,0,0,8" Padding="12" Background="{DynamicResource BgTertiaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="{Binding Amount, StringFormat='REVERSO REGISTRADO · {0:C2}'}" FontWeight="Bold" />
+                                        <TextBlock Text="{Binding DateDisplay, StringFormat='Recibido: {0}'}" ToolTip.Tip="{Binding Date}" />
+                                        <TextBlock Text="{Binding Id, StringFormat='Registro: {0}'}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding OperationId, StringFormat='Operación: {0}'}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding Reason, StringFormat='Motivo: {0}'}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding UserDisplay, StringFormat='Usuario receptor (ID): {0}'}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding RegisterDisplay, StringFormat='Caja receptora: {0}'}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding ShiftDisplay, StringFormat='Turno receptor: {0}'}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding EvidenceDisplay}" TextWrapping="Wrap" FontStyle="Italic" />
+                                        <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,4" />
+                                        <TextBlock Text="{Binding Original.Id, StringFormat='Gasto original: {0}'}" FontWeight="Bold" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding Original.DateDisplay, StringFormat='Fecha de origen: {0}'}" ToolTip.Tip="{Binding Original.Date}" />
+                                        <TextBlock Text="{Binding Original.Amount, StringFormat='Importe original: {0:C2}'}" />
+                                        <TextBlock Text="{Binding Original.Description}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding Original.Category, StringFormat='Categoría: {0}'}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding Original.PaymentMethod, StringFormat='Medio original: {0}'}" />
+                                        <TextBlock Text="{Binding Original.Reference, StringFormat='Referencia del pago original: {0}'}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding Original.RegisteredByUser, StringFormat='Usuario de origen (ID): {0}'}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding Original.RegisterId, StringFormat='Caja de origen: {0}'}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding Original.ShiftId, StringFormat='Turno de origen: {0}'}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    </StackPanel>
                 </ScrollViewer>
             </DockPanel>
         </Border>

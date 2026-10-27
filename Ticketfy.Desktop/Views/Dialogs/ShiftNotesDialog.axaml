@@ -85,7 +85,7 @@
 
                                             <!-- Delete Button -->
                                             <Button Command="{Binding $parent[UserControl].((vm:ShiftNotesDialogViewModel)DataContext).DeleteNoteCommand}"
-                                                    CommandParameter="{Binding}" Background="Transparent" BorderThickness="0" Padding="4" ToolTip.Tip="Eliminar nota">
+                                                    CommandParameter="{Binding}" Background="Transparent" BorderThickness="0" Padding="4" ToolTip.Tip="Cancelar nota (conserva historial)">
                                                 <mi:MaterialIcon Kind="Delete" Width="18" Height="18" Foreground="{DynamicResource AccentDangerBrush}" />
                                             </Button>
                                         </StackPanel>

@@ -16,7 +16,7 @@ namespace Ticketfy.ViewModels.Dialogs;
 /// Core ViewModel for the checkout dialog.
 /// Decomposed into partial classes: CheckoutDialogViewModel (Core), CheckoutDialogViewModel.Payments, CheckoutDialogViewModel.Mixed.
 /// </summary>
-public partial class CheckoutDialogViewModel : ObservableObject
+public partial class CheckoutDialogViewModel : ObservableObject, Ticketfy.ViewModels.Navigation.IDismissibleDialog
 {
     private readonly ISaleService _saleService;
     private readonly ICustomerService _customerService;
@@ -31,6 +31,14 @@ public partial class CheckoutDialogViewModel : ObservableObject
     private readonly Func<Task>? _onSuccessCallback;
     private string _checkoutOperationId = Guid.NewGuid().ToString("N");
     private bool _committed;
+    private bool _dismissed;
+    private bool _successNotified;
+    public string OperationReference => _checkoutOperationId;
+    public bool CanEditTender => !IsProcessing && !RequiresReconciliation && !_committed && !_dismissed;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ConfirmPaymentCommand))]
+    [NotifyPropertyChangedFor(nameof(CanEditTender))]
+    private bool _requiresReconciliation;
 
     [ObservableProperty] private bool _isWaitingForTerminal;
     [ObservableProperty] private string _terminalStatusMessage = string.Empty;
@@ -65,6 +73,7 @@ public partial class CheckoutDialogViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ConfirmPaymentCommand))]
+    [NotifyPropertyChangedFor(nameof(CanEditTender))]
     private bool _isProcessing;
 
     public bool IsSufficientAmount
@@ -81,7 +90,7 @@ public partial class CheckoutDialogViewModel : ObservableObject
 
     private bool CanConfirmPayment()
     {
-        if (IsProcessing || _committed) return false;
+        if (IsProcessing || _committed || RequiresReconciliation || _dismissed) return false;
 
         if (PaymentMethod == "Mixto")
         {
@@ -198,7 +207,18 @@ public partial class CheckoutDialogViewModel : ObservableObject
         _printDispatcher = printDispatcher;
         _terminalService = terminalService;
         _giftcardService = giftcardService;
-        _cartItems = cartItems ?? [];
+        _cartItems = (cartItems ?? []).Select(item => new CartItemDto(item.Id, item.Name, item.UnitPrice, item.Quantity, item.Unit, item.PointsRewarded)
+        {
+            OriginalUnitPrice = item.OriginalUnitPrice,
+            Cost = item.Cost,
+            Category = item.Category,
+            SatProductCode = item.SatProductCode,
+            SatUnitCode = item.SatUnitCode,
+            AvailableStock = item.AvailableStock,
+            AppliedDiscountAmount = item.AppliedDiscountAmount,
+            AppliedPromotionId = item.AppliedPromotionId,
+            PromotionDescription = item.PromotionDescription
+        }).ToList();
         _onSuccessCallback = onSuccessCallback;
 
         TotalToPay = total;
@@ -209,31 +229,21 @@ public partial class CheckoutDialogViewModel : ObservableObject
 
         PointsEarnedThisSale = _cartItems != null ? _cartItems.Sum(i => i.PointsRewarded * i.Quantity) : 0.0;
 
-        _ = LoadCustomersAsync(preselectedCustomer);
+        // Freeze the selected customer before enabling tender entry. An asynchronous
+        // catalog refresh must never replace the customer or clear confirmed tenders.
+        SelectedCustomer = preselectedCustomer;
+        if (preselectedCustomer is not null) Customers.Add(preselectedCustomer);
     }
 
     public bool HasPointsEarnedThisSale => PointsEarnedThisSale > 0;
 
-    private async Task LoadCustomersAsync(CustomerDto? preselected = null)
+    public void OnDismissed()
     {
-        try
-        {
-            var list = await _customerService.GetAllAsync();
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-            {
-                Customers.Clear();
-                foreach (var c in list) Customers.Add(c);
-
-                if (preselected != null)
-                {
-                    SelectedCustomer = Customers.FirstOrDefault(c => c.Id == preselected.Id) ?? preselected;
-                }
-            });
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error loading customers in CheckoutDialog");
-        }
+        if (_dismissed) return;
+        _dismissed = true;
+        _paymentCts?.Cancel();
+        ConfirmPaymentCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanEditTender));
     }
 
     partial void OnSelectedCustomerChanged(CustomerDto? value)

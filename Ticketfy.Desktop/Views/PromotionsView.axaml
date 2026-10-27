@@ -3,6 +3,7 @@
              xmlns:vm="using:Ticketfy.ViewModels"
              xmlns:dto="using:Ticketfy.Data.Dtos"
              xmlns:controls="using:Ticketfy.Controls"
+             xmlns:views="using:Ticketfy.Views"
              xmlns:mi="using:Material.Icons.Avalonia"
              x:Class="Ticketfy.Views.PromotionsView"
              x:DataType="vm:PromotionsViewModel">
@@ -29,20 +30,40 @@
         </Border>
 
         <controls:AlertBannerControl DockPanel.Dock="Top" Message="{Binding FeedbackMessage, Mode=TwoWay}" IsError="{Binding IsFeedbackError}" Margin="0,0,0,12" />
+        <CheckBox DockPanel.Dock="Top" Content="Consultar directorio y composición de combos" IsChecked="{Binding ShowKits}"
+                  IsVisible="{Binding HasKitDirectory}" Margin="0,0,0,12" />
 
-        <Border Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="1">
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="0,0,0,12" IsVisible="{Binding !ShowKits}">
+            <TextBox Text="{Binding SearchQuery}" Watermark="Buscar nombre, categoría o identificador" />
+            <Button Grid.Column="1" Command="{Binding SearchCommand}" Content="Buscar" Margin="8,0" />
+            <Button Grid.Column="2" Command="{Binding PreviousPageCommand}" Content="Anterior" />
+            <Button Grid.Column="3" Command="{Binding NextPageCommand}" Content="Siguiente" Margin="8,0" />
+            <Button Grid.Column="4" Command="{Binding RefreshCommand}" Content="Actualizar" />
+        </Grid>
+        <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,12" IsVisible="{Binding !ShowKits}">
+            <TextBlock Text="{Binding PageDescription}" />
+            <TextBlock Text="100 reglas por página. Habilitada no significa vigente: consulte las fechas. El POS evalúa todas las reglas aplicables, no sólo esta página."
+                       TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
+        </StackPanel>
+
+        <Grid>
+        <Grid IsVisible="{Binding ShowKits}">
+            <views:KitDirectoryView DataContext="{Binding Kits}" />
+        </Grid>
+        <Border IsVisible="{Binding !ShowKits}" Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="1">
             <DockPanel LastChildFill="True">
 
                 <DataGrid ItemsSource="{Binding Promotions}" AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Promoción / Oferta" Binding="{Binding Name}" Width="2*" />
                         <DataGridTextColumn Header="Descuento / Valor" Binding="{Binding DiscountValue}" Width="*" />
+                        <DataGridTextColumn Header="Vigencia" Binding="{Binding ScheduleDisplay}" Width="2*" />
                         
                         <DataGridTemplateColumn Header="Estado" Width="120">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate x:DataType="dto:PromotionDto">
                                     <Border HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="4" Padding="8,3">
-                                        <TextBlock Text="{Binding IsActive}" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AccentSuccessBrush}" />
+                                        <TextBlock Text="{Binding StatusDisplay}" FontSize="11" FontWeight="Bold" />
                                     </Border>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -77,5 +98,6 @@
                 </DataGrid>
             </DockPanel>
         </Border>
+        </Grid>
     </DockPanel>
 </UserControl>

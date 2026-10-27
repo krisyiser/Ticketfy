@@ -49,7 +49,7 @@ public sealed partial class Stage6CommercialLedgerTests
     {
         var promotions = new PromotionService(new TestDbContextFactory(_options), _actor);
         await promotions.SaveAsync(new PromotionDto("PROMO", "Diez por ciento", 10m, true, PromotionType.PercentageDiscount, "P",
-            StartDate: DateTime.Today.AddDays(-1), EndDate: DateTime.Today.AddDays(1)));
+            StartDate: Ticketfy.Core.Helpers.BusinessTime.Today.AddDays(-1), EndDate: Ticketfy.Core.Helpers.BusinessTime.Today.AddDays(1)), "CREATE-REVALIDATED-PROMO");
         var item = new CartItemDto("P", "Producto", 10m, 2) { OriginalUnitPrice = 10m };
         var priced = (await promotions.EvaluateAndApplyPromotionsAsync([item])).Single();
         Assert.Equal(2m, priced.AppliedDiscountAmount);
@@ -67,7 +67,7 @@ public sealed partial class Stage6CommercialLedgerTests
             OperationId = "FORGED",
             Items = [dto.Items[0] with { AppliedPromotionId = "NONEXISTENT" }]
         }));
-        await promotions.DeleteAsync("PROMO");
+        await promotions.DeleteAsync("PROMO", "DISABLE-REVALIDATED-PROMO");
         Assert.Equal(0m, (await promotions.EvaluateAndApplyPromotionsAsync([item])).Single().AppliedDiscountAmount);
         await Assert.ThrowsAsync<InvalidOperationException>(() => Sales.SaveAsync(dto with { Id = "EXPIRED", OperationId = "EXPIRED" }));
     }

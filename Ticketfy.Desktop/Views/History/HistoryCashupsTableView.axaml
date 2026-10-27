@@ -8,17 +8,26 @@
 
     <Grid>
         <Border Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="{DynamicResource AppCornerRadius}" Padding="16">
-            <Grid RowDefinitions="Auto,*">
-                <TextBlock Grid.Row="0" Text="Registro de cortes de caja y cortes de turno" FontWeight="Bold" FontSize="16" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,12" />
+            <Grid RowDefinitions="Auto,Auto,*">
+                <StackPanel Grid.Row="0" Spacing="10" Margin="0,0,0,12">
+                    <TextBlock Text="Registro de cortes de caja y cortes de turno" FontWeight="Bold" FontSize="16" Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button Content="Anterior" Command="{Binding PreviousCashupPageCommand}" IsEnabled="{Binding HasPreviousCashups}" />
+                        <TextBlock Text="{Binding CashupPageLabel}" VerticalAlignment="Center" />
+                        <Button Content="Siguiente" Command="{Binding NextCashupPageCommand}" IsEnabled="{Binding HasMoreCashups}" />
+                    </StackPanel>
+                </StackPanel>
+                <TextBlock Grid.Row="1" Text="{Binding CashupFeedbackMessage}" TextWrapping="Wrap" Margin="0,0,0,8" />
 
-                <DataGrid Grid.Row="1" ItemsSource="{Binding Cashups}" AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal" HeadersVisibility="Column" SelectionMode="Single">
+                <DataGrid Grid.Row="2" ItemsSource="{Binding Cashups}" AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal" HeadersVisibility="Column" SelectionMode="Single">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="Fecha / Hora" Binding="{Binding Timestamp}" Width="1.3*" />
+                        <DataGridTextColumn Header="Fecha / Hora" Binding="{Binding LocalDateDisplay}" Width="1.3*" />
                         <DataGridTextColumn Header="Cajero / Usuario" Binding="{Binding CashierName}" Width="1.4*" />
                         <DataGridTextColumn Header="Tipo" Binding="{Binding Type}" Width="0.9*" />
                         <DataGridTextColumn Header="Fondo Inicial" Binding="{Binding OpenCashAmount, StringFormat='${0:N2}'}" Width="1.1*" />
-                        <DataGridTextColumn Header="Ventas en efectivo" Binding="{Binding TotalSales, StringFormat='${0:N2}'}" Width="1.2*" />
-                        <DataGridTextColumn Header="Salidas de efectivo" Binding="{Binding TotalExpenses, StringFormat='${0:N2}'}" Width="1.1*" />
+                        <DataGridTextColumn Header="Ventas en efectivo" Binding="{Binding TotalSalesDisplay}" Width="1.2*" />
+                        <DataGridTextColumn Header="Salidas de efectivo" Binding="{Binding TotalExpensesDisplay}" Width="1.1*" />
+                        <DataGridTextColumn Header="Verificación" Binding="{Binding BreakdownStatus}" Width="1.5*" />
                         <DataGridTextColumn Header="Diferencia" Binding="{Binding Difference, StringFormat='${0:N2}'}" Width="1.1*" />
                         <DataGridTextColumn Header="Conteo Físico Total en Caja" Binding="{Binding ClosedCashAmount, StringFormat='${0:N2}'}" Width="1.5*" />
                         <DataGridTemplateColumn Header="Acciones" Width="Auto">
@@ -57,7 +66,7 @@
                                 </Border>
                                 <StackPanel VerticalAlignment="Center" Spacing="2">
                                     <TextBlock Text="Reporte Detallado de Corte de Caja y Turno" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
-                                    <TextBlock Text="{Binding Timestamp, StringFormat='Fecha de Registro: {0}'}" FontSize="12" Foreground="{DynamicResource TextMutedBrush}" />
+                                    <TextBlock Text="{Binding LocalDateDisplay, StringFormat='Fecha de Registro: {0}'}" FontSize="12" Foreground="{DynamicResource TextMutedBrush}" />
                                 </StackPanel>
                             </StackPanel>
 
@@ -116,14 +125,14 @@
                                         <Border Grid.Column="1" Margin="2,0" Padding="8" Background="{DynamicResource BgSecondaryBrush}" CornerRadius="6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                                             <StackPanel Spacing="4">
                                                 <TextBlock Text="2. Ventas en efectivo" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextMutedBrush}" />
-                                                <TextBlock Text="{Binding TotalSales, StringFormat='${0:N2}'}" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource AccentSuccessBrush}" />
+                                                <TextBlock Text="{Binding TotalSalesDisplay}" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource AccentSuccessBrush}" TextWrapping="Wrap" />
                                             </StackPanel>
                                         </Border>
 
                                         <Border Grid.Column="2" Margin="2,0" Padding="8" Background="{DynamicResource BgSecondaryBrush}" CornerRadius="6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                                             <StackPanel Spacing="4">
                                                 <TextBlock Text="3. Salidas de efectivo" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextMutedBrush}" />
-                                                <TextBlock Text="{Binding TotalExpenses, StringFormat='${0:N2}'}" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource AccentDangerBrush}" />
+                                                <TextBlock Text="{Binding TotalExpensesDisplay}" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource AccentDangerBrush}" TextWrapping="Wrap" />
                                             </StackPanel>
                                         </Border>
 
@@ -146,6 +155,7 @@
 
                             <!-- Denomination Breakdown Grid -->
                             <TextBlock Text="Desglose Físico por Denominación" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
+                            <TextBlock Text="{Binding DenominationStatus}" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
 
                             <Border Background="{DynamicResource BgPrimaryBrush}" Padding="16" CornerRadius="{DynamicResource AppCornerRadius}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                                 <Grid ColumnDefinitions="*,*">

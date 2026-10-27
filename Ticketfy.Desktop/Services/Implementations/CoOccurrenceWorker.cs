@@ -1,76 +1,76 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Ticketfy.Data;
-using Ticketfy.Data.Entities;
-using Serilog;
+using Ticketfy.Core.Operations;
 
 namespace Ticketfy.Services.Implementations;
 
-public class CoOccurrenceWorker
+public sealed class CoOccurrenceWorker(CoOccurrenceQueue queue, IDbContextFactory<AppDbContext> factory,
+    TimeProvider? clock = null, MaintenanceHealth? health = null) : OwnedBackgroundWorker(health, MaintenanceTask.Recommendations)
 {
-    private readonly CoOccurrenceQueue _queue;
-    private readonly IDbContextFactory<AppDbContext> _contextFactory;
-
-    public CoOccurrenceWorker(CoOccurrenceQueue queue, IDbContextFactory<AppDbContext> contextFactory)
+    internal const int PairBatchSize = 256;
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+    protected override async Task ExecuteAsync(CancellationToken token)
     {
-        _queue = queue;
-        _contextFactory = contextFactory;
-    }
-
-    public Task StartAsync(CancellationToken stoppingToken)
-    {
-        _ = Task.Run(() => ExecuteAsync(stoppingToken), stoppingToken);
-        return Task.CompletedTask;
-    }
-
-    private async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        await foreach (var productIds in _queue.Queue.Reader.ReadAllAsync(stoppingToken))
+        while (true)
         {
+            token.ThrowIfCancellationRequested();
             try
             {
-                await ProcessCombinationsAndSaveToDb(productIds);
+                BeginCycle();
+                while (await ProcessBatchAsync(token).ConfigureAwait(false))
+                    await Task.Delay(TimeSpan.FromMilliseconds(25), _clock, token).ConfigureAwait(false);
+                ClearFailure();
             }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Error processing co-occurrences in background worker");
-            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+            catch (Exception ex) { RecordFailure(ex); }
+            await queue.WaitAsync(TimeSpan.FromSeconds(30), _clock, token).ConfigureAwait(false);
         }
     }
 
-    private async Task ProcessCombinationsAndSaveToDb(List<string> productIds)
+    internal async Task<bool> ProcessBatchAsync(CancellationToken token)
     {
-        if (productIds.Count <= 1) return;
-
-        using var _ctx = await _contextFactory.CreateDbContextAsync();
-
-        for (int i = 0; i < productIds.Count; i++)
+        await using var db = await factory.CreateDbContextAsync(token).ConfigureAwait(false);
+        await using var tx = await db.Database.BeginTransactionAsync(token).ConfigureAwait(false);
+        var job = await db.RecommendationJobs.Where(j => !j.IsCompleted).OrderBy(j => j.Id).FirstOrDefaultAsync(token).ConfigureAwait(false);
+        if (job is null) return false;
+        var ids = db.SaleLines.AsNoTracking().Where(l => l.SaleId == job.SaleId).Select(l => l.ProductId).Distinct().OrderBy(id => id);
+        int count = await ids.CountAsync(token).ConfigureAwait(false);
+        if (count < 2 || job.NextLeft < 0 || job.NextLeft >= count - 1 || job.NextRight <= job.NextLeft || job.NextRight >= count)
+            throw new InvalidDataException("El cursor de recomendaciones requiere revisión.");
+        var pairs = new List<(string A, string B)>(PairBatchSize);
+        while (job.NextLeft < count - 1 && pairs.Count < PairBatchSize)
         {
-            for (int j = i + 1; j < productIds.Count; j++)
-            {
-                string idA = productIds[i];
-                string idB = productIds[j];
-                if (string.CompareOrdinal(idA, idB) > 0)
-                {
-                    (idA, idB) = (idB, idA);
-                }
-
-                var pair = await _ctx.CoOccurrences.FirstOrDefaultAsync(c => c.ProductoA == idA && c.ProductoB == idB);
-                if (pair is null)
-                {
-                    _ctx.CoOccurrences.Add(new CoOccurrenceEntity { ProductoA = idA, ProductoB = idB, Frecuencia = 1 });
-                }
-                else
-                {
-                    pair.Frecuencia++;
-                }
-            }
+            token.ThrowIfCancellationRequested();
+            string left = await ids.Skip(job.NextLeft).FirstAsync(token).ConfigureAwait(false);
+            var right = await ids.Skip(job.NextRight).Take(PairBatchSize - pairs.Count).ToListAsync(token).ConfigureAwait(false);
+            foreach (string id in right)
+                pairs.Add(string.CompareOrdinal(left, id) < 0 ? (left, id) : (id, left));
+            job.NextRight += right.Count;
+            if (job.NextRight >= count) { job.NextLeft++; job.NextRight = job.NextLeft + 1; }
         }
-
-        await DbResilienceHelper.ExecuteWithRetryAsync(async () => await _ctx.SaveChangesAsync());
+        if (pairs.Count > 0)
+        {
+            await using var command = db.Database.GetDbConnection().CreateCommand();
+            command.Transaction = tx.GetDbTransaction();
+            var values = new List<string>(pairs.Count);
+            for (int i = 0; i < pairs.Count; i++)
+            {
+                values.Add($"(@a{i},@b{i},1)");
+                var a = command.CreateParameter(); a.ParameterName = $"@a{i}"; a.Value = pairs[i].A; command.Parameters.Add(a);
+                var b = command.CreateParameter(); b.ParameterName = $"@b{i}"; b.Value = pairs[i].B; command.Parameters.Add(b);
+            }
+            command.CommandText = "INSERT INTO co_ocurrencia (producto_a,producto_b,frecuencia) VALUES "
+                + string.Join(",", values) + """
+                 ON CONFLICT(producto_a,producto_b) DO UPDATE SET frecuencia=co_ocurrencia.frecuencia+1
+                 WHERE co_ocurrencia.frecuencia BETWEEN 0 AND 2147483646;
+                """;
+            if (await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) != pairs.Count)
+                throw new InvalidDataException("Una frecuencia de recomendaciones excede el rango; no se avanzó el lote.");
+        }
+        job.IsCompleted = job.NextLeft >= count - 1;
+        await db.SaveChangesAsync(token).ConfigureAwait(false);
+        await tx.CommitAsync(token).ConfigureAwait(false);
+        return true;
     }
 }

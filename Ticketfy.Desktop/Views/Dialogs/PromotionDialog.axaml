@@ -17,23 +17,28 @@
                 <controls:AlertBannerControl Message="{Binding ErrorMessage}" IsError="True" />
 
                 <Grid ColumnDefinitions="*,*">
-                    <Button Grid.Column="0" Command="{Binding CancelCommand}" Content="Cancelar" Margin="0,0,6,0" Padding="12"
+                    <Button Grid.Column="0" Command="{Binding CancelCommand}" Content="{Binding CloseButtonText}" Margin="0,0,6,0" Padding="12"
                             Background="{DynamicResource BgPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                             Foreground="{DynamicResource TextPrimaryBrush}" CornerRadius="6" HorizontalContentAlignment="Center" />
 
-                    <Button Grid.Column="1" Command="{Binding SaveCommand}" Content="Guardar Oferta" Margin="6,0,0,0" Padding="12"
+                    <Button Grid.Column="1" Command="{Binding SaveCommand}" Content="{Binding SaveButtonText}" Margin="6,0,0,0" Padding="12"
                             Classes="primary-action" FontWeight="Bold" CornerRadius="6" HorizontalContentAlignment="Center" />
                 </Grid>
             </StackPanel>
 
             <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Spacing="14">
+                <StackPanel Spacing="14" IsEnabled="{Binding CanEditFields}">
                     <CheckBox Content="Todos los productos" IsChecked="{Binding AllProducts}" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Text="{Binding ProductSearch}" Watermark="Buscar producto por nombre o código" />
+                        <Button Grid.Column="1" Content="Buscar" Command="{Binding SearchProductsCommand}" />
+                    </Grid>
+                    <TextBlock Text="{Binding CatalogMessage}" TextWrapping="Wrap" FontSize="11" />
                     <ComboBox ItemsSource="{Binding Products}" SelectedItem="{Binding SelectedProduct}" PlaceholderText="Producto" HorizontalAlignment="Stretch">
                         <ComboBox.ItemTemplate><DataTemplate x:DataType="dto:ProductDto"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
                     </ComboBox>
                     <TextBox Text="{Binding TargetCategory}" Watermark="Categoría (opcional)" />
-                    <TextBlock Text="Vigencia (AAAA-MM-DD)" />
+                    <TextBlock Text="Vigencia: AAAA-MM-DD, con hora opcional HH:mm:ss (zona comercial). Sin hora, el fin incluye todo el día." TextWrapping="Wrap" />
                     <TextBox Text="{Binding StartDateText}" Watermark="Inicio" />
                     <TextBox Text="{Binding EndDateText}" Watermark="Fin" />
                     <NumericUpDown Value="{Binding Priority}" Minimum="0" Maximum="1000" />

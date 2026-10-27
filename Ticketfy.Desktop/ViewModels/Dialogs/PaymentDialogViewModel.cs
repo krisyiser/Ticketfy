@@ -51,7 +51,7 @@ public partial class PaymentDialogViewModel : ObservableObject
             var dto = new CustomerPaymentDto(
                 Id: _operationId,
                 CustomerId: _customerId,
-                Date: DateTime.Now.ToString("o"),
+                Date: DateTimeOffset.UtcNow.ToString("O"),
                 Amount: Amount
             );
 

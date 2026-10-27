@@ -15,6 +15,7 @@ public partial class EscPosPrinterService
 {
     public Task<bool> PrintTicketAsync(SaleDto sale, string printerPortOrName = "")
     {
+        if (!sale.DetailsAvailable) return Task.FromResult(false);
         try
         {
             using var ms = new MemoryStream();
@@ -146,7 +147,7 @@ public partial class EscPosPrinterService
             ms.Write(BoldOff, 0, BoldOff.Length);
             WriteString(ms, "PRUEBA DE IMPRESIÓN TÉRMICA ESC/POS\n");
             WriteString(ms, "Estado: COM / USB Driver Conectado OK\n");
-            WriteString(ms, $"Hora: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n\n");
+            WriteString(ms, $"Hora: {Ticketfy.Core.Helpers.BusinessTime.Now:yyyy-MM-dd HH:mm:ss}\n\n");
 
             WriteEscPosQrCode(ms, "https://ticketfy.pos/test");
             WriteString(ms, "\n\n");

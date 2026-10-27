@@ -12,9 +12,14 @@ public sealed class CategoryService(IDbContextFactory<AppDbContext> factory, Com
     public async Task<List<CategorySummary>> GetAllAsync()
     {
         await using var db = await factory.CreateDbContextAsync();
+        await using var snapshot = await ReadSnapshot.BeginAsync(db);
+        await operations.RequireAsync(db, PermissionCatalog.InventoryView, false);
         var categories = await db.Categories.AsNoTracking().OrderBy(c => c.Name).ToListAsync();
-        var names = await db.Products.AsNoTracking().Where(p => p.IsActive).Select(p => p.Category).ToListAsync();
-        return categories.Select(c => new CategorySummary(c.Id, c.Name, names.Count(n => string.Equals(n, c.Name, StringComparison.OrdinalIgnoreCase)))).ToList();
+        var groups = await db.Products.AsNoTracking().Where(p => p.IsActive).GroupBy(p => p.Category)
+            .Select(g => new { Name = g.Key, Count = g.Count() }).ToListAsync();
+        var counts = groups.Where(g => g.Name is not null).GroupBy(g => g.Name!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Sum(row => row.Count), StringComparer.OrdinalIgnoreCase);
+        return categories.Select(c => new CategorySummary(c.Id, c.Name, counts.GetValueOrDefault(c.Name))).ToList();
     }
     public Task SaveAsync(string id, string name) => ChangeAsync(id, name, false);
     public Task DeleteAsync(string id) => ChangeAsync(id, "General", true);
@@ -34,11 +39,15 @@ public sealed class CategoryService(IDbContextFactory<AppDbContext> factory, Com
         if (category is null) db.Categories.Add(new CategoryEntity { Id = id, Name = name });
         else
         {
-            var products = await db.Products.Where(p => p.Category.ToLower() == category.Name.ToLower()).ToListAsync();
-            var promotions = await db.Promotions.Where(p => p.TargetCategory != null && p.TargetCategory.ToLower() == category.Name.ToLower()).ToListAsync();
-            if (promotions.Count > 0) await operations.RequireAsync(db, PermissionCatalog.PromotionsManage, false);
-            foreach (var p in products) { p.Category = name; p.StockVersion++; }
-            foreach (var p in promotions) { if (delete) p.IsActive = 0; else p.TargetCategory = name; }
+            var products = db.Products.Where(p => p.Category.ToLower() == category.Name.ToLower());
+            var promotions = db.Promotions.Where(p => p.TargetCategory != null && p.TargetCategory.ToLower() == category.Name.ToLower());
+            if (await promotions.AnyAsync()) await operations.RequireAsync(db, PermissionCatalog.PromotionsManage, false);
+            if (await promotions.AnyAsync(p => p.Revision < 0 || p.Revision == long.MaxValue))
+                throw new InvalidOperationException("Una promoción agotó su revisión; requiere revisión técnica antes de modificar la categoría.");
+            await products.ExecuteUpdateAsync(setters => setters.SetProperty(p => p.Category, name)
+                .SetProperty(p => p.StockVersion, p => p.StockVersion + 1));
+            if (delete) await promotions.ExecuteUpdateAsync(setters => setters.SetProperty(p => p.IsActive, 0).SetProperty(p => p.Revision, p => p.Revision + 1));
+            else await promotions.ExecuteUpdateAsync(setters => setters.SetProperty(p => p.TargetCategory, name).SetProperty(p => p.Revision, p => p.Revision + 1));
             if (delete) db.Categories.Remove(category); else category.Name = name;
         }
         CommercialLedger.Journal(db, actor, Guid.NewGuid().ToString("N"), delete ? "CATEGORY_REMOVED" : "CATEGORY_SAVED", id, 0,

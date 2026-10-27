@@ -1,0 +1,30 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:vm="using:Ticketfy.ViewModels.Directories" x:Class="Ticketfy.Views.WalletDirectoryView" x:DataType="vm:WalletDirectoryViewModel">
+ <Grid RowDefinitions="Auto,Auto,180,Auto">
+  <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
+   <TextBox Text="{Binding SearchQuery}" Watermark="Número, identificador de monedero o cliente" />
+   <Button Grid.Column="1" Content="Buscar" Command="{Binding SearchCommand}" />
+   <Button Grid.Column="2" Content="Anterior" Command="{Binding PreviousCommand}" />
+   <Button Grid.Column="3" Content="Siguiente" Command="{Binding NextCommand}" />
+   <Button Grid.Column="4" Content="Actualizar" Command="{Binding RefreshCommand}" />
+  </Grid>
+  <StackPanel Grid.Row="1" Spacing="4" Margin="0,6">
+   <CheckBox Content="Incluir inactivos" IsChecked="{Binding IncludeInactive}" />
+   <TextBlock Text="{Binding PageLabel}" />
+   <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" />
+  </StackPanel>
+  <DataGrid Grid.Row="2" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedItem}"
+            AutoGenerateColumns="False" IsReadOnly="True">
+   <DataGrid.Columns>
+    <DataGridTextColumn Header="Número" Binding="{Binding CardNumber}" Width="2*" />
+    <DataGridTextColumn Header="Saldo registrado" Binding="{Binding RecordedBalance, StringFormat='{}{0:C2}'}" Width="*" />
+    <DataGridTextColumn Header="Cliente (ID)" Binding="{Binding CustomerId}" Width="*" />
+    <DataGridTextColumn Header="Estado" Binding="{Binding Status}" Width="*" />
+   </DataGrid.Columns>
+  </DataGrid>
+  <StackPanel Grid.Row="3" Spacing="6" Margin="0,6">
+   <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
+   <Button Content="Usar número seleccionado" Command="{Binding UseSelectedCommand}" />
+  </StackPanel>
+ </Grid>
+</UserControl>

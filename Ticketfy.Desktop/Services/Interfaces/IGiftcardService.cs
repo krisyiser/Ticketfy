@@ -6,7 +6,10 @@ namespace Ticketfy.Services.Interfaces;
 
 public interface IGiftcardService
 {
+    Task<Ticketfy.Data.Dtos.AccountStatementPageDto> GetStatementPageAsync(string cardNumber, int page = 0, int size = 100,
+        Ticketfy.Data.Dtos.LedgerReadCut? cut = null) => throw new System.NotSupportedException();
     Task<List<GiftcardEntity>> GetAllAsync();
+    Task<Ticketfy.Data.Dtos.WalletDirectoryPage> GetPageAsync(int page, int size = 100, string? search = null, bool includeInactive = false);
     Task<GiftcardEntity?> GetByCardNumberAsync(string cardNumber);
     Task<bool> DeductBalanceAsync(string cardNumber, decimal amount);
     Task<(bool IsValid, decimal Balance, string Error)> ValidateCardAsync(string cardNumber);

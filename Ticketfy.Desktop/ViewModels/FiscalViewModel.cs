@@ -16,6 +16,13 @@ public partial class FiscalViewModel : ObservableObject
 {
     private readonly ISaleService _saleService;
     private readonly IFiscalIntegrationQueueService? _fiscalQueue;
+    private long _sessionVersion;
+    public void ClearSessionData()
+    {
+        ++_sessionVersion; Invoices.Clear(); SelectedSale = SelectedInvoice = null;
+        SearchFolio = CustomerRfc = CustomerName = CustomerZipCode = ReplacementUuid = ErrorMessage = SuccessMessage = string.Empty;
+        IsLoading = false;
+    }
 
     public bool IsFacturamaAvailable => _fiscalQueue is not null;
     public string FacturamaStatusMessage => LocalDevelopmentMode.FacturamaUnavailableMessage;
@@ -80,23 +87,26 @@ public partial class FiscalViewModel : ObservableObject
     [ObservableProperty]
     private bool _isLoading = false;
 
-    public FiscalViewModel(ISaleService saleService, IFiscalIntegrationQueueService? fiscalQueue = null)
+    public FiscalViewModel(ISaleService saleService, IFiscalIntegrationQueueService? fiscalQueue = null, bool loadOnCreate = true)
     {
         _saleService = saleService;
         _fiscalQueue = fiscalQueue;
-        _ = LoadInvoicesAsync();
+        if (loadOnCreate) _ = LoadInvoicesAsync();
     }
 
     [RelayCommand]
     private async Task SearchSaleAsync()
     {
+        var version = _sessionVersion;
         if (string.IsNullOrWhiteSpace(SearchFolio)) return;
         IsLoading = true;
         ErrorMessage = string.Empty;
         SuccessMessage = string.Empty;
         try
         {
-            SelectedSale = await _saleService.GetByIdAsync(SearchFolio.Trim());
+            var sale = await _saleService.GetByIdAsync(SearchFolio.Trim());
+            if (version != _sessionVersion) return;
+            SelectedSale = sale;
             if (SelectedSale == null)
             {
                 ErrorMessage = "Venta no encontrada.";
@@ -206,6 +216,7 @@ public partial class FiscalViewModel : ObservableObject
     private async Task LoadInvoicesAsync()
     {
         if (IsLoading) return;
+        var version = _sessionVersion;
         IsLoading = true;
         ErrorMessage = string.Empty;
 
@@ -214,6 +225,7 @@ public partial class FiscalViewModel : ObservableObject
             var sales = await _saleService.GetHistoryAsync(100);
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
+                if (version != _sessionVersion) return;
                 Invoices.Clear();
                 foreach (var sale in sales.Where(s => !string.IsNullOrEmpty(s.InvoiceId) || s.EstadoFiscal is "PENDIENTE" or "EN COLA" or "ERROR AL TIMBRAR" or "TIMBRADO" or "CANCELACION EN COLA"))
                 {
@@ -224,11 +236,13 @@ public partial class FiscalViewModel : ObservableObject
         catch (Exception ex)
         {
             Log.Error(ex, "Error loading invoices in FiscalViewModel");
+            if (version != _sessionVersion) return;
+            Invoices.Clear(); SelectedInvoice = null;
             ErrorMessage = "No se pudieron cargar los registros fiscales.";
         }
         finally
         {
-            IsLoading = false;
+            if (version == _sessionVersion) IsLoading = false;
         }
     }
 }

@@ -24,18 +24,27 @@ public partial class HardwareSettingsViewModel : ObservableObject
         "80mm (Estándar POS)", "58mm (Térmica Mini)", "Carta / A4 (PDF Fiscal)"
     ];
 
-    public HardwareSettingsViewModel(ISettingsService? settingsService = null)
+    private bool _sessionActive = true;
+    private long _loadVersion;
+    public bool HasLoadedData { get; private set; }
+    public void DeactivateSession() { _sessionActive = false; HasLoadedData = false; State = new(); ValidationMessage = ""; }
+    public HardwareSettingsViewModel(ISettingsService? settingsService = null, bool loadOnCreate = true)
     {
         _settingsService = settingsService;
-        if (_settingsService != null) _ = LoadAsync();
+        if (loadOnCreate && _settingsService != null) _ = LoadAsync();
     }
 
     public async Task LoadAsync()
     {
+        var version = ++_loadVersion;
+        HasLoadedData = false;
         if (_settingsService == null) return;
         try
         {
-            State = await _settingsService.GetAppSettingsAsync();
+            var loaded = await _settingsService.GetAppSettingsAsync();
+            if (!_sessionActive || version != _loadVersion) return;
+            State = loaded;
+            HasLoadedData = true;
         }
         catch (Exception ex)
         {
@@ -43,28 +52,30 @@ public partial class HardwareSettingsViewModel : ObservableObject
         }
     }
 
-    public async Task SaveAsync()
+    public async Task<bool> SaveAsync()
     {
-        if (_settingsService == null) return;
+        if (_settingsService == null || !_sessionActive) return false;
         try
         {
             if (!string.IsNullOrWhiteSpace(State.Hardware.PrinterPort) && !HardwareCompatibility.TryValidatePrinterTarget(State.Hardware.PrinterPort, out string error))
             {
                 ValidationMessage = error;
-                return;
+                return false;
             }
             if (State.Hardware.CashDrawerPin is not (0 or 1))
             {
                 ValidationMessage = "El pin del cajón debe ser 0 (pin 2) o 1 (pin 5).";
-                return;
+                return false;
             }
-            await _settingsService.SaveAppSettingsAsync(State);
+            await _settingsService.SaveSectionAsync(State, AppSettingsSection.Hardware);
             ValidationMessage = "Configuración guardada. Revise el panel Periféricos; guardar no confirma el funcionamiento físico.";
+            return true;
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Failed saving AppSettings in HardwareSettingsViewModel");
             ValidationMessage = "No se pudo guardar la configuración. Revise sus permisos y los datos ingresados.";
+            return false;
         }
     }
 }

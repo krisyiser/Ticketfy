@@ -45,20 +45,18 @@ public sealed class ItemKitServiceTests : IDisposable
             new(Guid.NewGuid().ToString(), string.Empty, "PROD-2", "Coca Cola 600ml", 1.0)
         };
 
-        var success = await _service.SaveAsync(
+        await _service.SaveAsync(new(
             Guid.NewGuid().ToString(),
             "4536434354",
-            "paquetecagues",
+            "Paquete desayuno",
             40m,
             "Incluye café y dona",
             items
-        );
-
-        Assert.True(success);
+        ), "CREATE-KIT");
 
         var savedProductEntity = await _context.Products.FirstOrDefaultAsync(p => p.Barcode == "4536434354");
         Assert.NotNull(savedProductEntity);
-        Assert.Equal("paquetecagues", savedProductEntity.Name);
+        Assert.Equal("Paquete desayuno", savedProductEntity.Name);
         Assert.Equal(40m, savedProductEntity.Price);
         Assert.Equal("Promociones", savedProductEntity.Category);
         Assert.True(savedProductEntity.IsKit);

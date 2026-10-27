@@ -62,16 +62,7 @@ public sealed partial class Stage6CommercialLedgerTests : IAsyncLifetime
         await using var db = Db();
         Assert.Empty(await db.Sales.ToListAsync());
         Assert.Equal(20d, (await db.Products.SingleAsync()).Stock);
-        db.PaymentTerminalOperations.Add(new PaymentTerminalOperationEntity
-        {
-            Id = "T",
-            ExternalReference = "MIX",
-            IdempotencyKey = "MIX",
-            Amount = 10m,
-            Status = IntegrationOperationStatus.Completed,
-            ProviderPaymentId = "BANK-PAYMENT-1"
-        });
-        await db.SaveChangesAsync();
+        CommercialTestSession.ConfirmCard(db, "MIX", 10m, "BANK-PAYMENT-1");
         await Sales.SaveAsync(sale);
         Assert.Equal(2, await db.SalePayments.CountAsync());
         Assert.Equal(10m, (await db.ShiftMovements.SingleAsync()).Amount);
@@ -180,10 +171,10 @@ public sealed partial class Stage6CommercialLedgerTests : IAsyncLifetime
         var saved = await Sales.SaveAsync(Sale("CREDIT") with { CashAmount = 0m, CustomerId = "C", IsCredit = true, PaymentMethod = "Crédito" });
         await Sales.ProcessPartialReturnAsync(saved.Id, "P", 1, "Prueba", operationId: "RETURN");
         var expenses = new ExpenseService(new TestDbContextFactory(_options), _actor);
-        var summary = await expenses.GetFinancialSummaryAsync(DateTime.Today, DateTime.Today);
+        var summary = await expenses.GetFinancialSummaryAsync(Ticketfy.Core.Helpers.BusinessTime.Today, Ticketfy.Core.Helpers.BusinessTime.Today);
         Assert.Equal(10m, summary.TotalRevenue); Assert.Equal(3m, summary.TotalCostOfGoodsSold);
         Assert.Equal(7m, summary.NetProfit); Assert.Equal(0m, summary.CardRevenue);
-        var old = await expenses.CalculateTrueNetProfitAsync(DateTime.Today.AddDays(-2), DateTime.Today.AddDays(-1));
+        var old = await expenses.CalculateTrueNetProfitAsync(Ticketfy.Core.Helpers.BusinessTime.Today.AddDays(-2), Ticketfy.Core.Helpers.BusinessTime.Today.AddDays(-1));
         Assert.Equal(0m, old.NetSales);
     }
 }

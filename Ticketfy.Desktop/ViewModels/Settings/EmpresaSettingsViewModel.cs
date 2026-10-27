@@ -7,6 +7,8 @@ using Serilog;
 using Ticketfy.Services.Security;
 using System;
 using System.Collections.ObjectModel;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Threading.Tasks;
 
 namespace Ticketfy.ViewModels.Settings;
@@ -56,7 +58,8 @@ public partial class EmpresaSettingsViewModel : ObservableObject
     [ObservableProperty] private string _empresaUsoCfdiPorDefecto = string.Empty;
     [ObservableProperty] private string _empresaPrefijoFolioInterno = "F-";
     [ObservableProperty] private int _empresaFolioInicial = 1;
-    [ObservableProperty] private string _csdValidityStatus = "VÁLIDO";
+    public string CsdValidityStatus => "NO VERIFICADO";
+    public bool IsFiscalIntegrationEnabled => Ticketfy.Core.Configuration.LocalDevelopmentMode.FacturamaEnabled;
     [ObservableProperty] private string _facturamaApiUser = string.Empty;
     [ObservableProperty] private string _facturamaApiPassword = string.Empty;
     [ObservableProperty] private string _facturamaAmbiente = "Sandbox";
@@ -102,11 +105,11 @@ public partial class EmpresaSettingsViewModel : ObservableObject
     [ObservableProperty] private string _empresaQrRedesUrl = string.Empty;
 
     // ── Sub-tab navigation ─────────────────────────────────────────────────
-    [ObservableProperty] private bool _isSubGenerales = true;
-    [ObservableProperty] private bool _isSubIdentidad = false;
-    [ObservableProperty] private bool _isSubFiscal = false;
-    [ObservableProperty] private bool _isSubSucursal = false;
-    [ObservableProperty] private bool _isSubRedes = false;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsSubEmpresaGenerales))] private bool _isSubGenerales = true;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsSubEmpresaIdentidad))] private bool _isSubIdentidad = false;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsSubEmpresaFiscal))] private bool _isSubFiscal = false;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsSubEmpresaSucursal))] private bool _isSubSucursal = false;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsSubEmpresaRedes))] private bool _isSubRedes = false;
 
     public bool IsSubEmpresaGenerales => IsSubGenerales;
     public bool IsSubEmpresaIdentidad => IsSubIdentidad;
@@ -118,10 +121,20 @@ public partial class EmpresaSettingsViewModel : ObservableObject
 
     [ObservableProperty] private string _feedbackMessage = string.Empty;
 
-    public EmpresaSettingsViewModel(ISettingsService? settingsService = null)
+    private bool _sessionActive = true;
+    private long _loadVersion;
+    public bool HasLoadedData { get; private set; }
+    public void DeactivateSession()
+    {
+        _sessionActive = false; HasLoadedData = false;
+        EmpresaNombreComercial = EmpresaRazonSocial = EmpresaRfc = EmpresaCodigoPostalFiscal = EmpresaCalleYNumero = "";
+        EmpresaColonia = EmpresaCiudadMunicipio = EmpresaEstado = EmpresaTelefonoFijo = EmpresaWhatsappContacto = EmpresaEmailContacto = "";
+        FacturamaApiUser = FacturamaApiPassword = EmpresaPasswordKeyCsd = FeedbackMessage = "";
+    }
+    public EmpresaSettingsViewModel(ISettingsService? settingsService = null, bool loadOnCreate = true)
     {
         _settingsService = settingsService;
-        if (_settingsService != null) _ = LoadAsync();
+        if (loadOnCreate && _settingsService != null) _ = LoadAsync();
     }
 
     [RelayCommand]
@@ -136,31 +149,36 @@ public partial class EmpresaSettingsViewModel : ObservableObject
 
     public async Task LoadAsync()
     {
+        var version = ++_loadVersion;
+        HasLoadedData = false;
         if (_settingsService == null) return;
         try
         {
             var appSettings = await _settingsService.GetAppSettingsAsync();
+            if (!_sessionActive || version != _loadVersion) return;
+            var d = await _settingsService.GetAllAsync();
+            if (!_sessionActive || version != _loadVersion) return;
             if (appSettings?.Company != null)
             {
-                if (!string.IsNullOrWhiteSpace(appSettings.Company.CommercialName)) EmpresaNombreComercial = appSettings.Company.CommercialName;
-                if (!string.IsNullOrWhiteSpace(appSettings.Company.LegalName)) EmpresaRazonSocial = appSettings.Company.LegalName;
-                if (!string.IsNullOrWhiteSpace(appSettings.Company.Rfc)) EmpresaRfc = appSettings.Company.Rfc;
-                if (!string.IsNullOrWhiteSpace(appSettings.Company.FiscalRegime)) EmpresaRegimenFiscal = appSettings.Company.FiscalRegime;
-                if (!string.IsNullOrWhiteSpace(appSettings.Company.ZipCode)) EmpresaCodigoPostalFiscal = appSettings.Company.ZipCode;
-                if (!string.IsNullOrWhiteSpace(appSettings.Company.Phone)) EmpresaTelefonoFijo = appSettings.Company.Phone;
-                if (!string.IsNullOrWhiteSpace(appSettings.Company.Email)) EmpresaEmailContacto = appSettings.Company.Email;
-                if (!string.IsNullOrWhiteSpace(appSettings.Company.Address)) EmpresaCalleYNumero = appSettings.Company.Address;
-                if (!string.IsNullOrWhiteSpace(appSettings.Company.Website)) EmpresaSitioWeb = appSettings.Company.Website;
+                EmpresaZonaHoraria = appSettings.Company.TimeZoneId;
+                EmpresaNombreComercial = appSettings.Company.CommercialName;
+                EmpresaRazonSocial = appSettings.Company.LegalName;
+                EmpresaRfc = appSettings.Company.Rfc;
+                EmpresaRegimenFiscal = appSettings.Company.FiscalRegime;
+                EmpresaCodigoPostalFiscal = appSettings.Company.ZipCode;
+                EmpresaTelefonoFijo = appSettings.Company.Phone;
+                EmpresaEmailContacto = appSettings.Company.Email;
+                EmpresaCalleYNumero = appSettings.Company.Address;
+                EmpresaSitioWeb = appSettings.Company.Website;
+                EmpresaLogoPrincipalUrl = appSettings.Company.LogoPath;
             }
 
-            var d = await _settingsService.GetAllAsync();
             if (d.TryGetValue("EmpresaNombreComercial", out var nc) && !string.IsNullOrWhiteSpace(nc)) EmpresaNombreComercial = nc;
             else if (string.IsNullOrWhiteSpace(EmpresaNombreComercial) && d.TryGetValue("BusinessName", out var bn)) EmpresaNombreComercial = bn;
             if (d.TryGetValue("EmpresaRazonSocial", out var rs) && !string.IsNullOrWhiteSpace(rs)) EmpresaRazonSocial = rs;
             if (d.TryGetValue("EmpresaGiroComercial", out var gc)) EmpresaGiroComercial = gc;
             if (d.TryGetValue("EmpresaEslogan", out var es)) EmpresaEslogan = es;
             if (d.TryGetValue("EmpresaMonedaPrincipal", out var mp)) EmpresaMonedaPrincipal = mp;
-            if (d.TryGetValue("EmpresaZonaHoraria", out var zh)) EmpresaZonaHoraria = zh;
             if (d.TryGetValue("EmpresaRfc", out var rfc) && !string.IsNullOrWhiteSpace(rfc)) EmpresaRfc = rfc;
             if (d.TryGetValue("EmpresaRegimenFiscal", out var rf) && !string.IsNullOrWhiteSpace(rf)) EmpresaRegimenFiscal = rf;
             if (d.TryGetValue("EmpresaCodigoPostalFiscal", out var cp) && !string.IsNullOrWhiteSpace(cp)) EmpresaCodigoPostalFiscal = cp;
@@ -172,7 +190,7 @@ public partial class EmpresaSettingsViewModel : ObservableObject
             else if (string.IsNullOrWhiteSpace(EmpresaCalleYNumero) && d.TryGetValue("BusinessAddress", out var ba)) EmpresaCalleYNumero = ba;
             if (d.TryGetValue("EmpresaColonia", out var col)) EmpresaColonia = col;
             if (d.TryGetValue("EmpresaCiudadMunicipio", out var cm)) EmpresaCiudadMunicipio = cm;
-            if (d.TryGetValue("EmpresaEstado", out var est) && est != "Ciudad de México") EmpresaEstado = est;
+            if (d.TryGetValue("EmpresaEstado", out var est)) EmpresaEstado = est;
             if (d.TryGetValue("EmpresaTelefonoFijo", out var tf) && !string.IsNullOrWhiteSpace(tf)) EmpresaTelefonoFijo = tf;
             else if (string.IsNullOrWhiteSpace(EmpresaTelefonoFijo) && d.TryGetValue("BusinessPhone", out var bp)) EmpresaTelefonoFijo = bp;
             if (d.TryGetValue("EmpresaWhatsappContacto", out var wa)) EmpresaWhatsappContacto = wa;
@@ -183,66 +201,86 @@ public partial class EmpresaSettingsViewModel : ObservableObject
             if (d.TryGetValue("EmpresaInstagram", out var ig)) EmpresaInstagram = ig;
             if (d.TryGetValue("EmpresaMensajeBienvenidaTicket", out var mb)) EmpresaMensajeBienvenidaTicket = mb;
             if (d.TryGetValue("EmpresaQrRedesUrl", out var qr)) EmpresaQrRedesUrl = qr;
-            FacturamaApiUser = _credentialStore.Read("FacturamaApiUser") ?? string.Empty;
-            FacturamaApiPassword = _credentialStore.Read("FacturamaApiPassword") ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(FacturamaApiUser) && d.TryGetValue("FacturamaApiUser", out var fu) && !string.IsNullOrWhiteSpace(fu))
+            if (d.TryGetValue("EmpresaLogoPrincipalUrl", out var logo)) EmpresaLogoPrincipalUrl = logo;
+            if (d.TryGetValue("EmpresaLogoIsotipoUrl", out var isotipo)) EmpresaLogoIsotipoUrl = isotipo;
+            if (d.TryGetValue("EmpresaLogoTermicoUrl", out var thermal)) EmpresaLogoTermicoUrl = thermal;
+            if (d.TryGetValue("EmpresaThermalLogoThreshold", out var threshold) && double.TryParse(threshold, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+                && double.IsFinite(parsed) && parsed is >= 0 and <= 255) EmpresaThermalLogoThreshold = parsed;
+            if (Ticketfy.Core.Configuration.LocalDevelopmentMode.FacturamaEnabled)
             {
-                _credentialStore.Write("FacturamaApiUser", fu); FacturamaApiUser = fu;
-                await _settingsService.SetAsync("FacturamaApiUser", string.Empty);
+                FacturamaApiUser = _credentialStore.Read("FacturamaApiUser") ?? string.Empty;
+                FacturamaApiPassword = _credentialStore.Read("FacturamaApiPassword") ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(FacturamaApiUser) && d.TryGetValue("FacturamaApiUser", out var fu) && !string.IsNullOrWhiteSpace(fu))
+                {
+                    _credentialStore.Write("FacturamaApiUser", fu); FacturamaApiUser = fu;
+                    await _settingsService.SetAsync("FacturamaApiUser", string.Empty);
+                }
+                if (string.IsNullOrWhiteSpace(FacturamaApiPassword) && d.TryGetValue("FacturamaApiPassword", out var fp) && !string.IsNullOrWhiteSpace(fp))
+                {
+                    _credentialStore.Write("FacturamaApiPassword", fp); FacturamaApiPassword = fp;
+                    await _settingsService.SetAsync("FacturamaApiPassword", string.Empty);
+                }
+                if (d.TryGetValue("FacturamaAmbiente", out var fa)) FacturamaAmbiente = fa;
             }
-            if (string.IsNullOrWhiteSpace(FacturamaApiPassword) && d.TryGetValue("FacturamaApiPassword", out var fp) && !string.IsNullOrWhiteSpace(fp))
-            {
-                _credentialStore.Write("FacturamaApiPassword", fp); FacturamaApiPassword = fp;
-                await _settingsService.SetAsync("FacturamaApiPassword", string.Empty);
-            }
-            if (d.TryGetValue("FacturamaAmbiente", out var fa)) FacturamaAmbiente = fa;
+            HasLoadedData = _sessionActive;
         }
         catch (Exception ex) { Log.Error(ex, "EmpresaSettingsViewModel: error loading"); }
     }
 
-    public async Task SaveAsync()
+    public async Task<bool> SaveAsync()
     {
-        if (_settingsService == null) return;
+        if (_settingsService == null || !_sessionActive || !HasLoadedData) return false;
         try
         {
-            await _settingsService.SetAsync("EmpresaNombreComercial", EmpresaNombreComercial);
-            await _settingsService.SetAsync("BusinessName", EmpresaNombreComercial);
-            await _settingsService.SetAsync("EmpresaRazonSocial", EmpresaRazonSocial);
-            await _settingsService.SetAsync("EmpresaGiroComercial", EmpresaGiroComercial);
-            await _settingsService.SetAsync("EmpresaEslogan", EmpresaEslogan);
-            await _settingsService.SetAsync("EmpresaMonedaPrincipal", EmpresaMonedaPrincipal);
-            await _settingsService.SetAsync("EmpresaZonaHoraria", EmpresaZonaHoraria);
-            await _settingsService.SetAsync("EmpresaRfc", EmpresaRfc);
-            await _settingsService.SetAsync("EmpresaRegimenFiscal", EmpresaRegimenFiscal);
-            await _settingsService.SetAsync("EmpresaCodigoPostalFiscal", EmpresaCodigoPostalFiscal);
-            await _settingsService.SetAsync("EmpresaUsoCfdiPorDefecto", EmpresaUsoCfdiPorDefecto);
-            await _settingsService.SetAsync("EmpresaCertificadoCerPath", EmpresaCertificadoCerPath);
-            await _settingsService.SetAsync("EmpresaCertificadoKeyPath", EmpresaCertificadoKeyPath);
-            await _settingsService.SetAsync("EmpresaNombreSucursal", EmpresaNombreSucursal);
-            await _settingsService.SetAsync("EmpresaCalleYNumero", EmpresaCalleYNumero);
-            await _settingsService.SetAsync("BusinessAddress", EmpresaCalleYNumero);
-            await _settingsService.SetAsync("EmpresaColonia", EmpresaColonia);
-            await _settingsService.SetAsync("EmpresaCiudadMunicipio", EmpresaCiudadMunicipio);
-            await _settingsService.SetAsync("EmpresaEstado", EmpresaEstado);
-            await _settingsService.SetAsync("EmpresaTelefonoFijo", EmpresaTelefonoFijo);
-            await _settingsService.SetAsync("BusinessPhone", EmpresaTelefonoFijo);
-            await _settingsService.SetAsync("EmpresaWhatsappContacto", EmpresaWhatsappContacto);
-            await _settingsService.SetAsync("EmpresaEmailContacto", EmpresaEmailContacto);
-            await _settingsService.SetAsync("BusinessEmail", EmpresaEmailContacto);
-            await _settingsService.SetAsync("EmpresaSitioWeb", EmpresaSitioWeb);
-            await _settingsService.SetAsync("EmpresaFacebook", EmpresaFacebook);
-            await _settingsService.SetAsync("EmpresaInstagram", EmpresaInstagram);
-            await _settingsService.SetAsync("EmpresaMensajeBienvenidaTicket", EmpresaMensajeBienvenidaTicket);
-            await _settingsService.SetAsync("EmpresaQrRedesUrl", EmpresaQrRedesUrl);
-            if (!string.IsNullOrWhiteSpace(FacturamaApiUser)) _credentialStore.Write("FacturamaApiUser", FacturamaApiUser);
-            if (!string.IsNullOrWhiteSpace(FacturamaApiPassword)) _credentialStore.Write("FacturamaApiPassword", FacturamaApiPassword);
-            await _settingsService.SetAsync("FacturamaApiUser", string.Empty);
-            await _settingsService.SetAsync("FacturamaApiPassword", string.Empty);
-            await _settingsService.SetAsync("FacturamaAmbiente", FacturamaAmbiente);
+            var values = new Dictionary<string, string>
+            {
+                ["EmpresaNombreComercial"] = EmpresaNombreComercial,
+                ["EmpresaRazonSocial"] = EmpresaRazonSocial,
+                ["EmpresaGiroComercial"] = EmpresaGiroComercial,
+                ["EmpresaEslogan"] = EmpresaEslogan,
+                ["EmpresaMonedaPrincipal"] = EmpresaMonedaPrincipal,
+                ["EmpresaRfc"] = EmpresaRfc,
+                ["EmpresaRegimenFiscal"] = EmpresaRegimenFiscal,
+                ["EmpresaCodigoPostalFiscal"] = EmpresaCodigoPostalFiscal,
+                ["EmpresaUsoCfdiPorDefecto"] = EmpresaUsoCfdiPorDefecto,
+                ["EmpresaNombreSucursal"] = EmpresaNombreSucursal,
+                ["EmpresaCalleYNumero"] = EmpresaCalleYNumero,
+                ["EmpresaColonia"] = EmpresaColonia,
+                ["EmpresaCiudadMunicipio"] = EmpresaCiudadMunicipio,
+                ["EmpresaEstado"] = EmpresaEstado,
+                ["EmpresaTelefonoFijo"] = EmpresaTelefonoFijo,
+                ["EmpresaWhatsappContacto"] = EmpresaWhatsappContacto,
+                ["EmpresaEmailContacto"] = EmpresaEmailContacto,
+                ["EmpresaSitioWeb"] = EmpresaSitioWeb,
+                ["EmpresaFacebook"] = EmpresaFacebook,
+                ["EmpresaInstagram"] = EmpresaInstagram,
+                ["EmpresaMensajeBienvenidaTicket"] = EmpresaMensajeBienvenidaTicket,
+                ["EmpresaQrRedesUrl"] = EmpresaQrRedesUrl,
+                ["EmpresaLogoPrincipalUrl"] = EmpresaLogoPrincipalUrl,
+                ["EmpresaLogoIsotipoUrl"] = EmpresaLogoIsotipoUrl,
+                ["EmpresaLogoTermicoUrl"] = EmpresaLogoTermicoUrl,
+                ["EmpresaThermalLogoThreshold"] = EmpresaThermalLogoThreshold.ToString(CultureInfo.InvariantCulture)
+            };
+            if (IsFiscalIntegrationEnabled)
+            {
+                values["EmpresaCertificadoCerPath"] = EmpresaCertificadoCerPath;
+                values["EmpresaCertificadoKeyPath"] = EmpresaCertificadoKeyPath;
+            }
+            await _settingsService.SaveBusinessSettingsAsync(values);
+            if (!_sessionActive) return false;
+            if (Ticketfy.Core.Configuration.LocalDevelopmentMode.FacturamaEnabled)
+            {
+                if (!string.IsNullOrWhiteSpace(FacturamaApiUser)) _credentialStore.Write("FacturamaApiUser", FacturamaApiUser);
+                if (!string.IsNullOrWhiteSpace(FacturamaApiPassword)) _credentialStore.Write("FacturamaApiPassword", FacturamaApiPassword);
+                await _settingsService.SetAsync("FacturamaApiUser", string.Empty);
+                await _settingsService.SetAsync("FacturamaApiPassword", string.Empty);
+                await _settingsService.SetAsync("FacturamaAmbiente", FacturamaAmbiente);
+            }
 
             FeedbackMessage = "¡Datos de empresa guardados correctamente!";
+            return true;
         }
-        catch (Exception ex) { Log.Error(ex, "EmpresaSettingsViewModel: error saving"); }
+        catch (Exception ex) { Log.Error(ex, "EmpresaSettingsViewModel: error saving"); if (_sessionActive) FeedbackMessage = ex is InvalidOperationException ? ex.Message : "No se completó el guardado. Revise permisos y datos antes de reintentar."; return false; }
     }
 
     [RelayCommand] private async Task Save() => await SaveAsync();
