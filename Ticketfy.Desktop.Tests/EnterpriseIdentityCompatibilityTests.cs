@@ -157,14 +157,14 @@ public sealed partial class EnterpriseCredentialBoundaryTests
     }
 
     [Fact]
-    public async Task IdentityCompatibility_NewPasswordsRequireFifteenCodePointsAndWeakLegacyProofRequiresTransition()
+    public async Task IdentityCompatibility_NewPasswordsRequireSixCodePointsAndWeakLegacyProofRequiresTransition()
     {
         await using var db = Db();
         var service = new UserService(db, operations: _actor);
         string id = Guid.NewGuid().ToString();
-        await Assert.ThrowsAsync<InvalidOperationException>(() => service.SaveAsync(id, "Short", "short", "CAJERO", new string('a', 14), null));
-        string sevenSupplementary = string.Concat(Enumerable.Repeat("\U0001F332", 7)); // 14 UTF-16 units, only 7 code points.
-        await Assert.ThrowsAsync<InvalidOperationException>(() => service.SaveAsync(id, "Short", "short", "CAJERO", sevenSupplementary + "a", null));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.SaveAsync(id, "Short", "short", "CAJERO", "R7!ab", null));
+        string fiveCodePoints = "\U0001F332\U0001F33Eabc"; // Seven UTF-16 units, only five code points.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.SaveAsync(id, "Short", "short", "CAJERO", fiveCodePoints, null));
         string phrase = "prueba de frase";
         Assert.Equal(15, phrase.Length);
         await service.SaveAsync(id, "Phrase", "phrase", "CAJERO", phrase, null);

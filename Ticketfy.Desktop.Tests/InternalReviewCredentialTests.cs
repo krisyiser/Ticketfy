@@ -8,6 +8,7 @@ public sealed partial class EnterpriseCredentialBoundaryTests
     [Theory]
     [InlineData("R7m!a9")]
     [InlineData("Ár7!o9")]
+    [InlineData("\U0001F332\U0001F33Ea7!b")]
     public async Task Review_SixCharacterPasswordCanCreateAuthenticateAndRotateAnAccount(string password)
     {
         await using var db = Db();

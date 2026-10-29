@@ -148,6 +148,36 @@ public sealed partial class Stage6CommercialLedgerTests
     }
 
     [AvaloniaFact]
+    public async Task Review_EmptyPaidAmountMustBeCorrectedBeforeReceivingThePurchase()
+    {
+        await Sales.SaveAsync(Sale("REVIEW-EMPTY-FLOAT"));
+        var factory = new TestDbContextFactory(_options);
+        var model = new PurchaseOrderViewModel(new PurchaseService(factory, _actor), ProductsService(), new SupplierService(factory, _actor));
+        await model.LoadCatalogAsync();
+        model.SelectedSupplier = Assert.Single(model.Suppliers);
+        await model.LoadProductsAsync();
+        model.SelectedProduct = Assert.Single(model.AvailableProducts);
+        model.AddItemToPurchaseDraftCommand.Execute(null);
+        model.PurchasePaymentMethod = "Efectivo";
+        var view = new PurchaseOrderView(); var window = ReviewWindow(view, model, 1024, 500);
+        try
+        {
+            var field = view.GetVisualDescendants().OfType<NumericUpDown>().Single();
+            field.Value = null;
+            Assert.Null(model.PurchasePaidAmount);
+            await model.ConfirmPurchaseCommand.ExecuteAsync(null);
+            Assert.True(model.IsFeedbackError); Assert.Contains("cuánto pagó", model.FeedbackMessage);
+            await using var db = Db(); Assert.Empty(await db.Purchases.ToListAsync());
+            field.Value = 2m;
+            await model.ConfirmPurchaseCommand.ExecuteAsync(null);
+            Assert.False(model.IsFeedbackError, model.FeedbackMessage);
+            Assert.Equal(2m, (await db.SupplierPayments.SingleAsync()).Amount);
+            Assert.Single(await db.Purchases.ToListAsync());
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
     public async Task Review_ProductFormKeepsOnlyRequestedInventoryFieldsAndPreservesHiddenMetadata()
     {
         await using var db = Db();
