@@ -8,10 +8,18 @@ using System.Threading.Tasks;
 
 namespace Ticketfy.ViewModels.Dialogs;
 
-public partial class CustomerDialogViewModel : ObservableObject
+public partial class CustomerDialogViewModel : ObservableObject, Ticketfy.ViewModels.Navigation.IDismissibleDialog
 {
     private readonly string _newId = Guid.NewGuid().ToString("N");
-    private bool _saving;
+    [ObservableProperty] private bool _isSaving;
+    [ObservableProperty] private bool _isPendingConfirmation;
+    private bool _dismissed;
+    private CustomerDto? _pending;
+    public CustomerDto? SavedCustomer { get; private set; }
+    public string Title => _editingCustomerId is null ? "Nuevo cliente" : "Editar cliente";
+    public bool CanEditFields => !IsSaving && !IsPendingConfirmation && !_saved && !_dismissed;
+    public bool CanSave => !IsSaving && !_saved && !_dismissed && (!IsPendingConfirmation || _editingCustomerId is null);
+    public string SaveButtonText => IsSaving ? "Guardando…" : IsPendingConfirmation ? "Confirmar la misma alta" : "Guardar cliente";
     private bool _saved;
     private double _existingPoints;
     private readonly ICustomerService _customerService;
@@ -32,7 +40,7 @@ public partial class CustomerDialogViewModel : ObservableObject
     private decimal? _creditLimit;
 
     [ObservableProperty]
-    private string _customerCode = $"CLI-{Random.Shared.Next(1000, 9999)}";
+    private string _customerCode = "CLI-" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
 
     [ObservableProperty]
     private string _errorMessage = string.Empty;
@@ -50,7 +58,15 @@ public partial class CustomerDialogViewModel : ObservableObject
     [RelayCommand]
     private void Cancel()
     {
-        RequestClose?.Invoke();
+        if (IsSaving) return;
+        OnDismissed(); RequestClose?.Invoke();
+    }
+
+    public void OnDismissed() { _dismissed = true; NotifyState(); }
+    private void NotifyState()
+    {
+        OnPropertyChanged(nameof(CanSave)); OnPropertyChanged(nameof(CanEditFields)); OnPropertyChanged(nameof(SaveButtonText));
+        SaveCommand.NotifyCanExecuteChanged();
     }
 
     public void LoadForEdit(CustomerDto customer)
@@ -64,40 +80,21 @@ public partial class CustomerDialogViewModel : ObservableObject
         CreditLimit = customer.CreditLimit;
         CustomerCode = customer.CustomerCode;
         _existingDebt = customer.Debt;
+        OnPropertyChanged(nameof(Title));
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanSave))]
     private async Task SaveAsync()
     {
-        if (_saving || _saved) return;
-        _saving = true;
+        if (!CanSave) return;
+        IsSaving = true; ErrorMessage = ""; NotifyState();
         try
         {
-            if (string.IsNullOrWhiteSpace(Name))
-            {
-                ErrorMessage = "El nombre del cliente es obligatorio.";
-                return;
-            }
-
-            string cleanPhone = string.IsNullOrWhiteSpace(Phone) ? string.Empty : new string(Phone.Where(char.IsDigit).ToArray());
-
-            if (!string.IsNullOrWhiteSpace(Phone) && cleanPhone.Length != 10)
-            {
-                ErrorMessage = "El teléfono debe contener 10 dígitos numéricos.";
-                return;
-            }
-
-            var dto = new CustomerDto(
-                Id: _editingCustomerId ?? _newId,
-                Nombre: Name.Trim(),
-                Telefono: cleanPhone,
-                Email: Email.Trim(),
-                Rfc: Rfc.Trim(),
-                LimiteCredito: CreditLimit ?? 0,
-                Deuda: _existingDebt,
-                PuntosSaldo: _existingPoints,
-                CustomerCode: CustomerCode.Trim()
-            );
+            _pending ??= Ticketfy.Core.Helpers.CustomerInput.Normalize(new CustomerDto(
+                _editingCustomerId ?? _newId, Name, Phone, Email, Rfc, CreditLimit ?? 0m,
+                _existingDebt, _existingPoints, CustomerCode: CustomerCode));
+            var dto = _pending;
+            IsPendingConfirmation = true; NotifyState();
 
             if (_editingCustomerId != null)
             {
@@ -107,14 +104,26 @@ public partial class CustomerDialogViewModel : ObservableObject
             {
                 await _customerService.AddAsync(dto);
             }
-            _saved = true;
-            RequestClose?.Invoke();
+            _saved = true; SavedCustomer = dto; IsPendingConfirmation = false;
+            if (_dismissed) return;
+            try { RequestClose?.Invoke(); }
+            catch (Exception ex)
+            { Log.Warning(ex, "Customer saved but dialog refresh failed"); ErrorMessage = "Cliente guardado. Cierre y actualice el directorio."; }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException or ArgumentException
+            || ex.GetBaseException() is Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 19 })
+        {
+            Log.Warning(ex, "Customer save rejected");
+            if (!_dismissed)
+            { _pending = null; IsPendingConfirmation = false; ErrorMessage = Ticketfy.Core.Helpers.UserFacingErrors.Message(ex); }
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Error saving customer");
-            ErrorMessage = ex.Message;
+            Log.Error(ex, "Customer save response uncertain");
+            if (!_dismissed) ErrorMessage = _editingCustomerId is null
+                ? "No se pudo confirmar el alta. Confirme la misma alta sin cambiar los datos, o cierre y revise el directorio."
+                : "No se pudo confirmar la edición. Cierre y vuelva a consultar el cliente antes de editarlo otra vez.";
         }
-        finally { _saving = false; }
+        finally { IsSaving = false; NotifyState(); }
     }
 }

@@ -51,13 +51,20 @@ public sealed class CustomerService : ICustomerService
     }
     public async Task AddAsync(CustomerDto customer)
     {
-        Validate(customer);
+        customer = Ticketfy.Core.Helpers.CustomerInput.Normalize(customer);
         if (customer.Debt != 0 || customer.PuntosSaldo != 0) throw new InvalidOperationException("Los saldos iniciales requieren una migración conciliada.");
         await using var db = await _factory.CreateDbContextAsync();
         var actor = await AuthorizeAsync(db, PermissionCatalog.CustomersCreateEdit);
         if (customer.CreditLimit > 0) await AuthorizeAsync(db, PermissionCatalog.CustomersCreditLimit);
         string id = string.IsNullOrWhiteSpace(customer.Id) ? Guid.NewGuid().ToString("N") : customer.Id;
-        if (await db.Customers.AnyAsync(c => c.Id == id)) return;
+        var existing = await db.Customers.AsNoTracking().SingleOrDefaultAsync(c => c.Id == id);
+        if (existing is not null)
+        {
+            if (!existing.IsActive || !SameProfile(existing, customer, allowGeneratedCode: true))
+                throw new InvalidOperationException("El cliente de esta alta ya existe con otros datos. Revise el directorio antes de continuar.");
+            return;
+        }
+        await RequireAvailableCodeAsync(db, customer, id);
         var entity = new CustomerEntity
         {
             Id = id,
@@ -74,22 +81,29 @@ public sealed class CustomerService : ICustomerService
     }
     public async Task UpdateAsync(CustomerDto customer)
     {
-        Validate(customer);
+        customer = Ticketfy.Core.Helpers.CustomerInput.Normalize(customer);
         await using var db = await _factory.CreateDbContextAsync();
         var actor = await AuthorizeAsync(db, PermissionCatalog.CustomersCreateEdit);
         var c = await db.Customers.SingleAsync(c => c.Id == customer.Id);
         if (c.Debt != customer.Debt || c.PuntosSaldo != customer.PuntosSaldo)
             throw new InvalidOperationException("El saldo cambió. Actualice los datos; los saldos no se editan directamente.");
         if (c.CreditLimit != customer.CreditLimit) await AuthorizeAsync(db, PermissionCatalog.CustomersCreditLimit);
+        if (SameProfile(c, customer)) return;
+        await RequireAvailableCodeAsync(db, customer, c.Id);
         c.Name = customer.Name.Trim(); c.Phone = customer.Phone; c.Email = customer.Email; c.Rfc = customer.Rfc;
         c.CreditLimit = customer.CreditLimit; c.CustomerCode = customer.CustomerCode;
         CommercialLedger.Journal(db, actor, Guid.NewGuid().ToString("N"), "CUSTOMER_UPDATED", c.Id, 0, "Datos y límite de crédito");
         await db.SaveChangesAsync();
     }
-    private static void Validate(CustomerDto c)
+    private static bool SameProfile(CustomerEntity current, CustomerDto draft, bool allowGeneratedCode = false) =>
+        current.Name == draft.Name && current.Phone == draft.Phone && current.Email == draft.Email
+        && current.Rfc == draft.Rfc && current.CreditLimit == draft.CreditLimit
+        && (current.CustomerCode == draft.CustomerCode || (allowGeneratedCode && draft.CustomerCode.Length == 0));
+
+    private static async Task RequireAvailableCodeAsync(AppDbContext db, CustomerDto draft, string id)
     {
-        if (string.IsNullOrWhiteSpace(c.Name) || c.CreditLimit < 0 || CommercialLedger.Money(c.CreditLimit) != c.CreditLimit)
-            throw new InvalidOperationException("Nombre y límite de crédito inválidos.");
+        if (draft.CustomerCode.Length > 0 && await db.Customers.AnyAsync(c => c.Id != id && c.CustomerCode == draft.CustomerCode))
+            throw new InvalidOperationException("El código de cliente ya está asignado. Use otro código.");
     }
     public Task UpdateDebtAsync(string customerId, decimal newDebt) => throw new InvalidOperationException("La deuda sólo cambia mediante ventas, abonos y notas de crédito.");
     public Task UpdatePointsAsync(string customerId, double points) => throw new InvalidOperationException("Los puntos sólo cambian mediante movimientos identificados.");

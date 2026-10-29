@@ -24,7 +24,7 @@
                             <Border Margin="0,0,0,8" Padding="14,12" CornerRadius="{DynamicResource AppCornerRadius}" Background="{DynamicResource BgTertiaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                                 <StackPanel Spacing="10">
                                     <!-- Main Header Row -->
-                                    <Grid ColumnDefinitions="140,240,*,120,Auto">
+                                    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="2*,2*,*,Auto">
                                         <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Id, StringFormat='Folio: {0}'}" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" TextTrimming="CharacterEllipsis" />
                                             <TextBlock Text="{Binding LocalDateDisplay}" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" />
@@ -48,8 +48,8 @@
                                             <TextBlock IsVisible="{Binding DetailsAvailable}" Text="{Binding NetTotal, StringFormat='Neto: ${0:N2}'}" FontSize="14" FontWeight="Bold" />
                                         </StackPanel>
 
-                                        <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                            <Button Command="{Binding $parent[UserControl].((vm:HistoryViewModel)DataContext).ViewSaleDetailCommand}"
+                                        <WrapPanel Grid.Row="1" Grid.ColumnSpan="4" HorizontalAlignment="Right" Margin="0,8,0,0">
+                                            <Button Margin="4,2" Command="{Binding $parent[UserControl].((vm:HistoryViewModel)DataContext).ViewSaleDetailCommand}"
                                                     CommandParameter="{Binding}"
                                                     Padding="10,6" CornerRadius="{DynamicResource AppCornerRadius}" Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" ToolTip.Tip="Ver detalle completo del ticket">
                                                 <StackPanel Orientation="Horizontal" Spacing="6">
@@ -58,7 +58,7 @@
                                                 </StackPanel>
                                             </Button>
 
-                                            <Button Command="{Binding $parent[UserControl].((vm:HistoryViewModel)DataContext).OpenReturnDialogCommand}"
+                                            <Button Margin="4,2" Command="{Binding $parent[UserControl].((vm:HistoryViewModel)DataContext).OpenReturnDialogCommand}"
                                                     CommandParameter="{Binding}"
                                                     Padding="10,6" CornerRadius="{DynamicResource AppCornerRadius}" Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource AccentWarningBrush}" BorderThickness="1" ToolTip.Tip="Devolver producto individual del ticket">
                                                 <StackPanel Orientation="Horizontal" Spacing="6">
@@ -67,7 +67,7 @@
                                                 </StackPanel>
                                             </Button>
 
-                                            <Button Command="{Binding $parent[UserControl].((vm:HistoryViewModel)DataContext).RePrintTicketCommand}"
+                                            <Button Margin="4,2" Command="{Binding $parent[UserControl].((vm:HistoryViewModel)DataContext).RePrintTicketCommand}"
                                                     CommandParameter="{Binding}"
                                                     Padding="12,6" CornerRadius="{DynamicResource AppCornerRadius}" Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource AccentPrimaryBrush}" BorderThickness="1">
                                                 <StackPanel Orientation="Horizontal" Spacing="6">
@@ -76,12 +76,12 @@
                                                 </StackPanel>
                                             </Button>
 
-                                            <Button Command="{Binding $parent[UserControl].((vm:HistoryViewModel)DataContext).CancelSaleCommand}"
+                                            <Button Margin="4,2" Command="{Binding $parent[UserControl].((vm:HistoryViewModel)DataContext).CancelSaleCommand}"
                                                     CommandParameter="{Binding}"
                                                     Padding="8,6" CornerRadius="{DynamicResource AppCornerRadius}" Background="Transparent" BorderBrush="{DynamicResource AccentDangerBrush}" BorderThickness="1" ToolTip.Tip="Cancelar Venta Completa (Requiere Supervisor)">
                                                 <mi:MaterialIcon Kind="Cancel" Width="16" Height="16" Foreground="{DynamicResource AccentDangerBrush}" />
                                             </Button>
-                                        </StackPanel>
+                                        </WrapPanel>
                                     </Grid>
 
                                     <!-- Divider -->

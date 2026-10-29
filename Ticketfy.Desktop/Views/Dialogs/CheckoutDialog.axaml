@@ -38,17 +38,17 @@
                 <TextBlock Text="{Binding OperationReference, StringFormat='Referencia local: {0}'}" FontSize="11"
                            TextWrapping="Wrap" />
 
-                <Grid ColumnDefinitions="*,Auto,Auto">
-                    <Button Grid.Column="0" Command="{Binding CancelCommand}" Content="CERRAR" IsEnabled="{Binding !IsProcessing}" Margin="0,0,16,0" Padding="16,12"
+                <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,*">
+                    <Button Grid.Row="1" Grid.Column="0" Command="{Binding CancelCommand}" Content="CERRAR" IsEnabled="{Binding !IsProcessing}" Margin="0,0,16,0" Padding="16,12"
                             Background="#F87171" BorderBrush="#DC2626" BorderThickness="1"
-                            Foreground="White" FontWeight="Bold" CornerRadius="8" HorizontalAlignment="Left" />
-                    
-                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding ShouldPrintReceipt}" 
+                            Foreground="White" FontWeight="Bold" CornerRadius="8" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+
+                    <ToggleSwitch Grid.Row="0" Grid.ColumnSpan="2" IsChecked="{Binding ShouldPrintReceipt}"
                                   OnContent="Imprimir Ticket" OffContent="Sin Ticket"
-                                  VerticalAlignment="Center" Margin="0,0,16,0" FontWeight="SemiBold"
+                                  VerticalAlignment="Center" Margin="0,0,0,8" FontWeight="SemiBold"
                                   Foreground="{DynamicResource TextPrimaryBrush}" />
 
-                    <Button Grid.Column="2" Command="{Binding ConfirmPaymentCommand}" IsEnabled="{Binding IsSufficientAmount}" IsDefault="True" Padding="24,12"
+                    <Button x:Name="ConfirmSaleButton" Grid.Row="1" Grid.Column="1" Command="{Binding ConfirmPaymentCommand}" IsEnabled="{Binding IsSufficientAmount}" IsDefault="True" Padding="24,12"
                             Background="#10B981" Foreground="White" FontWeight="Bold" CornerRadius="8" HorizontalContentAlignment="Center">
                         <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
                             <mi:MaterialIcon Kind="CheckDecagram" Width="22" Height="22"/>
@@ -65,7 +65,7 @@
                     <Border Background="{DynamicResource BgTertiaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
                         <Grid ColumnDefinitions="*, Auto">
                             <TextBlock Text="Total a Cobrar:" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="1" Text="{Binding TotalToPay, StringFormat='${0:N2}'}" 
+                            <TextBlock Grid.Column="1" Text="{Binding TotalToPay, StringFormat='${0:N2}'}"
                                        FontSize="32" FontWeight="ExtraBold" Foreground="{DynamicResource AccentPrimaryBrush}" FontFamily="{DynamicResource AppFontFamily}"/>
                         </Grid>
                     </Border>
@@ -97,15 +97,15 @@
                         <Grid ColumnDefinitions="*,*" IsVisible="{Binding IsNotMixedPayment}">
                             <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,6,0">
                                 <TextBlock Text="Monto Recibido ($):" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                <controls:NumericTextBox x:Name="ReceivedAmountTextBox" AllowDecimals="True" Text="{Binding ReceivedAmountInput, Mode=TwoWay}" FontSize="20" FontWeight="Bold" 
+                                <controls:NumericTextBox x:Name="ReceivedAmountTextBox" AllowDecimals="True" Text="{Binding ReceivedAmountInput, Mode=TwoWay}" FontSize="20" FontWeight="Bold"
                                                          FontFamily="{DynamicResource AppFontFamily}" HorizontalContentAlignment="Right" Padding="8"/>
                             </StackPanel>
 
                             <StackPanel Grid.Column="1" Spacing="4" Margin="6,0,0,0">
                                 <TextBlock Text="Estado de Cambio:" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}"/>
                                 <Border Background="{Binding ChangeBgColor}" CornerRadius="4" Padding="10,6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
-                                    <TextBlock Text="{Binding ChangeOrShortageText}" 
-                                               Foreground="{Binding ChangeTextColor}" 
+                                    <TextBlock Text="{Binding ChangeOrShortageText}"
+                                               Foreground="{Binding ChangeTextColor}"
                                                FontSize="18" FontWeight="ExtraBold" FontFamily="{DynamicResource AppFontFamily}" HorizontalAlignment="Right"/>
                                 </Border>
                             </StackPanel>
@@ -117,21 +117,21 @@
                             <Grid ColumnDefinitions="*,*,*">
                                 <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,4,0">
                                     <TextBlock Text="Efectivo ($):" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                    <controls:NumericTextBox AllowDecimals="True" Text="{Binding CashAmount, Mode=TwoWay, Converter={StaticResource StringToDoubleConverter}}" FontSize="14" FontWeight="Bold" 
+                                    <controls:NumericTextBox x:Name="MixedCashInput" AllowDecimals="True" Text="{Binding CashAmount, Mode=TwoWay, Converter={StaticResource StringToDoubleConverter}}" FontSize="14" FontWeight="Bold"
                                                              Background="{DynamicResource BgTertiaryBrush}" Padding="8" Watermark="0.00" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Spacing="4" Margin="4,0,4,0">
                                     <TextBlock Text="Tarjeta ($):" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                    <controls:NumericTextBox AllowDecimals="True" Text="{Binding CardAmount, Mode=TwoWay, Converter={StaticResource StringToDoubleConverter}}" FontSize="14" FontWeight="Bold" 
+                                    <controls:NumericTextBox AllowDecimals="True" Text="{Binding CardAmount, Mode=TwoWay, Converter={StaticResource StringToDoubleConverter}}" FontSize="14" FontWeight="Bold"
                                                              Background="{DynamicResource BgTertiaryBrush}" Padding="8" Watermark="0.00" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="2" Spacing="4" Margin="4,0,0,0">
                                     <TextBlock Text="Monedero ($):" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                    <controls:NumericTextBox AllowDecimals="True" Text="{Binding WalletAmount, Mode=TwoWay, Converter={StaticResource StringToDoubleConverter}}" FontSize="14" FontWeight="Bold" 
+                                    <controls:NumericTextBox AllowDecimals="True" Text="{Binding WalletAmount, Mode=TwoWay, Converter={StaticResource StringToDoubleConverter}}" FontSize="14" FontWeight="Bold"
                                                              Background="{DynamicResource BgTertiaryBrush}" Padding="8" Watermark="0.00" />
                                 </StackPanel>
                             </Grid>
-                            
+
                             <Grid ColumnDefinitions="*,*">
                                 <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,6,0">
                                     <TextBlock Text="Total Recibido (Mixto):" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}"/>
@@ -140,8 +140,8 @@
                                 <StackPanel Grid.Column="1" Spacing="4" Margin="6,0,0,0">
                                     <TextBlock Text="Cambio (Mixto):" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}"/>
                                     <Border Background="{Binding ChangeBgColor}" CornerRadius="4" Padding="8,4" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
-                                        <TextBlock Text="{Binding ChangeAmount, StringFormat='Cambio: ${0:N2}'}" 
-                                                   Foreground="{Binding ChangeTextColor}" 
+                                        <TextBlock Text="{Binding ChangeAmount, StringFormat='Cambio: ${0:N2}'}"
+                                                   Foreground="{Binding ChangeTextColor}"
                                                    FontSize="16" FontWeight="ExtraBold" FontFamily="{DynamicResource AppFontFamily}" HorizontalAlignment="Right"/>
                                     </Border>
                                 </StackPanel>
@@ -352,7 +352,7 @@
                 </StackPanel>
             </ScrollViewer>
             </DockPanel>
-            
+
             <!-- Overlay para Espera de Terminal Física -->
             <Border IsVisible="{Binding IsWaitingForTerminal}" Background="#D9000000" CornerRadius="8" Margin="-24">
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16">

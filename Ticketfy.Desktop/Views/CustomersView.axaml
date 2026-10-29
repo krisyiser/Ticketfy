@@ -81,7 +81,7 @@
                     <DataGridTemplateColumn Header="Acciones de Crédito y Cuenta" Width="3*">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate x:DataType="dto:CustomerDto">
-                                <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <Button Command="{Binding $parent[UserControl].((vm:CustomersViewModel)DataContext).OpenAddPaymentDialogCommand}"
                                             CommandParameter="{Binding}"
                                             Content="ABONAR" Padding="8,4" FontSize="11" FontWeight="Bold"
@@ -96,7 +96,7 @@
                                             CommandParameter="{Binding}"
                                             Content="EDITAR" Padding="8,4" FontSize="11" FontWeight="Bold"
                                             Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource TextMutedBrush}" BorderThickness="1" Foreground="{DynamicResource TextPrimaryBrush}" CornerRadius="4" />
-                                </StackPanel>
+                                </WrapPanel>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
@@ -104,9 +104,10 @@
 
             </DataGrid>
         </Border>
-        <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center" Margin="0,8,0,0">
+        <StackPanel Grid.Row="4" IsEnabled="{Binding !IsLoading}" Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center" Margin="0,8,0,0">
             <Button Content="Anterior" Command="{Binding PreviousPageCommand}" IsEnabled="{Binding HasPreviousPage}" />
             <TextBlock Text="{Binding PageDescription}" VerticalAlignment="Center" />
+            <Button Content="Actualizar" Command="{Binding RefreshCommand}" />
             <Button Content="Siguiente" Command="{Binding NextPageCommand}" IsEnabled="{Binding HasNextPage}" />
         </StackPanel>
     </Grid>

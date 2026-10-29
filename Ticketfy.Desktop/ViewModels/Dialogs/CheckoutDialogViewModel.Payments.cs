@@ -300,7 +300,7 @@ public partial class CheckoutDialogViewModel
                 if (!_dismissed) RequestClose?.Invoke();
                 return;
             }
-            ErrorMessage = ex.Message;
+            ErrorMessage = Ticketfy.Core.Helpers.UserFacingErrors.Message(ex, "No se pudo completar el cobro. Revise el estado de la operación antes de reintentar.");
             if (checkoutAttempted)
             {
                 try
@@ -379,7 +379,7 @@ public partial class CheckoutDialogViewModel
 
     public async Task<bool> ApplyManualDiscountAsync(double requestedDiscountPercentage, string reason, ISecurityInterceptionService? securityService = null, IAuditService? auditService = null, UserModel? currentUser = null)
     {
-        if (currentUser is null || !double.IsFinite(requestedDiscountPercentage) || requestedDiscountPercentage < 0 || requestedDiscountPercentage > 100 || string.IsNullOrWhiteSpace(reason)) return false;
+        if (!CanEditTender || currentUser is null || !double.IsFinite(requestedDiscountPercentage) || requestedDiscountPercentage < 0 || requestedDiscountPercentage > 100 || string.IsNullOrWhiteSpace(reason)) return false;
         double maxAllowed = currentUser.Role == SystemRole.CAJERO ? 5.0 : 100.0;
         string? supervisorId = null;
 

@@ -2,31 +2,34 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Ticketfy.ViewModels.Dialogs"
              xmlns:controls="using:Ticketfy.Controls"
+             xmlns:converters="using:Ticketfy.Converters"
              x:Class="Ticketfy.Views.Dialogs.CustomerDialog"
              x:DataType="vm:CustomerDialogViewModel">
+
+    <UserControl.Resources><converters:StringToDoubleConverter x:Key="NumericEntryConverter" /></UserControl.Resources>
 
     <Border Width="500" Padding="24" Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8">
         <DockPanel LastChildFill="True">
             <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,20">
-                <TextBlock Text="Nuevo Cliente" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
-                <TextBlock Text="Ingrese los datos requeridos para el catálogo fiscal y de crédito." FontSize="12" Foreground="{DynamicResource TextMutedBrush}" />
+                <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
+                <TextBlock Text="Registre los datos de contacto y el límite de crédito del cliente." FontSize="12" Foreground="{DynamicResource TextMutedBrush}" />
             </StackPanel>
 
             <StackPanel DockPanel.Dock="Bottom" Margin="0,20,0,0" Spacing="12">
                 <controls:AlertBannerControl Message="{Binding ErrorMessage}" IsError="True" />
 
                 <Grid ColumnDefinitions="*,*">
-                    <Button Grid.Column="0" Command="{Binding CancelCommand}" Content="Cancelar" Margin="0,0,6,0" Padding="12"
+                    <Button Grid.Column="0" Command="{Binding CancelCommand}" Content="Cancelar" IsEnabled="{Binding !IsSaving}" Margin="0,0,6,0" Padding="12"
                             Background="{DynamicResource BgPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                             Foreground="{DynamicResource TextPrimaryBrush}" CornerRadius="6" HorizontalContentAlignment="Center" />
 
-                    <Button Grid.Column="1" Command="{Binding SaveCommand}" Content="Guardar Cliente" Margin="6,0,0,0" Padding="12"
+                    <Button x:Name="SaveCustomerButton" Grid.Column="1" Command="{Binding SaveCommand}" Content="{Binding SaveButtonText}" Margin="6,0,0,0" Padding="12"
                             Classes="primary-action" FontWeight="Bold" CornerRadius="6" HorizontalContentAlignment="Center" />
                 </Grid>
             </StackPanel>
 
             <ScrollViewer VerticalScrollBarVisibility="Visible" Padding="0,0,12,0" Margin="0,0,-12,0">
-                <StackPanel Spacing="16">
+                <StackPanel Spacing="16" IsEnabled="{Binding CanEditFields}">
                     <StackPanel Spacing="4">
                         <TextBlock Text="Nombre Completo / Razón Social *" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" />
                         <TextBox Text="{Binding Name, Mode=TwoWay}" Watermark="Ej. María López Morales" Background="{DynamicResource BgTertiaryBrush}" Padding="10" />
@@ -39,13 +42,13 @@
 
                     <Grid ColumnDefinitions="*,*">
                         <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,6,0">
-                            <TextBlock Text="Teléfono (10 dígitos) *" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                            <controls:PhoneTextBox Text="{Binding Phone, Mode=TwoWay}" Background="{DynamicResource BgTertiaryBrush}" Padding="10" />
+                            <TextBlock Text="Teléfono (opcional, 10 dígitos)" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" />
+                            <TextBox Text="{Binding Phone, Mode=TwoWay}" Background="{DynamicResource BgTertiaryBrush}" Padding="10" />
                         </StackPanel>
 
                         <StackPanel Grid.Column="1" Spacing="4" Margin="6,0,0,0">
                             <TextBlock Text="Límite de Crédito ($)" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                            <NumericUpDown Value="{Binding CreditLimit}" ShowButtonSpinner="False" FormatString="0.00" Minimum="0" Watermark="0.00" Background="{DynamicResource BgTertiaryBrush}" Padding="10" />
+                            <controls:NumericTextBox x:Name="CustomerCreditInput" AllowDecimals="True" Text="{Binding CreditLimit, Mode=TwoWay, Converter={StaticResource NumericEntryConverter}}" Watermark="0.00" Background="{DynamicResource BgTertiaryBrush}" Padding="10" />
                         </StackPanel>
                     </Grid>
 
@@ -55,7 +58,7 @@
                     </StackPanel>
 
                     <StackPanel Spacing="4">
-                        <TextBlock Text="Código de Tarjeta de Fidelidad / Escáner *" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" />
+                        <TextBlock Text="Código de cliente / tarjeta de fidelidad" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" />
                         <TextBox Text="{Binding CustomerCode, Mode=TwoWay}" Watermark="Ej. CLI-1001 o Código de Barras" Background="{DynamicResource BgTertiaryBrush}" Padding="10" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" />
                     </StackPanel>
                 </StackPanel>

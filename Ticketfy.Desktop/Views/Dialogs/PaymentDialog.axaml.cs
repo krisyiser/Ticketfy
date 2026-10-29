@@ -7,5 +7,6 @@ public partial class PaymentDialog : UserControl
     public PaymentDialog()
     {
         InitializeComponent();
+        Ticketfy.Controls.FormValidation.GuardCommit(this, this.FindControl<Button>("SaveCustomerPaymentButton")!);
     }
 }

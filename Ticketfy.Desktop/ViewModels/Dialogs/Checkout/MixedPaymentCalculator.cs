@@ -14,6 +14,11 @@ public static class MixedPaymentCalculator
         decimal walletAmount,
         decimal totalBill)
     {
+        if (!Ticketfy.Core.Helpers.NumericEntry.IsMoney(cashAmount)
+            || !Ticketfy.Core.Helpers.NumericEntry.IsMoney(cardAmount)
+            || !Ticketfy.Core.Helpers.NumericEntry.IsMoney(walletAmount)
+            || !Ticketfy.Core.Helpers.NumericEntry.IsMoney(totalBill))
+            return (false, 0m, "Use importes no negativos, dentro del límite permitido y con hasta dos decimales.");
         decimal digitalPayments = cardAmount + walletAmount;
         if (digitalPayments > totalBill)
         {

@@ -8,6 +8,7 @@ public partial class CheckoutDialog : UserControl
     public CheckoutDialog()
     {
         InitializeComponent();
+        Ticketfy.Controls.FormValidation.GuardCommit(this, this.FindControl<Button>("ConfirmSaleButton")!);
         this.AttachedToVisualTree += OnAttachedToVisualTree;
     }
 

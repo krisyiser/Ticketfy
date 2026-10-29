@@ -18,6 +18,12 @@ public partial class PromotionDialogViewModel : ObservableObject, IDismissibleDi
     private bool _initialSelectionLoaded;
     [ObservableProperty] private string _productSearch = string.Empty;
     [ObservableProperty] private string _catalogMessage = string.Empty;
+    [ObservableProperty] private bool _needsProductSearch;
+    public Task CatalogLoadTask { get; private set; } = Task.CompletedTask;
+    public bool IsBuyAndGet => SelectedTypeIndex == 2;
+    public string ValueLabel => SelectedTypeIndex == 0 ? "Porcentaje de descuento (%)" : SelectedTypeIndex == 1 ? "Descuento por unidad ($)" : "Precio final por unidad ($)";
+    partial void OnSelectedTypeIndexChanged(int value)
+    { OnPropertyChanged(nameof(IsBuyAndGet)); OnPropertyChanged(nameof(ValueLabel)); }
     private readonly string _id = Guid.NewGuid().ToString("N");
     private bool _saved;
     private bool _dismissed;
@@ -40,9 +46,9 @@ public partial class PromotionDialogViewModel : ObservableObject, IDismissibleDi
     [ObservableProperty] private bool _allProducts;
     [ObservableProperty] private string _startDateText = Ticketfy.Core.Helpers.BusinessTime.Today.ToString("yyyy-MM-dd");
     [ObservableProperty] private string _endDateText = Ticketfy.Core.Helpers.BusinessTime.Today.AddMonths(1).ToString("yyyy-MM-dd");
-    [ObservableProperty] private int _priority;
-    [ObservableProperty] private decimal _minimumQuantity = 1m;
-    [ObservableProperty] private decimal _freeQuantity = 1m;
+    [ObservableProperty] private int? _priority = 0;
+    [ObservableProperty] private decimal? _minimumQuantity = 1m;
+    [ObservableProperty] private decimal? _freeQuantity = 1m;
     public string Title => _initial is null ? "Nueva promoción" : "Editar promoción";
     private readonly PromotionDto? _initial;
     public ObservableCollection<ProductDto> Products { get; } = [];
@@ -63,7 +69,7 @@ public partial class PromotionDialogViewModel : ObservableObject, IDismissibleDi
             ErrorMessage = initial.ReadWarning ?? "";
             Priority = initial.Priority; MinimumQuantity = (decimal)initial.MinQuantity; FreeQuantity = (decimal)initial.FreeQuantity;
         }
-        if (products is not null) _ = SearchProductsAsync();
+        if (products is not null) CatalogLoadTask = SearchProductsAsync();
     }
     [RelayCommand]
     private async Task SearchProductsAsync()
@@ -84,11 +90,13 @@ public partial class PromotionDialogViewModel : ObservableObject, IDismissibleDi
             if (selected is not null && Products.All(p => p.Id != selected.Id)) Products.Add(selected);
             SelectedProduct = Products.FirstOrDefault(p => p.Id == selected?.Id);
             CatalogMessage = page.HasMore ? "Primeras 100 coincidencias. Refine la búsqueda." : string.Empty;
+            NeedsProductSearch = page.HasMore || !string.IsNullOrWhiteSpace(ProductSearch);
         }
         catch (Exception ex)
         {
             Serilog.Log.Warning(ex, "Promotion product lookup failed");
-            if (version == _loadVersion && !_dismissed) ErrorMessage = "No se pudieron consultar los productos.";
+            if (version == _loadVersion && !_dismissed)
+            { ErrorMessage = "No se pudieron consultar los productos. Vuelva a buscar para reintentar."; NeedsProductSearch = true; }
         }
     }
     public void OnDismissed()
@@ -131,14 +139,16 @@ public partial class PromotionDialogViewModel : ObservableObject, IDismissibleDi
         var end = ParseDate(EndDateText, true);
         if (end < start) throw new InvalidOperationException("El fin de vigencia no puede ser anterior al inicio.");
         decimal value = 0m;
-        if (SelectedTypeIndex != 2 && (!decimal.TryParse(DiscountValueText, out value) || value <= 0))
-            throw new InvalidOperationException("Indique un descuento positivo.");
-        if (SelectedTypeIndex is < 0 or > 4 || MinimumQuantity <= 0 || (SelectedTypeIndex == 2 && FreeQuantity <= 0))
+        if (SelectedTypeIndex != 2 && (!Ticketfy.Core.Helpers.NumericEntry.TryDecimal(DiscountValueText, out value)
+            || value <= 0 || !Ticketfy.Core.Helpers.NumericEntry.IsMoney(value)))
+            throw new InvalidOperationException("Indique un descuento o precio positivo con hasta dos decimales, sin separadores de miles.");
+        if (SelectedTypeIndex is < 0 or > 4 || MinimumQuantity is null or <= 0 or > 100000
+            || Priority is null or < 0 or > 1000 || (SelectedTypeIndex == 2 && FreeQuantity is null or <= 0 or > 100000))
             throw new InvalidOperationException("Revise el tipo y las cantidades de la regla.");
         return new PromotionDto(_id, Name, value, IsActive, (PromotionType)SelectedTypeIndex,
             AllProducts ? null : SelectedProduct?.Id, AllProducts ? "" : TargetCategory.Trim(),
-            MinQuantity: (double)MinimumQuantity, FreeQuantity: SelectedTypeIndex == 2 ? (double)FreeQuantity : 0,
-            StartDate: start, EndDate: end, Priority: Priority, Revision: _initial?.Revision);
+            MinQuantity: (double)MinimumQuantity.Value, FreeQuantity: SelectedTypeIndex == 2 ? (double)FreeQuantity!.Value : 0,
+            StartDate: start, EndDate: end, Priority: Priority.Value, Revision: _initial?.Revision);
     }
 
     [RelayCommand(CanExecute = nameof(CanSave))]
@@ -165,7 +175,7 @@ public partial class PromotionDialogViewModel : ObservableObject, IDismissibleDi
             if (!_dismissed)
             {
                 _pendingSave = null; IsPendingConfirmation = false; _operationId = Guid.NewGuid().ToString("N");
-                ErrorMessage = ex.Message;
+                ErrorMessage = Ticketfy.Core.Helpers.UserFacingErrors.Message(ex);
             }
         }
         catch (Exception ex)

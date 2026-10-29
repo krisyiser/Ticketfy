@@ -28,6 +28,7 @@ public partial class CartViewModel : ObservableObject
     [ObservableProperty] private string _checkoutMessage = string.Empty;
     [ObservableProperty] private string _customerSearch = string.Empty;
     [ObservableProperty] private string _customerLoadMessage = string.Empty;
+    [ObservableProperty] private bool _needsCustomerSearch;
 
     public ObservableCollection<CustomerDto> Customers { get; } = [];
     public ObservableCollection<ParkedTicketModel> ParkedTickets { get; } = new();
@@ -61,7 +62,7 @@ public partial class CartViewModel : ObservableObject
         if (loadOnCreate) _ = LoadCustomersAsync();
     }
 
-    public async Task LoadCustomersAsync()
+    public async Task LoadCustomersAsync(CustomerDto? selectCustomer = null)
     {
         var version = ++_customerRequestVersion;
         if (_customerService is null) return;
@@ -71,7 +72,7 @@ public partial class CartViewModel : ObservableObject
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 if (version != _customerRequestVersion) return;
-                var selected = SelectedCustomer;
+                var selected = selectCustomer ?? SelectedCustomer;
                 var publicoGeneral = new CustomerDto("", "Público General", "", "", "", 0m, 0m, 0.0, 0m, "");
                 Customers.Clear();
                 Customers.Add(publicoGeneral);
@@ -80,12 +81,14 @@ public partial class CartViewModel : ObservableObject
                     Customers.Add(selected);
                 SelectedCustomer = Customers.FirstOrDefault(c => c.Id == selected?.Id) ?? publicoGeneral;
                 CustomerLoadMessage = list.Count >= 100 ? "Mostrando hasta 100 coincidencias. Refine la búsqueda." : string.Empty;
+                NeedsCustomerSearch = list.Count >= 100 || !string.IsNullOrWhiteSpace(CustomerSearch);
             });
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Error loading customers in CartViewModel");
-            if (version == _customerRequestVersion) CustomerLoadMessage = "No se pudieron consultar los clientes.";
+            if (version == _customerRequestVersion)
+            { CustomerLoadMessage = "No se pudieron consultar los clientes. Vuelva a buscar para reintentar."; NeedsCustomerSearch = true; }
         }
     }
 
@@ -107,6 +110,7 @@ public partial class CartViewModel : ObservableObject
         ParkedTickets.Clear();
         ParkedOrdersCount = 0;
         CustomerSearch = CustomerLoadMessage = string.Empty;
+        NeedsCustomerSearch = false;
         InitialPaymentMode = "Efectivo";
         CartState.Clear();
     }

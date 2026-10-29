@@ -203,7 +203,12 @@ public partial class PromotionsViewModel : ObservableObject
         catch (Exception ex)
         {
             Log.Error(ex, "Error changing promotion");
-            if (session == _sessionVersion) { IsFeedbackError = true; FeedbackMessage = ex.Message; }
+            if (session == _sessionVersion)
+            {
+                IsFeedbackError = true;
+                FeedbackMessage = Ticketfy.Core.Helpers.UserFacingErrors.Message(ex,
+                    "No se pudo confirmar el cambio. Actualice el listado para comprobar el estado de la promoción antes de continuar.");
+            }
         }
         finally
         {

@@ -28,12 +28,9 @@ public class StringToDoubleConverter : IValueConverter
         if (text.Length == 0)
             return Nullable.GetUnderlyingType(targetType) is not null ? null
                 : numericType == typeof(decimal) ? (object)0m : 0d;
-        // These are ungrouped entry fields. Never interpret a decimal separator as thousands.
-        const NumberStyles style = NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign;
-        string normalized = text.Replace(',', '.');
-        if (numericType == typeof(decimal) && decimal.TryParse(normalized, style, CultureInfo.InvariantCulture, out var money))
+        if (numericType == typeof(decimal) && Ticketfy.Core.Helpers.NumericEntry.TryDecimal(text, out var money))
             return money;
-        if (numericType == typeof(double) && double.TryParse(normalized, style, CultureInfo.InvariantCulture, out var quantity) && double.IsFinite(quantity))
+        if (numericType == typeof(double) && Ticketfy.Core.Helpers.NumericEntry.TryQuantity(text, out var quantity))
             return quantity;
         throw new FormatException("Introduzca un número válido, sin separadores de miles.");
     }

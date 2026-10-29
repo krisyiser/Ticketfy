@@ -69,7 +69,9 @@ public partial class CheckoutDialogViewModel : ObservableObject, Ticketfy.ViewMo
     public bool IsCashPayment => PaymentMethod == "Efectivo";
     public bool IsMixedPayment => PaymentMethod == "Mixto";
     public bool IsNotMixedPayment => PaymentMethod != "Mixto";
-    public decimal TotalMixedReceived => CashAmount + CardAmount + WalletAmount;
+    public decimal TotalMixedReceived => Ticketfy.Core.Helpers.NumericEntry.IsMoney(CashAmount)
+        && Ticketfy.Core.Helpers.NumericEntry.IsMoney(CardAmount) && Ticketfy.Core.Helpers.NumericEntry.IsMoney(WalletAmount)
+        ? CashAmount + CardAmount + WalletAmount : 0m;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ConfirmPaymentCommand))]
@@ -82,8 +84,10 @@ public partial class CheckoutDialogViewModel : ObservableObject, Ticketfy.ViewMo
         {
             if (PaymentMethod == "Mixto")
             {
-                return (CashAmount + CardAmount + WalletAmount) >= TotalBill && string.IsNullOrEmpty(ErrorMessage);
+                return Checkout.MixedPaymentCalculator.Calculate(CashAmount, CardAmount, WalletAmount, TotalBill).isValid && TotalMixedReceived >= TotalBill;
             }
+            if (IsCashPayment && (!Ticketfy.Core.Helpers.NumericEntry.TryDecimal(ReceivedAmountInput, out var entered)
+                || !Ticketfy.Core.Helpers.NumericEntry.IsMoney(entered))) return false;
             return IsFullyPaid || ReceivedAmount >= TotalToPay || PaymentMethod == "Monedero / Tarjeta de Regalo" || IsCreditPayment;
         }
     }
@@ -94,7 +98,7 @@ public partial class CheckoutDialogViewModel : ObservableObject, Ticketfy.ViewMo
 
         if (PaymentMethod == "Mixto")
         {
-            return (CashAmount + CardAmount + WalletAmount) >= TotalBill && string.IsNullOrEmpty(ErrorMessage);
+            return IsSufficientAmount;
         }
 
         if (IsCreditPayment)
@@ -111,14 +115,17 @@ public partial class CheckoutDialogViewModel : ObservableObject, Ticketfy.ViewMo
         {
             if (PaymentMethod == "Mixto")
             {
-                decimal totalMixed = CashAmount + CardAmount + WalletAmount;
+                var validation = Checkout.MixedPaymentCalculator.Calculate(CashAmount, CardAmount, WalletAmount, TotalBill);
+                if (!validation.isValid) return validation.errorMessage ?? "Revise los importes.";
+                decimal totalMixed = TotalMixedReceived;
                 if (totalMixed < TotalBill)
                 {
                     return $"Faltante: ${(TotalBill - totalMixed):N2}";
                 }
                 return $"Cambio: ${ChangeAmount:N2}";
             }
-            if (string.IsNullOrWhiteSpace(ReceivedAmountInput) || !decimal.TryParse(ReceivedAmountInput, out _))
+            if (!Ticketfy.Core.Helpers.NumericEntry.TryDecimal(ReceivedAmountInput, out var entered)
+                || !Ticketfy.Core.Helpers.NumericEntry.IsMoney(entered))
             {
                 return "Monto Inválido";
             }

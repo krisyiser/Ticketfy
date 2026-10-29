@@ -7,5 +7,6 @@ public partial class PromotionDialog : UserControl
     public PromotionDialog()
     {
         InitializeComponent();
+        Ticketfy.Controls.FormValidation.GuardCommit(this, this.FindControl<Button>("SavePromotionButton")!);
     }
 }

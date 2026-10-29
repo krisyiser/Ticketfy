@@ -14,26 +14,29 @@
         <DockPanel LastChildFill="True">
             <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,20">
                 <TextBlock Text="Abonar a Saldo de Cliente" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
-                <TextBlock Text="Registre el pago realizado por el cliente." FontSize="12" Foreground="{DynamicResource TextMutedBrush}" />
+                <TextBlock Text="Registre únicamente efectivo recibido. Para transferencias use Control comercial." FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextMutedBrush}" />
             </StackPanel>
 
             <StackPanel DockPanel.Dock="Bottom" Margin="0,20,0,0" Spacing="12">
                 <TextBlock Text="{Binding ErrorMessage}" Foreground="{DynamicResource AccentDangerBrush}" FontSize="13" TextWrapping="Wrap" HorizontalAlignment="Center" />
 
                 <Grid ColumnDefinitions="*,*">
-                    <Button Grid.Column="0" Command="{Binding CancelCommand}" Content="Cancelar" Margin="0,0,6,0" Padding="12"
+                    <Button Grid.Column="0" Command="{Binding CancelCommand}" Content="Cerrar" IsEnabled="{Binding !IsSaving}" Margin="0,0,6,0" Padding="12"
                             Background="{DynamicResource BgPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                             Foreground="{DynamicResource TextPrimaryBrush}" CornerRadius="6" HorizontalContentAlignment="Center" />
 
-                    <Button Grid.Column="1" Command="{Binding SaveCommand}" Content="Registrar Abono" Margin="6,0,0,0" Padding="12"
-                            Classes="success-action" FontWeight="Bold" CornerRadius="6" HorizontalContentAlignment="Center" />
+                    <Button x:Name="SaveCustomerPaymentButton" Grid.Column="1" Command="{Binding SaveCommand}" Margin="6,0,0,0" Padding="12"
+                            Classes="success-action" FontWeight="Bold" CornerRadius="6" HorizontalContentAlignment="Center">
+                        <TextBlock Text="{Binding SaveButtonText}" TextWrapping="Wrap" TextAlignment="Center" />
+                    </Button>
                 </Grid>
             </StackPanel>
 
-            <StackPanel Spacing="16" VerticalAlignment="Center">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="16" IsEnabled="{Binding CanEditFields}">
                 <Border Background="{DynamicResource BgPrimaryBrush}" Padding="14" CornerRadius="6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                     <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Text="Saldo Deudor Actual:" FontSize="14" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="Saldo al abrir:" FontSize="14" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" />
                         <TextBlock Grid.Column="1" Text="{Binding CurrentBalance, StringFormat='${0:N2}'}" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource AccentDangerBrush}" VerticalAlignment="Center" />
                     </Grid>
                 </Border>
@@ -43,6 +46,7 @@
                     <controls:NumericTextBox AllowDecimals="True" Text="{Binding Amount, Mode=TwoWay, Converter={StaticResource StringToDoubleConverter}}" Watermark="0.00" Background="{DynamicResource BgTertiaryBrush}" FontSize="18" FontWeight="Bold" Padding="10" />
                 </StackPanel>
             </StackPanel>
+            </ScrollViewer>
         </DockPanel>
     </Border>
 </UserControl>

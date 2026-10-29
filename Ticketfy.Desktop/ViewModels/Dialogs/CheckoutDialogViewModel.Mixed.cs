@@ -7,7 +7,7 @@ public partial class CheckoutDialogViewModel
 {
     partial void OnReceivedAmountInputChanged(string value)
     {
-        if (decimal.TryParse(value, out var parsed))
+        if (Ticketfy.Core.Helpers.NumericEntry.TryDecimal(value, out var parsed) && Ticketfy.Core.Helpers.NumericEntry.IsMoney(parsed))
         {
             ReceivedAmount = parsed;
             PaidAmount = parsed + TotalApplied;
@@ -30,6 +30,7 @@ public partial class CheckoutDialogViewModel
     [RelayCommand]
     private void AddCashDenomination(string amountArg)
     {
+        if (!CanEditTender) return;
         if (decimal.TryParse(amountArg, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out decimal addValue))
         {
             ReceivedAmount += addValue;
@@ -41,6 +42,7 @@ public partial class CheckoutDialogViewModel
     [RelayCommand]
     private void SetExactCash()
     {
+        if (!CanEditTender) return;
         ReceivedAmount = TotalToPay - TotalApplied;
         PaidAmount = ReceivedAmount + TotalApplied;
         ReceivedAmountInput = ReceivedAmount.ToString("0.##");
@@ -61,7 +63,14 @@ public partial class CheckoutDialogViewModel
     partial void OnCardAmountChanged(decimal value) => ValidateMixedPaymentMath();
     partial void OnWalletAmountChanged(decimal value) => ValidateMixedPaymentMath();
 
-    public decimal TotalReceived => CashAmount + CardAmount + WalletAmount;
+    public decimal TotalReceived => TotalMixedReceived;
+
+    partial void OnTotalToPayChanged(decimal value)
+    {
+        TotalBill = value;
+        if (IsMixedPayment) ValidateMixedPaymentMath();
+        else OnReceivedAmountChanged(ReceivedAmount);
+    }
 
     private void ValidateMixedPaymentMath()
     {
@@ -108,8 +117,10 @@ public partial class CheckoutDialogViewModel
             PaidAmount = TotalToPay;
             ReceivedAmountInput = TotalToPay.ToString("0.##");
         }
-        else if (value == "Efectivo" && ReceivedAmount == 0m)
+        else
         {
+            ReceivedAmount = 0m;
+            PaidAmount = 0m;
             ReceivedAmountInput = "0";
         }
 

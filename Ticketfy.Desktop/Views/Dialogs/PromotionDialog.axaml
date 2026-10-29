@@ -21,15 +21,18 @@
                             Background="{DynamicResource BgPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                             Foreground="{DynamicResource TextPrimaryBrush}" CornerRadius="6" HorizontalContentAlignment="Center" />
 
-                    <Button Grid.Column="1" Command="{Binding SaveCommand}" Content="{Binding SaveButtonText}" Margin="6,0,0,0" Padding="12"
-                            Classes="primary-action" FontWeight="Bold" CornerRadius="6" HorizontalContentAlignment="Center" />
+                    <Button x:Name="SavePromotionButton" Grid.Column="1" Command="{Binding SaveCommand}" Margin="6,0,0,0" Padding="12"
+                            Classes="primary-action" FontWeight="Bold" CornerRadius="6" HorizontalContentAlignment="Center">
+                        <TextBlock Text="{Binding SaveButtonText}" TextWrapping="Wrap" TextAlignment="Center" />
+                    </Button>
                 </Grid>
             </StackPanel>
 
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="14" IsEnabled="{Binding CanEditFields}">
                     <CheckBox Content="Todos los productos" IsChecked="{Binding AllProducts}" />
-                    <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Spacing="8" IsVisible="{Binding !AllProducts}">
+                    <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding NeedsProductSearch}">
                         <TextBox Text="{Binding ProductSearch}" Watermark="Buscar producto por nombre o código" />
                         <Button Grid.Column="1" Content="Buscar" Command="{Binding SearchProductsCommand}" />
                     </Grid>
@@ -38,9 +41,12 @@
                         <ComboBox.ItemTemplate><DataTemplate x:DataType="dto:ProductDto"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
                     </ComboBox>
                     <TextBox Text="{Binding TargetCategory}" Watermark="Categoría (opcional)" />
+                    <TextBlock Text="Si indica producto y categoría, la oferta aplica a cualquiera de los dos." TextWrapping="Wrap" FontSize="11" />
+                    </StackPanel>
                     <TextBlock Text="Vigencia: AAAA-MM-DD, con hora opcional HH:mm:ss (zona comercial). Sin hora, el fin incluye todo el día." TextWrapping="Wrap" />
                     <TextBox Text="{Binding StartDateText}" Watermark="Inicio" />
                     <TextBox Text="{Binding EndDateText}" Watermark="Fin" />
+                    <TextBlock Text="Prioridad: si coinciden ofertas, se utiliza la de mayor prioridad." TextWrapping="Wrap" />
                     <NumericUpDown Value="{Binding Priority}" Minimum="0" Maximum="1000" />
                     <StackPanel Spacing="4">
                         <TextBlock Text="Nombre de la Promoción *" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" />
@@ -59,15 +65,15 @@
                             </ComboBox>
                         </StackPanel>
 
-                        <StackPanel Grid.Column="1" Spacing="4" Margin="6,0,0,0">
-                            <TextBlock Text="Descuento / precio unitario" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" />
+                        <StackPanel Grid.Column="1" Spacing="4" Margin="6,0,0,0" IsVisible="{Binding !IsBuyAndGet}">
+                            <TextBlock Text="{Binding ValueLabel}" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" />
                             <controls:NumericTextBox AllowDecimals="True" Text="{Binding DiscountValueText, Mode=TwoWay}" Watermark="Ej. 15.0" Padding="10" />
                         </StackPanel>
                     </Grid>
                     <TextBlock Text="Cantidad mínima (N); en volumen/mayoreo el valor es el precio unitario final." TextWrapping="Wrap" />
                     <NumericUpDown Value="{Binding MinimumQuantity}" Minimum="0.001" Maximum="100000" Increment="1" />
-                    <TextBlock Text="Unidades gratis (M), sólo para Compra N + M gratis" TextWrapping="Wrap" />
-                    <NumericUpDown Value="{Binding FreeQuantity}" Minimum="0" Maximum="100000" Increment="1" />
+                    <TextBlock IsVisible="{Binding IsBuyAndGet}" Text="Unidades gratis (M). Para 2x1: N=1 y M=1." TextWrapping="Wrap" />
+                    <NumericUpDown IsVisible="{Binding IsBuyAndGet}" Value="{Binding FreeQuantity}" Minimum="0" Maximum="100000" Increment="1" />
                     <CheckBox Content="Promoción activa" IsChecked="{Binding IsActive}" />
                 </StackPanel>
             </ScrollViewer>

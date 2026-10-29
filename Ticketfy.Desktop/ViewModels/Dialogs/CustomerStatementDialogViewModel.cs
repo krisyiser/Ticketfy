@@ -69,7 +69,7 @@ public partial class CustomerStatementDialogViewModel : ObservableObject, IDismi
             {
                 runningBalance += entry.Amount;
                 string date = Ticketfy.Core.Helpers.BusinessTime.TryLocal(entry.CreatedAtUtc, out var dt) ? dt.ToString("dd/MM/yyyy HH:mm") : entry.CreatedAtUtc;
-                LedgerEntries.Add(new(date, entry.EntryType + " · " + entry.DocumentId,
+                LedgerEntries.Add(new(date, EntryLabel(entry.EntryType) + " · " + entry.DocumentId,
                     Math.Max(0, entry.Amount), Math.Max(0, -entry.Amount), runningBalance));
             }
             CurrentDebt = statement.Balance;
@@ -92,6 +92,18 @@ public partial class CustomerStatementDialogViewModel : ObservableObject, IDismi
         }
         finally { if (request == _requestVersion) IsBusy = false; }
     }
+
+    private static string EntryLabel(string type) => type switch
+    {
+        "SALE_CREDIT" => "Venta a crédito",
+        "CUSTOMER_PAYMENT" => "Abono de cliente",
+        "RETURN_CREDIT" => "Devolución de venta",
+        "CREDIT_REFUNDED" => "Devolución de saldo a favor",
+        "CREDIT_APPLIED_FROM" => "Saldo a favor aplicado",
+        "CREDIT_APPLIED_TO" => "Abono con saldo a favor",
+        "HISTORICAL_OPENING" => "Saldo inicial conciliado",
+        _ => "Movimiento de cuenta"
+    };
 
     private void ClearDisplayedStatement()
     {

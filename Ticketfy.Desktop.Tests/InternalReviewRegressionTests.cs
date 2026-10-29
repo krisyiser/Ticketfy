@@ -32,7 +32,6 @@ public sealed partial class Stage6CommercialLedgerTests
     {
         view.DataContext = model;
         var window = new Window { Content = view, Width = width, Height = height };
-        window.Styles.Add(new Semi.Avalonia.SemiTheme());
         window.Styles.Add(new StyleInclude(new Uri("avares://Ticketfy.Desktop/")) { Source = new Uri("avares://Ticketfy.Desktop/Styles/AppTheme.axaml") });
         window.Resources["TextSecondaryBrush"] = Brushes.DimGray;
         window.Resources["AccentWarningBrush"] = Brushes.DarkOrange;

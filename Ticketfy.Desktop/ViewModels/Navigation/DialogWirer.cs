@@ -120,7 +120,7 @@ public sealed class DialogWirer
             dialog.RequestClose += () =>
             {
                 if (!_dialogs.TryCloseDialog(dialog)) return;
-                _ = posVm.Cart.LoadCustomersAsync();
+                _ = posVm.Cart.LoadCustomersAsync(dialog.SavedCustomer);
             };
             _dialogs.ShowDialog(dialog);
         };
@@ -272,6 +272,7 @@ public sealed class DialogWirer
             {
                 if (!_dialogs.TryCloseDialog(dialog)) return;
                 _ = customersVm.LoadCustomersAsync();
+                _ = posVm.Cart.LoadCustomersAsync();
             };
             _dialogs.ShowDialog(dialog);
         };
@@ -284,6 +285,7 @@ public sealed class DialogWirer
             {
                 if (!_dialogs.TryCloseDialog(dialog)) return;
                 _ = customersVm.LoadCustomersAsync();
+                _ = posVm.Cart.LoadCustomersAsync();
             };
             _dialogs.ShowDialog(dialog);
         };
@@ -295,6 +297,7 @@ public sealed class DialogWirer
             {
                 if (!_dialogs.TryCloseDialog(dialog)) return;
                 _ = customersVm.LoadCustomersAsync();
+                _ = posVm.Cart.LoadCustomersAsync();
             };
             _dialogs.ShowDialog(dialog);
         };

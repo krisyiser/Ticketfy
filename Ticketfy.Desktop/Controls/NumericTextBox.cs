@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -14,6 +15,7 @@ namespace Ticketfy.Controls;
 /// </summary>
 public class NumericTextBox : TextBox
 {
+    private bool _refreshingValidation;
     protected override Type StyleKeyOverride => typeof(TextBox);
 
     public static readonly StyledProperty<bool> AllowDecimalsProperty =
@@ -38,6 +40,31 @@ public class NumericTextBox : TextBox
     {
         AddHandler(TextInputEvent, OnTextInput, RoutingStrategies.Tunnel);
         GotFocus += OnGotFocus;
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property != TextProperty || _refreshingValidation || !DataValidationErrors.GetHasErrors(this)) return;
+        var entered = Text;
+        if (!string.IsNullOrWhiteSpace(entered) && !Ticketfy.Core.Helpers.NumericEntry.TryDecimal(entered, out _)) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_refreshingValidation || Text != entered || !DataValidationErrors.GetHasErrors(this)) return;
+            var binding = BindingOperations.GetBindingExpressionBase(this, TextProperty);
+            if (binding is null) return;
+            _refreshingValidation = true;
+            try
+            {
+                // Avalonia 11.2 skips an unchanged source write, leaving a previous conversion error.
+                // Re-read validation, then restore and revalidate the exact input. Never replace an
+                // invalid amount with the previous source value or suppress a setter's rejection.
+                binding.UpdateTarget();
+                SetCurrentValue(TextProperty, entered);
+                binding.UpdateSource();
+            }
+            finally { _refreshingValidation = false; }
+        });
     }
 
     private void OnGotFocus(object? sender, GotFocusEventArgs e)

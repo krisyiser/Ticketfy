@@ -2,7 +2,7 @@ using Avalonia;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
-using Avalonia.Themes.Fluent;
+using Avalonia.Markup.Xaml.Styling;
 
 [assembly: AvaloniaTestApplication(typeof(Ticketfy.Desktop.Tests.TestAppBuilder))]
 
@@ -12,7 +12,10 @@ public sealed class HeadlessTestApplication : Application
 {
     public override void Initialize()
     {
-        Styles.Add(new FluentTheme());
+        // Match the application's theme scope: DataGrid resolves its implicit theme
+        // from Application resources before the window is attached.
+        Styles.Add(new Semi.Avalonia.SemiTheme());
+        Styles.Add(new StyleInclude(new Uri("avares://Ticketfy.Desktop/")) { Source = new Uri("avares://Semi.Avalonia.DataGrid/Index.axaml") });
         Resources["BgPrimaryBrush"] = Brushes.White;
         Resources["BgSecondaryBrush"] = Brushes.White;
         Resources["BgTertiaryBrush"] = Brushes.WhiteSmoke;

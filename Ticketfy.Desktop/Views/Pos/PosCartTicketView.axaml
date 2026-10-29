@@ -13,7 +13,7 @@
             <!-- ROW 0: Customer & Header -->
             <Border x:Name="PosCustomerSelector" Grid.Row="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12">
                 <StackPanel Spacing="6">
-                    <Grid ColumnDefinitions="*,Auto">
+                    <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding NeedsCustomerSearch}">
                         <TextBox Text="{Binding CustomerSearch}" Watermark="Buscar cliente por nombre o código" FontSize="11" />
                         <Button Grid.Column="1" Content="Buscar" Command="{Binding SearchCustomersCommand}" Margin="4,0,0,0" Padding="6,4" />
                     </Grid>
@@ -111,7 +111,7 @@
                     <TextBlock x:Name="CheckoutFeedback" Text="{Binding CheckoutMessage}" TextWrapping="Wrap" Foreground="{DynamicResource TextPrimaryBrush}"/>
                     <TextBlock x:Name="PricingProgress" Text="{Binding CartState.PricingFeedback}" TextWrapping="Wrap" Foreground="{DynamicResource TextMutedBrush}"/>
                     <!-- PRIMARY CHECKOUT CTA -->
-                    <Button Command="{Binding CheckoutCommand}" CommandParameter="Efectivo" Height="50" Background="{DynamicResource AccentSuccessBrush}" Foreground="White" CornerRadius="{DynamicResource AppCornerRadius}" HorizontalAlignment="Stretch" Cursor="Hand">
+                    <Button x:Name="OpenCheckoutButton" Command="{Binding CheckoutCommand}" CommandParameter="Efectivo" Height="50" Background="{DynamicResource AccentSuccessBrush}" Foreground="White" CornerRadius="{DynamicResource AppCornerRadius}" HorizontalAlignment="Stretch" Cursor="Hand">
                         <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
                             <mi:MaterialIcon Kind="LightningBolt" Width="22" Height="22"/>
                             <TextBlock Text="COBRAR TICKET" FontSize="15" FontWeight="Bold" VerticalAlignment="Center"/>
