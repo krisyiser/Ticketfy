@@ -4,6 +4,7 @@ using Ticketfy.Data.Dtos;
 using Ticketfy.Services.Interfaces;
 using Serilog;
 using System;
+using System.Globalization;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
@@ -159,14 +160,16 @@ public partial class PurchaseOrderViewModel : ObservableObject
             FeedbackMessage = "Seleccione un producto para añadir";
             return;
         }
-        if (!double.TryParse(PurchaseQuantity, out double qty) || !double.IsFinite(qty) || qty <= 0 || Math.Round(qty, 3) != qty
+        // Entry fields accept a decimal dot or comma, never thousands or scientific notation.
+        const NumberStyles entryStyle = NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign;
+        if (!double.TryParse(PurchaseQuantity.Trim().Replace(',', '.'), entryStyle, CultureInfo.InvariantCulture, out double qty) || !double.IsFinite(qty) || qty <= 0 || Math.Round(qty, 3) != qty
             || (!SelectedProduct.IsBulk && qty != Math.Truncate(qty)))
         {
             IsFeedbackError = true;
             FeedbackMessage = "Ingrese una cantidad válida mayor a cero";
             return;
         }
-        if (!decimal.TryParse(PurchaseUnitPrice, out decimal price) || price <= 0 || decimal.Round(price, 2) != price)
+        if (!decimal.TryParse(PurchaseUnitPrice.Trim().Replace(',', '.'), entryStyle, CultureInfo.InvariantCulture, out decimal price) || price <= 0 || decimal.Round(price, 2) != price)
         {
             IsFeedbackError = true;
             FeedbackMessage = "Ingrese un costo unitario válido";

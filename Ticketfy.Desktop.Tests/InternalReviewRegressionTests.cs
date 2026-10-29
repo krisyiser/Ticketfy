@@ -147,6 +147,63 @@ public sealed partial class Stage6CommercialLedgerTests
         finally { window.Close(); }
     }
 
+    [AvaloniaTheory]
+    [InlineData("es-MX", "4,50", "1,5")]
+    [InlineData("es-MX", "4.50", "1.5")]
+    [InlineData("es-ES", "4,50", "1,5")]
+    [InlineData("es-ES", "4.50", "1.5")]
+    public async Task Review_PurchaseDecimalSeparatorsCannotMultiplyTheAmount(string culture, string price, string quantity)
+    {
+        var previous = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
+        try
+        {
+            await using var db = Db();
+            var entity = await db.Products.SingleAsync(); entity.IsBulk = true; entity.Unit = "Kg";
+            await db.SaveChangesAsync();
+            var factory = new TestDbContextFactory(_options);
+            var model = new PurchaseOrderViewModel(new PurchaseService(factory, _actor), ProductsService(), new SupplierService(factory, _actor));
+            await model.LoadCatalogAsync();
+            model.SelectedSupplier = Assert.Single(model.Suppliers);
+            await model.LoadProductsAsync();
+            model.SelectedProduct = Assert.Single(model.AvailableProducts);
+            model.PurchaseUnitPrice = price; model.PurchaseQuantity = quantity;
+            model.AddItemToPurchaseDraftCommand.Execute(null);
+            Assert.False(model.IsFeedbackError, model.FeedbackMessage);
+            Assert.Equal(6.75m, Assert.Single(model.DraftPurchaseItems).TotalPrice);
+            await model.ConfirmPurchaseCommand.ExecuteAsync(null);
+            Assert.False(model.IsFeedbackError, model.FeedbackMessage);
+            Assert.Equal(6.75m, (await db.Purchases.SingleAsync()).TotalCost);
+            await db.Entry(entity).ReloadAsync(); Assert.Equal(21.5d, entity.Stock);
+        }
+        finally { CultureInfo.CurrentCulture = previous; }
+    }
+
+    [AvaloniaTheory]
+    [InlineData("es-MX")]
+    [InlineData("es-ES")]
+    public async Task Review_PurchaseRejectsGroupedAndMalformedNumbers(string culture)
+    {
+        var previous = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
+        try
+        {
+            var factory = new TestDbContextFactory(_options);
+            var model = new PurchaseOrderViewModel(new PurchaseService(factory, _actor), ProductsService());
+            model.SelectedProduct = (await ProductsService().GetByIdAsync("P"))!;
+            foreach (var invalid in new[] { "1,234.56", "1.234,56", "5oops0", "1e3", "NaN", "--1", "" })
+            {
+                model.PurchaseUnitPrice = invalid; model.PurchaseQuantity = "1";
+                model.AddItemToPurchaseDraftCommand.Execute(null);
+                Assert.True(model.IsFeedbackError); Assert.Empty(model.DraftPurchaseItems);
+                model.PurchaseUnitPrice = "5.25"; model.PurchaseQuantity = invalid;
+                model.AddItemToPurchaseDraftCommand.Execute(null);
+                Assert.True(model.IsFeedbackError); Assert.Empty(model.DraftPurchaseItems);
+            }
+        }
+        finally { CultureInfo.CurrentCulture = previous; }
+    }
+
     [AvaloniaFact]
     public async Task Review_EmptyPaidAmountMustBeCorrectedBeforeReceivingThePurchase()
     {
