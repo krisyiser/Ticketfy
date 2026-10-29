@@ -26,7 +26,7 @@
                                IsVisible="{Binding InformationMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     <TextBox Text="{Binding Password, Mode=TwoWay}" MaxLength="1024" PasswordChar="•" Watermark="Contraseña actual" Background="{DynamicResource BgTertiaryBrush}" Padding="12" />
                     <StackPanel IsVisible="{Binding PasswordChangeRequired}" Spacing="12">
-                        <TextBox Text="{Binding NewPassword}" MaxLength="1024" PasswordChar="•" Watermark="Nueva frase: mínimo 15 caracteres" />
+                        <TextBox Text="{Binding NewPassword}" MaxLength="1024" PasswordChar="•" Watermark="{Binding PasswordHelp}" />
                         <TextBox Text="{Binding ConfirmNewPassword}" MaxLength="1024" PasswordChar="•" Watermark="Confirmar nueva contraseña" />
                         <Button Command="{Binding UpgradePasswordCommand}" Content="ACTUALIZAR CONTRASEÑA" />
                         <Button Command="{Binding CancelPasswordChangeCommand}" Content="Volver al acceso" />

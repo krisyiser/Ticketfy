@@ -26,32 +26,26 @@ public partial class PurchaseOrderViewModel : ObservableObject
     [ObservableProperty] private string _supplierSearch = string.Empty;
     [ObservableProperty] private bool _preferredSupplierOnly;
     [ObservableProperty] private string _catalogMessage = string.Empty;
+    [ObservableProperty] private bool _needsSupplierSearch;
+    [ObservableProperty] private bool _needsProductSearch;
 
     public ObservableCollection<PurchaseItemDto> DraftPurchaseItems { get; } = [];
     public ObservableCollection<ProductDto> AvailableProducts { get; } = [];
     public ObservableCollection<SupplierDto> Suppliers { get; } = [];
 
     [ObservableProperty] private SupplierDto? _selectedSupplier;
-    public SupplierDto? SelectedSupplierForPurchase
-    {
-        get => SelectedSupplier;
-        set => SelectedSupplier = value;
-    }
 
     [ObservableProperty] private string _invoiceNumber = string.Empty;
     [ObservableProperty] private ProductDto? _selectedProduct;
-    public ProductDto? SelectedProductForPurchase
-    {
-        get => SelectedProduct;
-        set => SelectedProduct = value;
-    }
 
     [ObservableProperty] private string _purchaseUnitPrice = string.Empty;
     [ObservableProperty] private string _purchaseQuantity = "1";
     [ObservableProperty] private decimal _totalPurchaseCost;
     [ObservableProperty] private string _feedbackMessage = string.Empty;
     [ObservableProperty] private bool _isFeedbackError = false;
-    [ObservableProperty] private bool _isSubmitting = false;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SubmitButtonText))]
+    private bool _isSubmitting = false;
 
     public string SubmitButtonText => IsSubmitting ? "GUARDANDO..." : "CONFIRMAR Y REGISTRAR COMPRA";
 
@@ -74,6 +68,7 @@ public partial class PurchaseOrderViewModel : ObservableObject
             if (list != null)
             {
                 var selected = SelectedSupplier;
+                NeedsSupplierSearch = list.Count >= 100 || !string.IsNullOrWhiteSpace(SupplierSearch);
                 Suppliers.Clear();
                 foreach (var s in list.Take(100)) Suppliers.Add(s);
                 if (selected is not null && Suppliers.All(s => s.Id != selected.Id)) Suppliers.Add(selected);
@@ -88,6 +83,7 @@ public partial class PurchaseOrderViewModel : ObservableObject
             Suppliers.Clear(); AvailableProducts.Clear(); SelectedSupplier = null; SelectedProduct = null;
             IsFeedbackError = true;
             FeedbackMessage = "No se pudo consultar el catálogo. Verifique la sesión y vuelva a buscar.";
+            NeedsSupplierSearch = true;
         }
     }
 
@@ -122,6 +118,7 @@ public partial class PurchaseOrderViewModel : ObservableObject
             AvailableProducts.Clear();
             foreach (var product in page.Items) AvailableProducts.Add(product);
             SelectedProduct = AvailableProducts.FirstOrDefault(p => p.Id == selected?.Id);
+            NeedsProductSearch = page.HasMore || !string.IsNullOrWhiteSpace(ProductSearch);
             CatalogMessage = page.HasMore ? "Primeras 100 coincidencias. Busque por nombre o código." : $"{page.Items.Count} productos disponibles.";
         }
         catch (Exception ex)
@@ -130,6 +127,7 @@ public partial class PurchaseOrderViewModel : ObservableObject
             if (version != _catalogVersion) return;
             AvailableProducts.Clear(); SelectedProduct = null;
             CatalogMessage = "No se pudieron consultar los productos.";
+            NeedsProductSearch = true;
         }
     }
 
@@ -148,6 +146,7 @@ public partial class PurchaseOrderViewModel : ObservableObject
     [RelayCommand]
     private void AddItemToDraft()
     {
+        if (IsSubmitting) return;
         if (DraftPurchaseItems.Count >= Ticketfy.Core.Operations.CommercialDocumentLimits.Lines)
         {
             IsFeedbackError = true;
@@ -197,6 +196,7 @@ public partial class PurchaseOrderViewModel : ObservableObject
     [RelayCommand]
     private void RemoveItemFromDraft(PurchaseItemDto item)
     {
+        if (IsSubmitting) return;
         DraftPurchaseItems.Remove(item);
         TotalPurchaseCost = DraftPurchaseItems.Sum(i => i.TotalPrice);
     }
@@ -204,11 +204,23 @@ public partial class PurchaseOrderViewModel : ObservableObject
     [RelayCommand] private void RemoveItemFromPurchaseDraft(PurchaseItemDto item) => RemoveItemFromDraft(item);
 
     private string _purchaseOperationId = Guid.NewGuid().ToString("N");
-    [ObservableProperty] private string _purchasePaymentMethod = "Crédito";
-    [ObservableProperty] private decimal _purchasePaidAmount;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsCreditPurchase), nameof(NeedsPaymentReference))]
+    private string _purchasePaymentMethod = "Crédito";
+    [ObservableProperty] private decimal? _purchasePaidAmount = 0m;
     [ObservableProperty] private string _purchasePaymentReference = string.Empty;
     [ObservableProperty] private string _purchaseDueDate = string.Empty;
     public string[] PurchasePaymentMethods { get; } = ["Crédito", "Efectivo", "Tarjeta", "Transferencia"];
+    public bool IsCreditPurchase => PurchasePaymentMethod == "Crédito";
+    public bool NeedsPaymentReference => PurchasePaymentMethod is "Tarjeta" or "Transferencia";
+    partial void OnPurchasePaymentMethodChanged(string value)
+    {
+        PurchasePaidAmount = value == "Crédito" ? 0m : TotalPurchaseCost;
+    }
+    partial void OnTotalPurchaseCostChanged(decimal oldValue, decimal newValue)
+    {
+        if (!IsCreditPurchase && PurchasePaidAmount == oldValue) PurchasePaidAmount = newValue;
+    }
 
     [RelayCommand]
     private async Task ConfirmPurchaseAsync()
@@ -227,6 +239,19 @@ public partial class PurchaseOrderViewModel : ObservableObject
             FeedbackMessage = "Agregue al menos un producto al borrador de la compra";
             return;
         }
+        if (!IsCreditPurchase && (PurchasePaidAmount is null or <= 0 || PurchasePaidAmount > TotalPurchaseCost
+            || decimal.Round(PurchasePaidAmount.Value, 2) != PurchasePaidAmount))
+        {
+            IsFeedbackError = true;
+            FeedbackMessage = "Indique cuánto pagó: un importe mayor a cero, con hasta dos decimales y no mayor al total. Si no pagó ahora, seleccione Crédito.";
+            return;
+        }
+        if (NeedsPaymentReference && string.IsNullOrWhiteSpace(PurchasePaymentReference))
+        {
+            IsFeedbackError = true;
+            FeedbackMessage = "Indique la referencia o comprobante del pago al proveedor.";
+            return;
+        }
 
         var version = _sessionVersion;
         try
@@ -241,7 +266,7 @@ public partial class PurchaseOrderViewModel : ObservableObject
                 TotalPurchaseCost,
                 "Entrada directa de inventario",
                 DraftPurchaseItems.ToList(), OperationId: _purchaseOperationId, PaymentMethod: PurchasePaymentMethod,
-                PaidAmount: PurchasePaymentMethod == "Crédito" ? 0m : PurchasePaidAmount,
+                PaidAmount: IsCreditPurchase ? 0m : PurchasePaidAmount!.Value,
                 PaymentReference: PurchasePaymentReference, DueDate: PurchaseDueDate
             );
 
@@ -270,7 +295,7 @@ public partial class PurchaseOrderViewModel : ObservableObject
             Log.Error(ex, "PurchaseOrderViewModel: error registering purchase order");
             if (version != _sessionVersion) return;
             IsFeedbackError = true;
-            FeedbackMessage = ex.Message;
+            FeedbackMessage = Ticketfy.Core.Helpers.UserFacingErrors.Message(ex, "No se pudo registrar la compra. Revise los datos e inténtelo de nuevo.");
         }
         finally
         {

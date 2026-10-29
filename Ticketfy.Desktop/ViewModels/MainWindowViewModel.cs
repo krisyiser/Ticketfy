@@ -173,7 +173,7 @@ public partial class MainWindowViewModel : ObservableObject
         var settingsVm = new SettingsViewModel(userService, settingsService, backupService, auditService, auditActor,
             diagnosticService, operationalTelemetry, new RecoveryBundleService(dbContextFactory, operations), AuthorizeSettingsSection);
         var suppliersVm = new SuppliersViewModel(supplierService, purchaseService, productService, printerService, loadOnCreate: false);
-        var expensesVm = new ExpensesViewModel(expenseService, loadOnCreate: false);
+        var expensesVm = new ExpensesViewModel(expenseService, loadOnCreate: false, shiftService: shiftService);
         var loginVm = new LoginViewModel(authService, sessionManager,
             new DialogService((vmObj) =>
             {

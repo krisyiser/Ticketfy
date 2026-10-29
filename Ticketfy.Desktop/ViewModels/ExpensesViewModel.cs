@@ -12,7 +12,7 @@ namespace Ticketfy.ViewModels;
 public partial class ExpensesViewModel : ObservableObject
 {
     private string _expenseOperationId = Guid.NewGuid().ToString("N");
-    private bool _savingExpense;
+    [ObservableProperty] private bool _isSavingEntry;
     private int _loadVersion;
     private long _sessionVersion;
     public void ClearSessionData()
@@ -21,6 +21,9 @@ public partial class ExpensesViewModel : ObservableObject
         _page = 0; IsLoading = false;
         ClearReadData();
         ExpenseAmount = 0m;
+        EntryKind = "Gasto operativo";
+        CashMovements.Clear();
+        _cashOperationId = Guid.NewGuid().ToString("N");
         ExpenseDescription = ExpenseReference = CancellationReason = FeedbackMessage = string.Empty;
         ReversalVerified = false;
         _expenseOperationId = Guid.NewGuid().ToString("N");
@@ -40,12 +43,22 @@ public partial class ExpensesViewModel : ObservableObject
     [ObservableProperty] private string _cancellationReason = string.Empty;
     [ObservableProperty] private bool _reversalVerified;
     private readonly IExpenseService _expenseService;
+    private readonly IShiftService? _shiftService;
+    private string _cashOperationId = Guid.NewGuid().ToString("N");
+    public ObservableCollection<CashMovementRow> CashMovements { get; } = [];
+    public ObservableCollection<string> EntryKinds { get; } = ["Gasto operativo"];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsExpenseEntry), nameof(RegisterButtonText))]
+    private string _entryKind = "Gasto operativo";
+    public bool IsExpenseEntry => EntryKind == "Gasto operativo";
+    public string RegisterButtonText => IsExpenseEntry ? "REGISTRAR GASTO"
+        : EntryKind == "Ingreso de efectivo" ? "REGISTRAR INGRESO" : "REGISTRAR RETIRO";
 
     public ObservableCollection<ExpenseDto> Expenses { get; } = [];
     public ObservableCollection<ExpenseCancellationDto> Cancellations { get; } = [];
     public ObservableCollection<string> HistoryOptions { get; } = ["Documentos de gasto", "Cancelaciones recibidas"];
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowingCancellations), nameof(PageStatus))]
+    [NotifyPropertyChangedFor(nameof(ShowingCancellations), nameof(PageStatus), nameof(ShowingCashMovements), nameof(ShowingExpenses))]
     private string _selectedHistory = "Documentos de gasto";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CancellationAmountDisplay))]
@@ -53,6 +66,8 @@ public partial class ExpensesViewModel : ObservableObject
     public string CancellationAmountDisplay => HasLoadedData
         ? $"Reversos con fecha verificable de todo el período: {CancellationAmount:C2}" : "Reversos del período: no disponibles";
     public bool ShowingCancellations => SelectedHistory == "Cancelaciones recibidas";
+    public bool ShowingCashMovements => SelectedHistory == "Ingresos y retiros del turno";
+    public bool ShowingExpenses => !ShowingCancellations && !ShowingCashMovements;
     partial void OnSelectedHistoryChanged(string value) => _ = LoadExpensesAsync();
     public ObservableCollection<string> Categories { get; } = [
         "Renta", "Servicios (Luz/Agua/Internet)", "Nómina / Salarios", "Mantenimiento", "Transporte", "Varios"
@@ -108,16 +123,23 @@ public partial class ExpensesViewModel : ObservableObject
     [ObservableProperty] private bool _isFeedbackError = false;
 
     public Task InitializationTask { get; }
-    public ExpensesViewModel(IExpenseService expenseService, bool loadOnCreate = true)
+    public ExpensesViewModel(IExpenseService expenseService, bool loadOnCreate = true, IShiftService? shiftService = null)
     {
         _expenseService = expenseService;
+        _shiftService = shiftService;
+        if (shiftService is not null)
+        {
+            EntryKinds.Add("Ingreso de efectivo"); EntryKinds.Add("Retiro de efectivo");
+            HistoryOptions.Add("Ingresos y retiros del turno");
+        }
         InitializationTask = loadOnCreate ? LoadExpensesAsync() : Task.CompletedTask;
     }
 
     [RelayCommand]
     private async Task AddExpenseAsync()
     {
-        if (_savingExpense) return;
+        if (IsSavingEntry) return;
+        if (!IsExpenseEntry) { await AddCashMovementAsync(); return; }
         if (ExpenseAmount <= 0)
         {
             IsFeedbackError = true;
@@ -128,7 +150,7 @@ public partial class ExpensesViewModel : ObservableObject
         var version = _sessionVersion;
         try
         {
-            _savingExpense = true;
+            IsSavingEntry = true;
             var dto = new ExpenseDto(
                 _expenseOperationId,
                 SelectedCategory,
@@ -160,20 +182,52 @@ public partial class ExpensesViewModel : ObservableObject
             Log.Error(ex, "Error adding expense");
             if (version != _sessionVersion) return;
             IsFeedbackError = true;
-            FeedbackMessage = ex.Message;
+            FeedbackMessage = Ticketfy.Core.Helpers.UserFacingErrors.Message(ex);
         }
-        finally { _savingExpense = false; }
+        finally { IsSavingEntry = false; }
+    }
+
+    private async Task AddCashMovementAsync()
+    {
+        if (_shiftService is null || !EntryKinds.Contains(EntryKind)) return;
+        if (ExpenseAmount <= 0 || decimal.Round(ExpenseAmount, 2) != ExpenseAmount || string.IsNullOrWhiteSpace(ExpenseDescription))
+        {
+            IsFeedbackError = true;
+            FeedbackMessage = "Indique un importe positivo con hasta dos decimales y el motivo del movimiento.";
+            return;
+        }
+        var version = _sessionVersion;
+        try
+        {
+            IsSavingEntry = true;
+            await _shiftService.RegisterMovementAsync(ExpenseAmount, EntryKind == "Retiro de efectivo", ExpenseDescription.Trim(), _cashOperationId);
+            if (version != _sessionVersion) return;
+            _cashOperationId = Guid.NewGuid().ToString("N");
+            ExpenseAmount = 0m; ExpenseDescription = string.Empty;
+            IsFeedbackError = false;
+            FeedbackMessage = "Movimiento registrado en el turno y en el historial de caja.";
+            if (!await LoadPageAsync(0) && version == _sessionVersion)
+                FeedbackMessage = "Movimiento registrado. Actualice la consulta sin repetir la entrada o salida de efectivo.";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error recording manual cash movement");
+            if (version != _sessionVersion) return;
+            IsFeedbackError = true;
+            FeedbackMessage = Ticketfy.Core.Helpers.UserFacingErrors.Message(ex);
+        }
+        finally { IsSavingEntry = false; }
     }
 
     [RelayCommand]
     private async Task DeleteExpenseAsync(ExpenseDto expense)
     {
-        if (_savingExpense || expense.IsCancelled || !HasLoadedData || ShowingCancellations
+        if (IsSavingEntry || expense.IsCancelled || !HasLoadedData || ShowingCancellations
             || !Expenses.Any(row => ReferenceEquals(row, expense))) return;
         var version = _sessionVersion;
         try
         {
-            _savingExpense = true;
+            IsSavingEntry = true;
             bool cancelled = await _expenseService.CancelAsync(expense.Id, CancellationReason, $"VOID:{expense.Id}", ReversalVerified);
             if (version != _sessionVersion) return;
             if (!cancelled) throw new InvalidOperationException("El gasto ya no está disponible. Actualice la consulta.");
@@ -189,8 +243,8 @@ public partial class ExpensesViewModel : ObservableObject
         {
             Log.Error(ex, "Error deleting expense");
             if (version != _sessionVersion) return;
-            IsFeedbackError = true; FeedbackMessage = ex.Message;
+            IsFeedbackError = true; FeedbackMessage = Ticketfy.Core.Helpers.UserFacingErrors.Message(ex);
         }
-        finally { _savingExpense = false; }
+        finally { IsSavingEntry = false; }
     }
 }

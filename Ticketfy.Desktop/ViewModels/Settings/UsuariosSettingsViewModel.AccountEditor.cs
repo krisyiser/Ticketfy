@@ -15,8 +15,8 @@ public partial class UsuariosSettingsViewModel
     [ObservableProperty] private bool _disableEditedPin;
     public string UserEditorTitle => IsEditingUser ? "Editar cuenta seleccionada" : "Registrar usuario";
     public string CredentialInstructions => IsEditingUser
-        ? "Contraseña y PIN vacíos conservan las credenciales. Una contraseña nueva requiere al menos 15 caracteres. Puede deshabilitar expresamente el PIN."
-        : "Contraseña: frase de al menos 15 caracteres, hasta 1024 unidades de texto. PIN de cuatro dígitos. Usuario: hasta 128 caracteres; nombre: hasta 256.";
+        ? $"Contraseña y PIN vacíos conservan las credenciales. {Ticketfy.Services.Security.AccountInputPolicy.PasswordHelp} Puede deshabilitar expresamente el PIN."
+        : $"{Ticketfy.Services.Security.AccountInputPolicy.PasswordHelp} PIN de cuatro dígitos. Usuario: hasta 128 caracteres; nombre: hasta 256.";
     partial void OnIsEditingUserChanged(bool value)
     { OnPropertyChanged(nameof(UserEditorTitle)); OnPropertyChanged(nameof(CredentialInstructions)); }
 

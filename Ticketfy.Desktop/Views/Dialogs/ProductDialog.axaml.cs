@@ -7,5 +7,6 @@ public partial class ProductDialog : UserControl
     public ProductDialog()
     {
         InitializeComponent();
+        Ticketfy.Controls.FormValidation.GuardCommit(this, SaveProductButton);
     }
 }

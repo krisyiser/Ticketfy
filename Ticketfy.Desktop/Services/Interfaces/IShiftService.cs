@@ -18,6 +18,7 @@ public interface IShiftService
     Task<ShiftDto> CloseWithCashupAsync(string shiftId, Ticketfy.Data.Entities.CashupEntity cashup) => throw new NotSupportedException();
     Task RecordCountAsync(string shiftId, Ticketfy.Data.Entities.CashupEntity cashup) => throw new NotSupportedException();
     Task RegisterMovementAsync(decimal amount, bool outflow, string reason, string operationId) => throw new NotSupportedException();
+    Task<CashMovementPage> GetManualMovementPageAsync(int page, int size = 100) => throw new NotSupportedException();
     Task<List<ShiftDto>> GetAllAsync();
     Task<List<Ticketfy.Data.Entities.CashupEntity>> GetCashupsAsync(DateTime start, DateTime end) => throw new NotSupportedException();
     Task<CashupHistoryPage> GetCashupPageAsync(DateTime start, DateTime end, int page, int size = 100) => throw new NotSupportedException();

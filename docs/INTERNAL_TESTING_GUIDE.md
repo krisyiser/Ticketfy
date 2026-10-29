@@ -26,7 +26,7 @@ Sustituir `<gate-aprobado>` por la ejecución integral identificada en [la evide
 
 Ejecutar el `Start-Laboratory.ps1` devuelto para abrir el programa. Utiliza siempre `--data-directory` con la subcarpeta `Data` del laboratorio. Volver a ejecutar ese mismo lanzador conserva los datos de la prueba. No iniciar directamente el ejecutable: sin ese argumento utiliza la ubicación habitual del producto. No mover el lanzador ni redirigir sus carpetas.
 
-La primera apertura debe llegar al asistente de configuración. Crear una empresa ficticia y un administrador exclusivo del laboratorio, con contraseña propia de al menos 15 caracteres. No reutilizar contraseñas personales. La evaluación local tiene su política normal; no se genera una licencia falsa ni se modifica el reloj. Mantener los datos bancarios y fiscales sin configurar y guardar los respaldos dentro del laboratorio.
+La primera apertura debe llegar al asistente de configuración. Crear una empresa ficticia y un administrador exclusivo del laboratorio, con contraseña propia de al menos 6 caracteres. No reutilizar contraseñas personales. La evaluación local tiene su política normal; no se genera una licencia falsa ni se modifica el reloj. Mantener los datos bancarios y fiscales sin configurar y guardar los respaldos dentro del laboratorio.
 
 Cerrar y abrir con el mismo lanzador para comprobar la persistencia. Registrar el paquete, la fecha y el responsable de la prueba. El programa no debe abrir la información de la instalación operativa.
 

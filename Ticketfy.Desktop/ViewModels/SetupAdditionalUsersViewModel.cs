@@ -13,6 +13,7 @@ namespace Ticketfy.ViewModels;
 
 public partial class SetupAdditionalUsersViewModel : ValidatableViewModelBase
 {
+    public string PasswordHelp => Ticketfy.Services.Security.AccountInputPolicy.PasswordHelp;
     private readonly IUserRepository _userRepository;
     private readonly Func<Task> _finishSetup;
     private readonly Action? _navigateToPreviousStep;

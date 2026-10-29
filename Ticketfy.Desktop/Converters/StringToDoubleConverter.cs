@@ -23,30 +23,18 @@ public class StringToDoubleConverter : IValueConverter
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        if (value is string s)
-        {
-            if (string.IsNullOrWhiteSpace(s))
-            {
-                return targetType == typeof(decimal) ? 0m : 0.0;
-            }
-
-            s = s.Trim();
-
-            if (targetType == typeof(decimal))
-            {
-                if (decimal.TryParse(s, NumberStyles.Any, culture, out decimal dec)) return dec;
-                if (decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal decInv)) return decInv;
-                string altDec = s.Contains('.') ? s.Replace('.', ',') : s.Replace(',', '.');
-                if (decimal.TryParse(altDec, NumberStyles.Any, culture, out decimal decAlt)) return decAlt;
-                return 0m;
-            }
-
-            if (double.TryParse(s, NumberStyles.Any, culture, out double d)) return d;
-            if (double.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out double dInv)) return dInv;
-            string altS = s.Contains('.') ? s.Replace('.', ',') : s.Replace(',', '.');
-            if (double.TryParse(altS, NumberStyles.Any, culture, out double dAlt)) return dAlt;
-        }
-
-        return targetType == typeof(decimal) ? 0m : 0.0;
+        var numericType = Nullable.GetUnderlyingType(targetType) ?? targetType;
+        string text = (value as string ?? string.Empty).Trim();
+        if (text.Length == 0)
+            return Nullable.GetUnderlyingType(targetType) is not null ? null
+                : numericType == typeof(decimal) ? (object)0m : 0d;
+        // These are ungrouped entry fields. Never interpret a decimal separator as thousands.
+        const NumberStyles style = NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign;
+        string normalized = text.Replace(',', '.');
+        if (numericType == typeof(decimal) && decimal.TryParse(normalized, style, CultureInfo.InvariantCulture, out var money))
+            return money;
+        if (numericType == typeof(double) && double.TryParse(normalized, style, CultureInfo.InvariantCulture, out var quantity) && double.IsFinite(quantity))
+            return quantity;
+        throw new FormatException("Introduzca un número válido, sin separadores de miles.");
     }
 }

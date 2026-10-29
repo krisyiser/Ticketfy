@@ -10,6 +10,7 @@ namespace Ticketfy.ViewModels;
 
 public partial class LoginViewModel : ObservableObject
 {
+    public string PasswordHelp => Ticketfy.Services.Security.AccountInputPolicy.PasswordHelp;
     private readonly AuthService _authService;
     private readonly ISessionManager _sessionManager;
     private readonly IDialogService _dialogService;
@@ -120,7 +121,7 @@ public partial class LoginViewModel : ObservableObject
             {
                 ResetFields();
                 PasswordChangeRequired = true;
-                InformationMessage = "Actualice su contraseña antes de iniciar sesión. Vuelva a indicar la anterior y elija una frase nueva de al menos 15 caracteres. El PIN anterior se deshabilitará.";
+                InformationMessage = $"Actualice su contraseña antes de iniciar sesión. Vuelva a indicar la anterior. {PasswordHelp} El PIN anterior se deshabilitará.";
             }
             else if (authResult.IsSuccess && authResult.User != null)
             {

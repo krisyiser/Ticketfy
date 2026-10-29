@@ -29,6 +29,7 @@ public partial class ExpensesViewModel
     public bool CanLoadNextPage => HasLoadedData && !IsLoading && HasMore;
     public bool CanLoadPreviousPage => HasLoadedData && !IsLoading && _page > 0;
     public string PageStatus => IsLoading ? "Consultando..." : !HasLoadedData ? "Sin consulta disponible"
+        : ShowingCashMovements ? $"Página {_page + 1} · {CashMovements.Count} de {TotalCount} movimientos"
         : ShowingCancellations ? $"Página {_page + 1} · {Cancellations.Count} de {TotalCount} cancelaciones"
         : $"Página {_page + 1} · {Expenses.Count} de {TotalCount} gastos";
     public string OpeningBalanceDisplay => !HasLoadedData ? "No disponible" : !_cashVisible ? "Restringido" : !_hasActiveShift ? "Sin turno"
@@ -49,9 +50,22 @@ public partial class ExpensesViewModel
         bool cancellations = ShowingCancellations;
         _page = requestedPage;
         ClearReadData();
+        CashMovements.Clear();
         IsLoading = true;
         try
         {
+            if (ShowingCashMovements)
+            {
+                if (_shiftService is null) return false;
+                var movements = await _shiftService.GetManualMovementPageAsync(requestedPage);
+                if (version != _loadVersion) return false;
+                foreach (var row in movements.Items) CashMovements.Add(row);
+                TotalCount = movements.TotalCount; HasMore = movements.HasMore; HasLoadedData = true;
+                PeriodSubtitleDisplay = "Ingresos y retiros del turno actual";
+                ReadMessage = "Movimientos de efectivo del turno actual. Los ingresos y retiros no se contabilizan como ventas ni gastos operativos.";
+                OnPropertyChanged(nameof(PageStatus));
+                return true;
+            }
             var now = BusinessTime.Now;
             bool byShift = selected == "Turno Activo";
             DateTime? start = selected switch

@@ -18,11 +18,17 @@
         <Border x:Name="ExpenseEntryForm" Grid.Column="0" Margin="0,0,16,0" Padding="16"
                 Background="{DynamicResource BgSecondaryBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="{DynamicResource AppCornerRadius}">
-            <StackPanel Spacing="12">
-                <TextBlock Text="Registrar Salida / Gasto de Caja" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
+            <Grid RowDefinitions="*,Auto">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+            <StackPanel Spacing="12" IsEnabled="{Binding !IsSavingEntry}">
+                <TextBlock Text="Registrar gasto o movimiento" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
                 <Border Height="1" Background="{DynamicResource BorderBrush}" />
-
                 <StackPanel Spacing="4">
+                    <TextBlock Text="Tipo de movimiento" FontWeight="SemiBold" />
+                    <ComboBox ItemsSource="{Binding EntryKinds}" SelectedItem="{Binding EntryKind}" HorizontalAlignment="Stretch" />
+                </StackPanel>
+
+                <StackPanel Spacing="4" IsVisible="{Binding IsExpenseEntry}">
                     <TextBlock Text="Categoría de Gasto" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
                     <ComboBox ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory, Mode=TwoWay}" HorizontalAlignment="Stretch" Padding="8" />
                 </StackPanel>
@@ -32,19 +38,22 @@
                     <controls:NumericTextBox AllowDecimals="True" Text="{Binding ExpenseAmount, Mode=TwoWay, Converter={StaticResource StringToDoubleConverter}}" Watermark="0.00" Padding="10,8" FontSize="15" FontWeight="Bold" />
                 </StackPanel>
 
-                <StackPanel Spacing="4">
+                <StackPanel Spacing="4" IsVisible="{Binding IsExpenseEntry}">
                     <TextBlock Text="Forma de Pago" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
                     <ComboBox ItemsSource="{Binding PaymentMethods}" SelectedItem="{Binding PaymentMethod, Mode=TwoWay}" HorizontalAlignment="Stretch" Padding="8" />
                     <TextBox Text="{Binding ExpenseReference}" Watermark="Referencia / comprobante de pago" />
                 </StackPanel>
 
                 <StackPanel Spacing="4">
-                    <TextBlock Text="Concepto / Descripción" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
+                    <TextBlock Text="Concepto / Motivo *" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
                     <TextBox Text="{Binding ExpenseDescription, Mode=TwoWay}" Watermark="Ej. Pago de luz local comercial mes en curso" AcceptsReturn="True" Height="70" Padding="10,8" />
                 </StackPanel>
 
-                <Button Command="{Binding AddExpenseCommand}" Content="REGISTRAR GASTO" Padding="16,12" CornerRadius="{DynamicResource AppCornerRadius}" Background="{DynamicResource AccentDangerBrush}" Foreground="White" FontWeight="Bold" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,8,0,0" />
+
             </StackPanel>
+                </ScrollViewer>
+                <Button x:Name="RegisterExpenseButton" Grid.Row="1" Command="{Binding AddExpenseCommand}" Content="{Binding RegisterButtonText}" Padding="16,12" CornerRadius="{DynamicResource AppCornerRadius}" Background="{DynamicResource AccentDangerBrush}" Foreground="White" FontWeight="Bold" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,8,0,0" />
+            </Grid>
         </Border>
 
         <!-- Right: Expenses History Table -->
@@ -52,7 +61,7 @@
                 Background="{DynamicResource BgSecondaryBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="{DynamicResource AppCornerRadius}">
             <DockPanel LastChildFill="True">
-                <TextBlock DockPanel.Dock="Top" Text="Historial de Gastos Registrados" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,12" />
+                <TextBlock DockPanel.Dock="Top" Text="Historial de gastos y movimientos" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,12" />
                 <ComboBox DockPanel.Dock="Top" ItemsSource="{Binding HistoryOptions}" SelectedItem="{Binding SelectedHistory}" HorizontalAlignment="Stretch" Margin="0,0,0,8" />
                 <TextBlock DockPanel.Dock="Top" IsVisible="{Binding ShowingCancellations}" Text="{Binding CancellationAmountDisplay}" TextWrapping="Wrap" Margin="0,0,0,8" />
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
@@ -61,7 +70,7 @@
                     <Button Content="Actualizar" Command="{Binding RefreshExpensesCommand}" />
                     <TextBlock Text="{Binding PageStatus}" VerticalAlignment="Center" />
                 </StackPanel>
-                <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,12" IsVisible="{Binding !ShowingCancellations}">
+                <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,12" IsVisible="{Binding ShowingExpenses}">
                     <TextBox Text="{Binding CancellationReason}" Watermark="Motivo obligatorio para cancelar un gasto" />
                     <CheckBox IsChecked="{Binding ReversalVerified}" Content="Confirmo la devolución del efectivo a esta caja / el abono bancario" />
                     <TextBlock Text="No cancele un gasto pagado si el dinero no ha sido restituido." TextWrapping="Wrap" />
@@ -69,7 +78,7 @@
 
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                    <ItemsControl ItemsSource="{Binding Expenses}" IsVisible="{Binding !ShowingCancellations}">
+                    <ItemsControl ItemsSource="{Binding Expenses}" IsVisible="{Binding ShowingExpenses}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="dto:ExpenseDto">
                                 <Border Margin="0,0,0,6" Padding="14,10" CornerRadius="{DynamicResource AppCornerRadius}" Background="{DynamicResource BgTertiaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
@@ -93,6 +102,24 @@
                                             <mi:MaterialIcon Kind="Cancel" Width="18" Height="18" Foreground="{DynamicResource AccentDangerBrush}" />
                                         </Button>
                                     </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <ItemsControl ItemsSource="{Binding CashMovements}" IsVisible="{Binding ShowingCashMovements}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="dto:CashMovementRow">
+                                <Border Padding="12" Margin="0,0,0,8" Background="{DynamicResource BgTertiaryBrush}" CornerRadius="6">
+                                    <StackPanel Spacing="4">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock Text="{Binding TypeDisplay}" FontWeight="Bold" />
+                                            <TextBlock Grid.Column="1" Text="{Binding AmountDisplay}" FontWeight="Bold" />
+                                        </Grid>
+                                        <TextBlock Text="{Binding Reason}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding DateDisplay}" />
+                                        <TextBlock Text="{Binding RegisterId, StringFormat='Caja: {0}'}" FontSize="11" />
+                                        <TextBlock Text="{Binding Id, StringFormat='Folio: {0}'}" FontSize="11" TextWrapping="Wrap" />
+                                    </StackPanel>
                                 </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>

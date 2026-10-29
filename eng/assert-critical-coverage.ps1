@@ -30,6 +30,7 @@ $criticalFiles = @(
     "Services/Implementations/CustomerService.cs",
     "Services/Implementations/ShiftService.cs",
     "Services/Implementations/ShiftService.History.cs",
+    "Services/Implementations/ShiftService.Movements.cs",
     "Services/Implementations/CashCountEvidence.cs",
     "Core/Models/CashDenominationCount.cs",
     "Core/State/CartStateStore.cs",

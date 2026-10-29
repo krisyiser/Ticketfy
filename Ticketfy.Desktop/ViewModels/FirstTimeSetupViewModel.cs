@@ -15,6 +15,7 @@ namespace Ticketfy.ViewModels;
 
 public partial class FirstTimeSetupViewModel : ValidatableViewModelBase
 {
+    public string PasswordHelp => Ticketfy.Services.Security.AccountInputPolicy.PasswordHelp;
     private readonly IUserRepository _userRepository;
     private readonly IDialogService _dialogService;
     private readonly Action _navigateToNextStep;

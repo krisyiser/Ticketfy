@@ -36,7 +36,8 @@ public partial class ProductDialogViewModel : ObservableObject
     private decimal? _retailPrice;
 
     [ObservableProperty]
-    private double? _stock;
+    [NotifyPropertyChangedFor(nameof(NeedsStockAdjustmentReason))]
+    private double? _stock = 0d;
 
     private string? _pendingSupplierId = null;
 
@@ -54,7 +55,7 @@ public partial class ProductDialogViewModel : ObservableObject
     private double? _pointsRewarded = 0.0;
 
     [ObservableProperty]
-    private double? _reorderQuantity;
+    private double? _reorderQuantity = 10d;
 
     [ObservableProperty]
     private string _locationRack = string.Empty;
@@ -72,7 +73,7 @@ public partial class ProductDialogViewModel : ObservableObject
     private string _title = "Nuevo Producto";
 
     [ObservableProperty]
-    private double? _minStock;
+    private double? _minStock = 5d;
 
     [ObservableProperty]
     private bool _showAutoFillBanner = false;
@@ -97,7 +98,7 @@ public partial class ProductDialogViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ProfitMargin))]
     private bool _costsVisible = true;
     private double _originalStockSnapshot = 0.0;
-    private double _originalMinStockSnapshot = 5.0;
+    public bool NeedsStockAdjustmentReason => _editingProductId is not null && Stock != _originalStockSnapshot;
 
     private readonly ISessionManager? _sessionManager;
     private long _lookupVersion;
@@ -108,6 +109,7 @@ public partial class ProductDialogViewModel : ObservableObject
     private ProductSupplierOption? _selectedSupplier;
     [ObservableProperty] private string _supplierSearch = string.Empty;
     [ObservableProperty] private string _supplierLookupMessage = string.Empty;
+    [ObservableProperty] private bool _needsSupplierSearch;
     partial void OnSelectedSupplierChanged(ProductSupplierOption? value)
     {
         if (!_replacingSuppliers) _pendingSupplierId = value?.Id;
@@ -160,9 +162,10 @@ public partial class ProductDialogViewModel : ObservableObject
                 SelectedSupplier = Suppliers.FirstOrDefault(s => s.Id == _pendingSupplierId);
             }
             finally { _replacingSuppliers = false; }
+            NeedsSupplierSearch = options.Suppliers.HasMore || !string.IsNullOrWhiteSpace(SupplierSearch);
             SupplierLookupMessage = options.Suppliers.HasMore
                 ? "Primeros 100 proveedores. Busque por nombre para localizar otro."
-                : $"{options.Suppliers.Items.Count} proveedores coincidentes.";
+                : string.Empty;
             if (selected?.IsActive == false) SupplierLookupMessage += " El proveedor asignado está inactivo; puede conservarlo o elegir otro.";
         }
         catch (Exception ex)
@@ -172,6 +175,7 @@ public partial class ProductDialogViewModel : ObservableObject
             _replacingSuppliers = true;
             try { Suppliers.Clear(); SelectedSupplier = null; Categories.Clear(); }
             finally { _replacingSuppliers = false; }
+            NeedsSupplierSearch = true;
             SupplierLookupMessage = "No se pudieron consultar las opciones. La asignación existente se conserva al guardar; vuelva a buscar.";
         }
     }
@@ -233,7 +237,8 @@ public partial class ProductDialogViewModel : ObservableObject
         finally { _replacingSuppliers = false; }
 
         _originalStockSnapshot = product.Stock;
-        _originalMinStockSnapshot = product.MinStock;
+        StockAdjustmentReason = string.Empty;
+        OnPropertyChanged(nameof(NeedsStockAdjustmentReason));
         _ = LoadCategoriesAndSuppliersAsync();
     }
 
@@ -254,11 +259,16 @@ public partial class ProductDialogViewModel : ObservableObject
             Name = string.Empty;
             CostPrice = null;
             RetailPrice = null;
-            Stock = null;
+            Stock = 0d;
             Category = "General";
             Unit = "Pza";
             PointsRewarded = 0.0;
             MinStock = 5.0;
+            ReorderQuantity = 10d;
+            MaxStock = 0d;
+            TaxRate = 0.16m;
+            StockAdjustmentReason = string.Empty;
+            OnPropertyChanged(nameof(NeedsStockAdjustmentReason));
             SelectedSupplier = null;
             SerialNumber = string.Empty;
             AttributesText = string.Empty;
@@ -326,6 +336,17 @@ public partial class ProductDialogViewModel : ObservableObject
                 return;
             }
 
+            if (RetailPrice is null || CostsVisible && CostPrice is null || Stock is null || MinStock is null)
+            {
+                ErrorMessage = "Complete costo, precio, stock actual y stock mínimo con números válidos.";
+                return;
+            }
+            if (NeedsStockAdjustmentReason && string.IsNullOrWhiteSpace(StockAdjustmentReason))
+            {
+                ErrorMessage = "Indique el motivo del cambio de existencias para registrarlo en el historial.";
+                return;
+            }
+
             var dto = new ProductDto(
                 _editingProductId ?? _newProductId, Barcode, Name, CostPrice ?? 0, RetailPrice ?? 0,
                 WholesalePrice: _loadedProduct?.WholesalePrice ?? 0m, WholesaleThreshold: _loadedProduct?.WholesaleThreshold ?? 0,
@@ -366,7 +387,7 @@ public partial class ProductDialogViewModel : ObservableObject
             }
             else
             {
-                ErrorMessage = baseMsg;
+                ErrorMessage = Ticketfy.Core.Helpers.UserFacingErrors.Message(ex, "No se pudo guardar el producto. Revise los datos e inténtelo de nuevo.");
             }
         }
         finally { _saving = false; }

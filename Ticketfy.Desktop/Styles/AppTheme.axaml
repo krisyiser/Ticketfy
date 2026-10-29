@@ -1,5 +1,16 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:helpers="using:Ticketfy.Core.Helpers">
+
+    <Style Selector="TextBox, NumericUpDown, ComboBox, AutoCompleteBox">
+        <Setter Property="DataValidationErrors.ErrorConverter" Value="{x:Static helpers:UserFacingErrors.ValidationConverter}" />
+    </Style>
+    <Style Selector="CheckBox">
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
+    <Style Selector="CheckBox /template/ ContentPresenter">
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
 
     <!-- ═══════════════════════════════════════════════════════════
          TICKETFY POS — NEXT.JS AESTHETIC DESIGN TOKEN SYSTEM

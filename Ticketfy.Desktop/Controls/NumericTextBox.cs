@@ -9,9 +9,8 @@ using System.Text.RegularExpressions;
 namespace Ticketfy.Controls;
 
 /// <summary>
-/// Industrial numeric text box that strictly blocks letters and non-numeric characters,
-/// including clipboard paste attempts, IME entries, and invalid key combinations.
-/// Supports optional decimal places and maximum digit length.
+/// Numeric typing assistance. Pasted text is retained for validation, never rewritten into another amount.
+/// Supports decimal separators and a typing length limit.
 /// </summary>
 public class NumericTextBox : TextBox
 {
@@ -34,8 +33,6 @@ public class NumericTextBox : TextBox
         get => GetValue(MaxDigitsProperty);
         set => SetValue(MaxDigitsProperty, value);
     }
-
-    private bool _isSanitizing;
 
     public NumericTextBox()
     {
@@ -60,66 +57,18 @@ public class NumericTextBox : TextBox
             return;
         }
 
-        string pattern = AllowDecimals ? "^[0-9.]+$" : "^[0-9]+$";
+        string pattern = AllowDecimals ? "^[0-9.,]+$" : "^[0-9]+$";
 
         if (!Regex.IsMatch(e.Text, pattern))
         {
             e.Handled = true;
         }
-        else if (AllowDecimals && e.Text == "." && Text != null && Text.Contains("."))
+        else if (AllowDecimals && e.Text is "." or "," && Text != null && Text.IndexOfAny(['.', ',']) >= 0 && SelectionStart == SelectionEnd)
         {
             // Block multiple decimal dots
             e.Handled = true;
         }
     }
 
-    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
-    {
-        base.OnPropertyChanged(change);
-
-        if (change.Property == TextProperty && !_isSanitizing)
-        {
-            var newText = change.GetNewValue<string>();
-            if (!string.IsNullOrEmpty(newText))
-            {
-                var sanitized = SanitizeInput(newText);
-                if (sanitized != newText)
-                {
-                    _isSanitizing = true;
-                    Text = sanitized;
-                    CaretIndex = sanitized.Length;
-                    _isSanitizing = false;
-                }
-            }
-        }
-    }
-
-    private string SanitizeInput(string rawText)
-    {
-        if (string.IsNullOrEmpty(rawText)) return string.Empty;
-
-        var result = new System.Text.StringBuilder();
-        bool hasDecimal = false;
-
-        foreach (char c in rawText)
-        {
-            if (char.IsDigit(c))
-            {
-                if (MaxDigits <= 0 || result.Length < MaxDigits)
-                {
-                    result.Append(c);
-                }
-            }
-            else if (AllowDecimals && c == '.' && !hasDecimal)
-            {
-                if (MaxDigits <= 0 || result.Length < MaxDigits)
-                {
-                    result.Append(c);
-                    hasDecimal = true;
-                }
-            }
-        }
-
-        return result.ToString();
-    }
+    // Paste is validated by the binding. Never silently turn "-50", "1e3" or "5oops0" into a different amount.
 }

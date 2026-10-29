@@ -12,7 +12,8 @@ internal static class AccountInputPolicy
 {
     internal const int UsernameLimit = 128;
     internal const int PasswordLimit = 1024;
-    internal const int PasswordMinimumCodePoints = 15;
+    internal const int PasswordMinimumCodePoints = 6;
+    internal static string PasswordHelp => $"Contraseña de al menos {PasswordMinimumCodePoints} caracteres. Se admiten espacios.";
     private const string IdentityCollation = "TICKETFY_USERNAME_V1";
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 

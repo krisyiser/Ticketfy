@@ -26,7 +26,7 @@
                             Background="{DynamicResource BgPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                             Foreground="{DynamicResource TextPrimaryBrush}" CornerRadius="6" HorizontalContentAlignment="Center" />
 
-                    <Button Grid.Column="1" Command="{Binding SaveCommand}" Content="Guardar Producto" Margin="6,0,0,0" Padding="12"
+                    <Button x:Name="SaveProductButton" Grid.Column="1" Command="{Binding SaveCommand}" Content="Guardar Producto" Margin="6,0,0,0" Padding="12"
                             Classes="primary-action" FontWeight="Bold" CornerRadius="6" HorizontalContentAlignment="Center" />
                 </Grid>
             </StackPanel>
@@ -81,12 +81,12 @@
                                 </StackPanel>
                             </Grid>
 
-                            <Grid ColumnDefinitions="*,Auto,Auto">
+                            <Grid IsVisible="{Binding NeedsSupplierSearch}" ColumnDefinitions="*,Auto">
                                 <TextBox Text="{Binding SupplierSearch}" Watermark="Buscar proveedor por nombre" />
                                 <Button Grid.Column="1" Content="Buscar" Command="{Binding SearchSuppliersCommand}" Margin="6,0" />
-                                <Button Grid.Column="2" Content="Sin proveedor" Command="{Binding ClearSupplierCommand}" />
                             </Grid>
-                            <TextBlock Text="{Binding SupplierLookupMessage}" TextWrapping="Wrap" FontSize="11" />
+                            <Button Content="Quitar proveedor" Command="{Binding ClearSupplierCommand}" IsVisible="{Binding SelectedSupplier, Converter={x:Static ObjectConverters.IsNotNull}}" HorizontalAlignment="Right" />
+                            <TextBlock IsVisible="{Binding SupplierLookupMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Text="{Binding SupplierLookupMessage}" TextWrapping="Wrap" FontSize="11" />
 
                             <!-- BULK / GRANEL INFORMATIVE BANNER (SIN CHECKBOX REDUNDANTE) -->
                             <Border IsVisible="{Binding IsBulk}" Margin="0,6,0,0" Padding="12,10" CornerRadius="6" Background="{DynamicResource BgSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
@@ -123,15 +123,12 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- 3. CONTROL DE INVENTARIO Y SAT -->
+                    <!-- 3. CONTROL DE INVENTARIO -->
                     <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14" Background="{DynamicResource BgTertiaryBrush}">
                         <StackPanel Spacing="10">
-                            <TextBlock Text="Control de Inventario y SAT" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" Margin="0,0,0,6"/>
-                            <TextBox Text="{Binding StockAdjustmentReason}" Watermark="Motivo obligatorio al ajustar existencias" />
-                            <Grid ColumnDefinitions="*,*">
-                                <StackPanel><TextBlock Text="Existencia máxima (0 = sin límite)" /><NumericUpDown Value="{Binding MaxStock}" Minimum="0" /></StackPanel>
-                                <StackPanel Grid.Column="1"><TextBlock Text="Tasa de IVA (0.16 = 16%)" /><NumericUpDown Value="{Binding TaxRate}" Minimum="0" Maximum="1" Increment="0.01" /></StackPanel>
-                            </Grid>
+                            <TextBlock Text="Control de inventario" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" Margin="0,0,0,6"/>
+                            <TextBox IsVisible="{Binding NeedsStockAdjustmentReason}" Text="{Binding StockAdjustmentReason}" Watermark="Motivo obligatorio al ajustar existencias" />
+
                             
                             <Grid ColumnDefinitions="*,*">
                                 <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,6,0">
@@ -162,17 +159,7 @@
                                 </StackPanel>
                             </Grid>
 
-                            <Grid ColumnDefinitions="*,*" Margin="0,4,0,0">
-                                <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,6,0">
-                                    <TextBlock Text="Clave Prod SAT" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                                    <TextBox Text="{Binding SatProductCode, Mode=TwoWay}" Background="{DynamicResource BgSecondaryBrush}" Padding="8" />
-                                </StackPanel>
 
-                                <StackPanel Grid.Column="1" Spacing="4" Margin="6,0,0,0">
-                                    <TextBlock Text="Clave Unidad SAT" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                                    <TextBox Text="{Binding SatUnitCode, Mode=TwoWay}" Background="{DynamicResource BgSecondaryBrush}" Padding="8" />
-                                </StackPanel>
-                            </Grid>
                         </StackPanel>
                     </Border>
                     

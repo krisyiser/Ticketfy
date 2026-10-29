@@ -21,7 +21,7 @@ INSTALAR Y EMPEZAR
 3. Cierre cualquier Ticketfy de pruebas abierto y ejecute el instalador.
 4. Abra "Ticketfy - Pruebas internas" desde Inicio o el escritorio.
 5. Complete el asistente con una empresa ficticia y una contraseña propia de
-   al menos 15 caracteres. No se incluyen usuarios, contraseñas ni licencias.
+   al menos 6 caracteres. No se incluyen usuarios, contraseñas ni licencias.
 6. Cierre y vuelva a abrir para comprobar que se conservan los datos.
 
 DATOS Y REINSTALACIÓN

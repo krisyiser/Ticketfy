@@ -11,19 +11,20 @@
     <Border x:Name="PurchaseOrderForm" Padding="16"
             Background="{DynamicResource BgSecondaryBrush}"
             BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="{DynamicResource AppCornerRadius}">
-        <DockPanel LastChildFill="True">
-            <controls:AlertBannerControl DockPanel.Dock="Top" Message="{Binding FeedbackMessage, Mode=TwoWay}" IsError="{Binding IsFeedbackError}" Margin="0,0,0,10" />
-            <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,12">
+        <Grid RowDefinitions="Auto,*,Auto">
+            <controls:AlertBannerControl Grid.Row="0" Message="{Binding FeedbackMessage, Mode=TwoWay}" IsError="{Binding IsFeedbackError}" Margin="0,0,0,10" />
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+            <StackPanel Spacing="10" IsEnabled="{Binding !IsSubmitting}">
                 <TextBlock Text="Nueva Orden de Compra (Reabastecimiento)" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
                 
                 <Grid ColumnDefinitions="*,*">
                     <StackPanel Grid.Column="0" Margin="0,0,4,0" Spacing="4">
                         <TextBlock Text="Proveedor" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                        <Grid ColumnDefinitions="*,Auto">
+                        <Grid IsVisible="{Binding NeedsSupplierSearch}" ColumnDefinitions="*,Auto">
                             <TextBox Text="{Binding SupplierSearch}" Watermark="Buscar proveedor" />
                             <Button Grid.Column="1" Content="Buscar" Command="{Binding SearchSuppliersCommand}" />
                         </Grid>
-                        <ComboBox PlaceholderText="Seleccione Proveedor..." ItemsSource="{Binding Suppliers}" SelectedItem="{Binding SelectedSupplierForPurchase, Mode=TwoWay}" HorizontalAlignment="Stretch" Padding="8">
+                        <ComboBox PlaceholderText="Seleccione Proveedor..." ItemsSource="{Binding Suppliers}" SelectedItem="{Binding SelectedSupplier, Mode=TwoWay}" HorizontalAlignment="Stretch" Padding="8">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate x:DataType="dto:SupplierDto">
                                     <TextBlock Text="{Binding Name}" />
@@ -41,16 +42,16 @@
                 <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,4" />
 
                 <!-- Add Item Row -->
-                <Grid ColumnDefinitions="*,Auto">
+                <Grid IsVisible="{Binding NeedsProductSearch}" ColumnDefinitions="*,Auto">
                     <TextBox Text="{Binding ProductSearch}" Watermark="Buscar producto por nombre o código" />
                     <Button Grid.Column="1" Content="Buscar" Command="{Binding SearchProductsCommand}" />
                 </Grid>
-                <CheckBox Content="Sólo productos con este proveedor preferido" IsChecked="{Binding PreferredSupplierOnly}" />
+                <CheckBox Foreground="{DynamicResource TextPrimaryBrush}" Content="Sólo productos con este proveedor preferido" IsChecked="{Binding PreferredSupplierOnly}" />
                 <TextBlock Text="{Binding CatalogMessage}" FontSize="11" TextWrapping="Wrap" />
                 <Grid x:Name="AddPurchaseItemRow" ColumnDefinitions="2.5*, 1*, 1*, Auto">
                     <StackPanel Grid.Column="0" Margin="0,0,4,0" Spacing="4">
                         <TextBlock Text="Producto" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
-                        <ComboBox PlaceholderText="Seleccione Producto..." ItemsSource="{Binding AvailableProducts}" SelectedItem="{Binding SelectedProductForPurchase, Mode=TwoWay}" HorizontalAlignment="Stretch">
+                        <ComboBox PlaceholderText="Seleccione Producto..." ItemsSource="{Binding AvailableProducts}" SelectedItem="{Binding SelectedProduct, Mode=TwoWay}" HorizontalAlignment="Stretch">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate x:DataType="dto:ProductDto">
                                     <TextBlock Text="{Binding Name}" />
@@ -69,29 +70,13 @@
                         <TextBox Text="{Binding PurchaseQuantity, Mode=TwoWay}" Watermark="Cant." Padding="8" />
                     </StackPanel>
 
-                    <Button Grid.Column="3" Command="{Binding AddItemToPurchaseDraftCommand}" Padding="10,8" CornerRadius="{DynamicResource AppCornerRadius}" Background="{DynamicResource AccentSuccessBrush}" Foreground="White" Margin="4,0,0,0" VerticalAlignment="Bottom">
+                    <Button ToolTip.Tip="Agregar producto a la compra" Grid.Column="3" Command="{Binding AddItemToPurchaseDraftCommand}" Padding="10,8" CornerRadius="{DynamicResource AppCornerRadius}" Background="{DynamicResource AccentSuccessBrush}" Foreground="White" Margin="4,0,0,0" VerticalAlignment="Bottom">
                         <mi:MaterialIcon Kind="Plus" Width="18" Height="18" />
                     </Button>
                 </Grid>
-            </StackPanel>
-
-            <!-- Bottom Action Bar -->
-            <StackPanel DockPanel.Dock="Bottom" Spacing="10" Margin="0,12,0,0">
-                <ComboBox ItemsSource="{Binding PurchasePaymentMethods}" SelectedItem="{Binding PurchasePaymentMethod}" HorizontalAlignment="Stretch" />
-                <TextBlock Text="Importe pagado ahora (resto a cuenta por pagar)" />
-                <NumericUpDown Value="{Binding PurchasePaidAmount}" Minimum="0" FormatString="0.00" />
-                <TextBox Text="{Binding PurchasePaymentReference}" Watermark="Referencia bancaria / comprobante" />
-                <TextBox Text="{Binding PurchaseDueDate}" Watermark="Vencimiento AAAA-MM-DD (crédito)" />
-                <Border Height="1" Background="{DynamicResource BorderBrush}" />
-                <Grid ColumnDefinitions="*,Auto">
-                    <TextBlock Text="COSTO TOTAL COMPRA:" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="1" Text="{Binding TotalPurchaseCost, StringFormat='${0:N2}'}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" />
-                </Grid>
-                <Button x:Name="ConfirmPurchaseBtn" Command="{Binding ConfirmPurchaseCommand}" Content="{Binding SubmitButtonText}" Padding="16,12" CornerRadius="{DynamicResource AppCornerRadius}" Background="{DynamicResource AccentSuccessBrush}" Foreground="White" FontWeight="Bold" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-            </StackPanel>
 
             <!-- Purchase Draft Items Table -->
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
+
                 <ItemsControl ItemsSource="{Binding DraftPurchaseItems}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="dto:PurchaseItemDto">
@@ -108,8 +93,24 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+
+                <TextBlock Text="Forma de pago" FontWeight="SemiBold" />
+                <ComboBox ItemsSource="{Binding PurchasePaymentMethods}" SelectedItem="{Binding PurchasePaymentMethod}" HorizontalAlignment="Stretch" />
+                <TextBlock IsVisible="{Binding !IsCreditPurchase}" Text="Importe pagado ahora (resto a cuenta por pagar)" />
+                <NumericUpDown IsVisible="{Binding !IsCreditPurchase}" Value="{Binding PurchasePaidAmount, Mode=TwoWay}" Minimum="0" FormatString="0.00" />
+                <TextBox IsVisible="{Binding NeedsPaymentReference}" Text="{Binding PurchasePaymentReference}" Watermark="Referencia bancaria / comprobante" />
+                <TextBox Text="{Binding PurchaseDueDate}" Watermark="Vencimiento AAAA-MM-DD (crédito)" />
+            </StackPanel>
             </ScrollViewer>
-        </DockPanel>
+            <StackPanel Grid.Row="2" Spacing="8" Margin="0,12,0,0">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="COSTO TOTAL COMPRA:" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="{Binding TotalPurchaseCost, StringFormat='${0:N2}'}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource AccentPrimaryBrush}" />
+                </Grid>
+                <Button x:Name="ConfirmPurchaseBtn" Command="{Binding ConfirmPurchaseCommand}" Content="{Binding SubmitButtonText}" Padding="16,12" CornerRadius="{DynamicResource AppCornerRadius}" Background="{DynamicResource AccentSuccessBrush}" Foreground="White" FontWeight="Bold" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            </StackPanel>
+        </Grid>
     </Border>
 </UserControl>
 
